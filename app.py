@@ -1,12 +1,6 @@
 """
 app.py - الواجهة التفاعلية لنظام أتمتة المونتاج والموشن جرافيك الهجين (سحابي + محلي)
 ====================================================================================
-التحديثات الجوهرية:
-1. حل جذري لمشكلة رفع الملفات والتسجيلات الصوتية (دعم جميع الصيغ + تحويل تلقائي فوري + تسجيل مباشر من المايكروفون + رسالة تأكيد وتحليل فورية).
-2. دعم كامل للدارجة الجزائرية (Algerian Darija) عبر موجهات صوتية مخصصة وتدقيق ذكي بالذكاء الاصطناعي السحابي والمحلي.
-3. إضافة نمط "دمج الموشن جرافيك بالفيديو الأصلي" (Motion Graphics Overlay on Original Video).
-4. إضافة "النمط التلقائي الذكي - دمج كل الأدوار (Smart Director All-in-One)" الذي يحلل الفيديو/الصوت ويختار أفضل الموديلات والإعدادات والأدوار البصرية وفق معايير علمية دقيقة.
-5. دعم العمل بالإنترنت (الذكاء السحابي المجاني أو عبر مفاتيح Groq / Gemini / OpenAI) للحصول على أعلى جودة، مع التراجع التلقائي للوضع المحلي.
 """
 
 import sys
@@ -15,6 +9,11 @@ import os
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
+
+# معالجة فورية لتوافق Pillow 10+ مع MoviePy لمنع خطأ 'PIL.Image' has no attribute 'ANTIALIAS'
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import shutil
 import time
@@ -223,7 +222,6 @@ with col1:
         else:
             st.info("يرجى استخدام تبويب رفع الملفات لرفع تسجيلك الصوتي.")
 
-    # حفظ وتحضير الملف فور رفعه وإظهار رسالة تأكيد وتحليل فورية للمستخدم
     active_input_path = None
     media_analysis = None
 
@@ -236,11 +234,9 @@ with col1:
             with open(saved_input_path, "wb") as f:
                 f.write(raw_media_bytes)
 
-        # تطبيع الملفات الصوتية (مثل ogg, opus, m4a, aac, amr) لضمان عمل المعاينة والمعالجة 100%
         playable_path, is_vid = ensure_playable_audio_or_video(saved_input_path, INPUTS_DIR)
         active_input_path = playable_path
 
-        # حفظ التحليل الذكي في الجلسة لتجنب إعادة الحساب في كل نقرة
         cache_analysis_key = f"analysis_{file_hash}"
         if cache_analysis_key not in st.session_state:
             with st.spinner("🔍 جاري فحص الملف وتحليل خصائص الصوت والفيديو تلقائياً..."):
@@ -252,19 +248,16 @@ with col1:
                 )
         media_analysis = st.session_state[cache_analysis_key]
 
-        # رسالة رد فعل فورية وواضحة تؤكد نجاح رفع الملف
         st.success(
             f"✅ **تم استلام وتجهيز الملف بنجاح!** ({media_analysis['media_type_ar']} | "
             f"المدة: `{media_analysis['duration_sec']} ثانية` | الحجم: `{media_analysis['file_size_mb']} MB`)"
         )
 
-        # معاينة الملف المرفوع
         if media_analysis["has_video"]:
             st.video(active_input_path)
         else:
             st.audio(active_input_path)
 
-        # عرض تقرير التحليل الذكي والإعدادات التي اختارها النظام
         with st.expander("📊 تقرير التحليل الذكي للملف والإعدادات التلقائية المختارة", expanded=True):
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("متوسط الصوت", f"{media_analysis['mean_dbfs']} dBFS")
@@ -336,7 +329,6 @@ if start_btn:
     if active_input_path is None or not os.path.exists(active_input_path):
         st.warning("⚠️ يرجى رفع ملف فيديو أو صوت (أو تسجيل صوتك من التبويب الثاني) أولاً قبل بدء المعالجة.")
     else:
-        # استخدام الإعدادات التلقائية المحسوبة إذا كان الضبط التلقائي مفعلاً
         if auto_optimize and media_analysis is not None:
             eff_silence_thresh = float(media_analysis["optimal_silence_threshold"])
             eff_padding_ms = int(media_analysis["optimal_padding_ms"])
@@ -364,7 +356,6 @@ if start_btn:
 
         try:
             with st.spinner("🎬 جاري تشغيل محرك المونتاج والموشن جرافيك الذكي..."):
-                # 1. النمط التلقائي الذكي الشامل (Smart Director All-in-One)
                 if selected_style == style_options[0]:
                     from dynamic_edit import apply_smart_director_all_in_one
 
@@ -381,7 +372,6 @@ if start_btn:
                         progress_callback=update_ui_progress
                     )
 
-                # 2. نمط دمج الموشن جرافيك بالفيديو الأصلي
                 elif selected_style == style_options[1]:
                     from dynamic_edit import apply_motion_overlay_on_video
 
@@ -400,7 +390,6 @@ if start_btn:
                         progress_callback=update_ui_progress
                     )
 
-                # 3. نمط الموشن جرافيك النصي والأنفوجرافيك الاحترافي
                 elif selected_style == style_options[2]:
                     from motion_text import create_kinetic_typography_video
 
@@ -416,7 +405,6 @@ if start_btn:
                         progress_callback=update_ui_progress
                     )
 
-                # 4. نمط الموشن جرافيك الهندسي (Manim + AI)
                 elif selected_style == style_options[3]:
                     from manim_generator import generate_manim_motion_graphics
 
@@ -433,7 +421,6 @@ if start_btn:
                         progress_callback=update_ui_progress
                     )
 
-                # 5. نمط المونتاج الديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)
                 elif selected_style == style_options[4]:
                     from dynamic_edit import apply_dynamic_edit
 
@@ -452,7 +439,6 @@ if start_btn:
                         progress_callback=update_ui_progress
                     )
 
-                # 6. نمط قص الصمت وتنظيف الصوت فقط
                 else:
                     processed_path = remove_silence(
                         input_path=active_input_path,

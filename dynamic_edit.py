@@ -1,12 +1,6 @@
 """
 dynamic_edit.py - وحدة المونتاج الديناميكي، دمج الموشن جرافيك بالفيديو الأصلي، والمخرج الذكي الشامل (All-in-One)
 =================================================================================================================
-تتضمن هذه الوحدة ثلاثة مسارات احترافية:
-1. المونتاج الديناميكي (apply_dynamic_edit): قص الصمت + زوم سينمائي 15% + كابشن تيك توك (يدعم الفيديو والصوت).
-2. دمج الموشن جرافيك بالفيديو الأصلي (apply_motion_overlay_on_video): تراكب بطاقات الأنفوجرافيك الزجاجية، الأيقونات الفيكتور،
-   وشرائط العناوين المتحركة مباشرة فوق الفيديو الأصلي للمتحدث دون تغطية الوجه.
-3. النمط التلقائي الشامل - دمج كل الأدوار (apply_smart_director_all_in_one): يحلل معايير الصوت والفيديو والنص،
-   ويوزع الأدوار البصرية بذكاء بين كل جملة وأخرى لإنتاج فيديو متكامل بأعلى جودة.
 """
 
 import sys
@@ -15,6 +9,11 @@ import os
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
+
+# معالجة فورية لتوافق Pillow 10+ مع MoviePy لمنع خطأ 'PIL.Image' has no attribute 'ANTIALIAS'
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import logging
 from typing import List, Dict, Any, Tuple, Optional, Callable
@@ -80,13 +79,11 @@ def generate_caption_image(
     draw = ImageDraw.Draw(canvas)
 
     corner_radius = max(12, int(box_h * 0.28))
-    # ظل خارجي ناعم لزيادة وضوح النص فوق أي فيديو
     draw.rounded_rectangle(
         [(0, 0), (box_w + 6, box_h + 6)],
         radius=corner_radius + 2,
         fill=(0, 0, 0, 95)
     )
-    # صندوق الكابشن الزجاجي الداكن مع إطار ملون
     draw.rounded_rectangle(
         [(3, 3), (box_w + 3, box_h + 3)],
         radius=corner_radius,
@@ -131,10 +128,7 @@ def _build_base_video_from_audio_or_video(
     padding_ms: int
 ) -> Tuple[Any, bool]:
     """
-    تجهيز مقطع الفيديو الأساسي بعد قص الصمت:
-    - إذا كان المدخل فيديو: يقص الصمت ويرجع VideoFileClip.
-    - إذا كان المدخل ملف صوتي فقط: يقص الصمت الصوتي وينشئ خلفية أستوديو مرئية متحركة مع الصوت
-      حتى تعمل كافة أنماط المونتاج على الملفات الصوتية أيضاً دون أي خطأ!
+    تجهيز مقطع الفيديو الأساسي بعد قص الصمت.
     """
     from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip
 
@@ -333,7 +327,7 @@ def apply_dynamic_edit(
 
 
 # ==============================================================================
-# 2. النمط الخامس (جديد): دمج الموشن جرافيك بالفيديو الأصلي (Motion Graphics Overlay on Original Video)
+# 2. النمط الخامس: دمج الموشن جرافيك بالفيديو الأصلي
 # ==============================================================================
 def apply_motion_overlay_on_video(
     input_path: str,
@@ -350,11 +344,7 @@ def apply_motion_overlay_on_video(
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
     """
-    نمط دمج الموشن جرافيك بالفيديو الأصلي:
-    1. يحافظ على فيديو المتحدث الأصلي بعد قص الصمت وتطبيق زوم ديناميكي ناعم.
-    2. يستخرج الأفكار الرئيسية لكل جملة بالذكاء الاصطناعي ويرسم بطاقات أنفوجرافيك زجاجية
-       مع أيقونات فيكتور ملونة تتراكب في الجزء العلوي من الفيديو دون تغطية وجه المتحدث.
-    3. يضيف كابشن تفاعلي متزامن في الثلث السفلي من الشاشة.
+    نمط دمج الموشن جرافيك بالفيديو الأصلي.
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف غير موجود: {input_path}")
@@ -421,13 +411,11 @@ def apply_motion_overlay_on_video(
 
             if s_end > s_start + 0.05:
                 chunk = base_clip.subclip(s_start, s_end)
-                # تطبيق زوم ناعم في الجمل الفردية
                 if idx % 2 == 1:
                     chunk = apply_zoom_in_crop(chunk, zoom_factor=1.12)
                 sentence_clips.append(chunk)
                 current_time = s_end
 
-                # توليد بطاقة الموشن جرافيك العلوية الخاصة بهذه الجملة
                 meta = analyze_sentence_visual_metadata(
                     sent["text"],
                     model_name=ollama_model,
@@ -528,7 +516,7 @@ def apply_motion_overlay_on_video(
 
 
 # ==============================================================================
-# 3. النمط السادس (جديد): المخرج الذكي الشامل - يدمج كل الأدوار بمعايير علمية (Smart Auto All-in-One)
+# 3. النمط السادس: المخرج الذكي الشامل (Smart Auto All-in-One)
 # ==============================================================================
 def apply_smart_director_all_in_one(
     input_path: str,
@@ -543,15 +531,7 @@ def apply_smart_director_all_in_one(
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    المخرج التلقائي الذكي (Smart Auto Director & All-in-One):
-    1. يحلل الفيديو أو الصوت المرفوع لمعرفة معاييره الفيزيائية والدلالية.
-    2. يضبط تلقائياً أفضل عتبة صمت (Optimal dBFS)، هامش الأمان، وأفضل موديل Whisper وذكاء اصطناعي.
-    3. إذا كان الملف صوتياً فقط: يصنع فيديو موشن جرافيك كامل متعدد الثيمات والأيقونات الفيكتور.
-    4. إذا كان الملف فيديو: يدمج كل الأدوار بذكاء غير عشوائي على مدار الفيديو:
-       - الجملة الافتتاحية (Hook): زوم سينمائي + لوحة موشن جرافيك بارزة + كابشن مضيء.
-       - الجمل المحورية / التي تحتوي على أرقام أو تساؤلات: لوحة أنفوجرافيك عريضة (Graphic Burst) + أيقونة فيكتور + زوم.
-       - الجمل المعلوماتية: شارة زاوية زجاجية (Corner Infographic Card) + زوم ناعم.
-       - الجمل السردية الهادئة: لقطة أصلية صافية مع كابشن كاريوكي أنيق لراحة عين المشاهد.
+    المخرج التلقائي الذكي (Smart Auto Director & All-in-One).
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف غير موجود: {input_path}")
@@ -591,7 +571,6 @@ def apply_smart_director_all_in_one(
     temp_dir = os.path.join(base_dir, "temp")
     os.makedirs(temp_dir, exist_ok=True)
 
-    # في حال كان الملف صوتياً فقط: نطبق قص الصمت الذكي ثم ننتج فيديو موشن جرافيك احترافي كامل
     if not has_vid:
         update_progress(0.18, f"2/5: تنظيف الصمت تلقائياً بعتبة ذكية ({chosen_silence_thresh} dBFS)...")
         clean_audio_path = os.path.join(temp_dir, "temp_smart_clean_audio.mp3")
@@ -615,7 +594,6 @@ def apply_smart_director_all_in_one(
         )
         return out_path, media_analysis
 
-    # في حال كان الملف فيديو: ندمج كل الأدوار (Jump-cuts + Auto-Zoom + Motion Graphics Overlays + Visual Bursts + Karaoke)
     from moviepy.editor import ImageClip, CompositeVideoClip, concatenate_videoclips
 
     base_clip = None
@@ -654,7 +632,6 @@ def apply_smart_director_all_in_one(
             openai_api_key=openai_api_key
         )
 
-        # التخطيط الإخراجي لكل جملة بناءً على المعايير
         if plan_smart_director_segments is not None:
             planned_sentences = plan_smart_director_segments(
                 sentences=sentence_data,
@@ -688,7 +665,6 @@ def apply_smart_director_all_in_one(
                 sentence_clips.append(chunk)
                 current_time = s_end
 
-                # إذا كان دور الجملة يتطلب موشن جرافيك (Hook أو Graphic Burst أو Corner Card)
                 if role in {"hook_motion_overlay", "graphic_burst_overlay", "motion_card_overlay"}:
                     meta = analyze_sentence_visual_metadata(
                         sent["text"],
@@ -720,7 +696,6 @@ def apply_smart_director_all_in_one(
 
         zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
 
-        # إضافة الكابشن التفاعلي الملون في الثلث السفلي
         lower_third_y = int(video_h * 0.78)
         for i, item in enumerate(word_data):
             w_txt = item["word"]
@@ -729,7 +704,6 @@ def apply_smart_director_all_in_one(
             if w_end <= w_start or w_start >= zoomed_base.duration:
                 continue
             dur = max(0.14, w_end - w_start)
-            # تناوب لوني جذاب للكلمات المهمة (أصفر ذهبي وسماوي نيون)
             hl_color = (255, 230, 0) if (i % 4 != 3) else (0, 245, 212)
             cap_arr = generate_caption_image(
                 word_text=w_txt,
