@@ -1,46 +1,149 @@
 """
-motion_text.py - وحدة الموشن جرافيك النصي المتحرك (Kinetic Typography)
-======================================================================
-المرحلة 5: صناعة فيديو موشن جرافيك نصي ديناميكي بالكامل:
-1. توليد خلفية سينمائية متدرجة الألوان (Gradient Background).
-2. استخراج الكلمات المفتاحية عبر نموذج الذكاء الاصطناعي المحلي (Llama 3 عبر Ollama API).
-3. البحث عن أيقونات مطابقة داخل مجلد assets/icons/ وتراكبها.
-4. تحريك النصوص بأسلوب Kinetic Typography Pop-up متزامن تماماً مع تواقيت faster-whisper
-   (الكلمة الحالية تظهر كبيرة وبارزة بالمنتصف، والكلمة السابقة تصغر وترتفع للأعلى).
+motion_text.py - محرك الموشن جرافيك الاحترافي والأنفوجرافيك المتحرك (Studio Kinetic Typography & Overlays)
+========================================================================================================
+يوفر هذا الملف:
+1. معالجة متقدمة للخطوط العربية والدارجة الجزائرية (تحميل تلقائي لخط Cairo العريض عند توفر الإنترنت + تشكيل الحروف عبر arabic_reshaper و python-bidi عند الحاجة).
+2. رسام أيقونات فيكتور ديناميكي مدمج (Procedural Vector Icon Renderer) يرسم أيقونات عالية الدقة لكل جملة تلقائياً حتى لو كان مجلد assets/icons فارغاً.
+3. استخراج الكلمات المفتاحية ونوع الأيقونة والثيم اللوني عبر الذكاء الاصطناعي الهجين (سحابي مجاني / Groq / Gemini / Ollama).
+4. إنتاج فيديوهات موشن جرافيك كاملة أو طبقات موشن جرافيك شفافة (Overlays) لدمجها مع الفيديو الأصلي للمستخدم.
 """
 
 import sys
 import os
 
-# إضافة مسار المجلد الحالي إلى أولويات البحث لضمان تعرف كل ملف على الملفات المجاورة في الاستضافة
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
 
-
-import os
 import re
-import shutil
+import math
+import json
 import logging
 from typing import List, Dict, Any, Optional, Tuple, Callable
 import numpy as np
 import requests
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter, features
 
-# استيراد وحدات النظام السابقة
-from auto_cut import remove_silence
 from transcriber import transcribe_audio, transcribe_sentences
+
+try:
+    from smart_analyzer import query_hybrid_llm
+except ImportError:
+    def query_hybrid_llm(*args, **kwargs):
+        return None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 1. دوال الخطوط وتوليد الخلفيات المتدرجة
+# 1. إعداد الخطوط العربية وتشكيل الحروف السليم (Arabic Text Shaping & Fonts)
 # ==============================================================================
+_FONT_DOWNLOAD_ATTEMPTED = False
+_HAS_RAQM = False
+try:
+    _HAS_RAQM = bool(features.check("raqm"))
+except Exception:
+    _HAS_RAQM = False
+
+
+def shape_arabic_text(text: str) -> str:
+    """
+    ضمان ظهور الحروف العربية متصلة وبالاتجاه الصحيح من اليمين لليسار
+    في جميع البيئات (سواء كانت مكتبة libraqm متوفرة أم لا).
+    """
+    if not text:
+        return ""
+    if _HAS_RAQM:
+        return text
+    try:
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    except Exception:
+        return text
+
+
+def draw_arabic_text(
+    draw: ImageDraw.ImageDraw,
+    xy: Tuple[float, float],
+    text: str,
+    font: ImageFont.FreeTypeFont,
+    fill: Tuple[int, int, int, int] = (255, 255, 255, 255),
+    anchor: str = "mm",
+    stroke_width: int = 0,
+    stroke_fill: Optional[Tuple[int, int, int, int]] = None
+):
+    """رسم نص عربي أو دارجة جزائرية بدقة عالية مع دعم الحواف (Stroke)."""
+    prepared = shape_arabic_text(text)
+    kwargs = {"font": font, "fill": fill, "anchor": anchor}
+    if stroke_width > 0 and stroke_fill is not None:
+        kwargs["stroke_width"] = stroke_width
+        kwargs["stroke_fill"] = stroke_fill
+
+    if _HAS_RAQM:
+        try:
+            draw.text(xy, prepared, direction="rtl", **kwargs)
+            return
+        except Exception:
+            pass
+
+    try:
+        draw.text(xy, prepared, **kwargs)
+    except Exception:
+        # في حال عدم دعم anchor في الخط الافتراضي
+        kwargs.pop("anchor", None)
+        draw.text(xy, prepared, **kwargs)
+
+
+def measure_arabic_text(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font: ImageFont.FreeTypeFont
+) -> Tuple[int, int]:
+    """قياس عرض وارتفاع النص العربي بدقة."""
+    prepared = shape_arabic_text(text)
+    try:
+        if _HAS_RAQM:
+            bbox = draw.textbbox((0, 0), prepared, font=font, direction="rtl")
+        else:
+            bbox = draw.textbbox((0, 0), prepared, font=font)
+        return max(12, int(bbox[2] - bbox[0])), max(12, int(bbox[3] - bbox[1]))
+    except Exception:
+        return max(20, len(text) * 18), 36
+
+
 def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
-    """البحث عن خط عربي مناسب متوفر في النظام."""
+    """
+    جلب أفضل خط عربي متوفر، مع تحميل تلقائي لخط Cairo-Bold الحديث عند توفر الإنترنت
+    للحصول على مظهر موشن جرافيك سينمائي فخم.
+    """
+    global _FONT_DOWNLOAD_ATTEMPTED
+    fonts_dir = os.path.join(_CURRENT_DIR, "assets", "fonts")
+    os.makedirs(fonts_dir, exist_ok=True)
+    cairo_bold_path = os.path.join(fonts_dir, "Cairo-Bold.ttf")
+
+    if not os.path.exists(cairo_bold_path) and not _FONT_DOWNLOAD_ATTEMPTED:
+        _FONT_DOWNLOAD_ATTEMPTED = True
+        font_urls = [
+            "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf",
+            "https://github.com/google/fonts/raw/main/ofl/tajawal/Tajawal-Bold.ttf"
+        ]
+        for url in font_urls:
+            try:
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200 and len(resp.content) > 20000:
+                    with open(cairo_bold_path, "wb") as f:
+                        f.write(resp.content)
+                    logger.info("تم تحميل خط الموشن جرافيك العربي الحديث (Cairo-Bold) بنجاح.")
+                    break
+            except Exception:
+                continue
+
     candidate_fonts = [
+        cairo_bold_path,
+        "/usr/share/fonts/truetype/noto/NotoKufiArabic-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -51,249 +154,659 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
     ]
 
     for path in candidate_fonts:
-        if os.path.exists(path):
+        if path and os.path.exists(path):
             try:
                 return ImageFont.truetype(path, font_size)
             except Exception:
                 continue
 
-    try:
-        return ImageFont.load_default()
-    except Exception:
-        raise RuntimeError("تعذر العثور على خط نظام صالح.")
-
-
-def create_vertical_gradient(
-    width: int,
-    height: int,
-    top_color: Tuple[int, int, int] = (24, 18, 48),      # أرجواني ليلي عميق
-    bottom_color: Tuple[int, int, int] = (10, 12, 28)    # كحلي داكن فخم
-) -> np.ndarray:
-    """
-    إنشاء خلفية متدرجة عمودياً باستخدام معالجة المصفوفات الرياضية السريعة.
-    """
-    gradient = np.zeros((height, width, 3), dtype=np.uint8)
-    for y in range(height):
-        ratio = y / max(1, height - 1)
-        r = int(top_color[0] * (1 - ratio) + bottom_color[0] * ratio)
-        g = int(top_color[1] * (1 - ratio) + bottom_color[1] * ratio)
-        b = int(top_color[2] * (1 - ratio) + bottom_color[2] * ratio)
-        gradient[y, :] = [r, g, b]
-    return gradient
+    return ImageFont.load_default()
 
 
 # ==============================================================================
-# 2. وحدة الذكاء الاصطناعي المحلي (Ollama API - Llama 3)
+# 2. الثيمات اللونية ورسام الأيقونات الفيكتور المدمج (Vector Motion Icons)
 # ==============================================================================
+MOTION_THEMES = {
+    "cyber_gold": {
+        "top_bg": (11, 17, 34),
+        "bottom_bg": (26, 20, 56),
+        "glow": (56, 189, 248),
+        "primary": (255, 225, 0),
+        "secondary": (0, 245, 212),
+        "card_bg": (15, 23, 42, 215)
+    },
+    "emerald_tech": {
+        "top_bg": (6, 26, 23),
+        "bottom_bg": (15, 46, 42),
+        "glow": (16, 185, 129),
+        "primary": (52, 211, 153),
+        "secondary": (251, 191, 36),
+        "card_bg": (8, 32, 28, 215)
+    },
+    "royal_purple": {
+        "top_bg": (22, 12, 40),
+        "bottom_bg": (45, 22, 74),
+        "glow": (236, 72, 153),
+        "primary": (255, 190, 11),
+        "secondary": (255, 77, 141),
+        "card_bg": (28, 16, 50, 215)
+    },
+    "crimson_energy": {
+        "top_bg": (26, 10, 16),
+        "bottom_bg": (52, 16, 28),
+        "glow": (249, 115, 22),
+        "primary": (255, 230, 0),
+        "secondary": (255, 123, 0),
+        "card_bg": (34, 12, 20, 215)
+    }
+}
+
+
+def draw_procedural_vector_icon(
+    icon_type: str,
+    size: int = 140,
+    accent_color: Tuple[int, int, int] = (255, 225, 0),
+    secondary_color: Tuple[int, int, int] = (0, 245, 212)
+) -> Image.Image:
+    """
+    رسم أيقونة فيكتور عالية الدقة (Supersampled 2x) داخل درع زجاجي مضيء
+    لضمان وجود رسومات موشن جرافيك جميلة دائماً حتى بدون ملفات خارجية.
+    """
+    ss = 2  # Supersampling للتنعيم الفائق
+    dim = size * ss
+    img = Image.new("RGBA", (dim, dim), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    cx, cy = dim // 2, dim // 2
+    r_outer = int(dim * 0.44)
+
+    # هالة مضيئة ودرع دائري زجاجي
+    draw.ellipse(
+        [(cx - r_outer - 6, cy - r_outer - 6), (cx + r_outer + 6, cy + r_outer + 6)],
+        fill=(accent_color[0], accent_color[1], accent_color[2], 45)
+    )
+    draw.ellipse(
+        [(cx - r_outer, cy - r_outer), (cx + r_outer, cy + r_outer)],
+        fill=(18, 25, 45, 230),
+        outline=(*accent_color, 240),
+        width=6
+    )
+    # قوس داخلي ثانوي
+    r_inner = int(r_outer * 0.84)
+    draw.arc(
+        [(cx - r_inner, cy - r_inner), (cx + r_inner, cy + r_inner)],
+        start=200, end=340,
+        fill=(*secondary_color, 190),
+        width=4
+    )
+
+    fg = (*accent_color, 255)
+    fg2 = (*secondary_color, 255)
+    white = (255, 255, 255, 255)
+
+    if icon_type in {"money", "finance", "growth", "chart"}:
+        # أعمدة بيانية صاعدة مع سهم نمو
+        bar_w = int(dim * 0.08)
+        base_y = cy + int(dim * 0.18)
+        heights = [int(dim * 0.14), int(dim * 0.24), int(dim * 0.35)]
+        xs = [cx - int(dim * 0.16), cx, cx + int(dim * 0.16)]
+        for bx, bh in zip(xs, heights):
+            draw.rounded_rectangle(
+                [(bx - bar_w // 2, base_y - bh), (bx + bar_w // 2, base_y)],
+                radius=6,
+                fill=fg2 if bh < heights[-1] else fg
+            )
+        # سهم صاعد
+        pts = [(xs[0], base_y - heights[0] - 12), (xs[1], base_y - heights[1] - 16), (xs[2], base_y - heights[2] - 20)]
+        draw.line(pts, fill=white, width=7)
+
+    elif icon_type in {"time", "clock", "speed"}:
+        # ساعة كرونومتر
+        cr = int(dim * 0.22)
+        draw.ellipse([(cx - cr, cy - cr), (cx + cr, cy + cr)], outline=white, width=6)
+        draw.line([(cx, cy), (cx, cy - int(cr * 0.65))], fill=fg, width=7)
+        draw.line([(cx, cy), (cx + int(cr * 0.55), cy + int(cr * 0.2))], fill=fg2, width=6)
+        draw.ellipse([(cx - 7, cy - 7), (cx + 7, cy + 7)], fill=fg)
+
+    elif icon_type in {"idea", "brain", "ai", "light"}:
+        # مصباح فكرة ذكي مع إشعاعات
+        br = int(dim * 0.16)
+        by = cy - int(dim * 0.04)
+        draw.ellipse([(cx - br, by - br), (cx + br, by + br)], fill=fg, outline=white, width=5)
+        draw.rounded_rectangle(
+            [(cx - int(br * 0.55), by + br - 4), (cx + int(br * 0.55), by + br + int(dim * 0.11))],
+            radius=6,
+            fill=fg2
+        )
+        for angle in range(0, 360, 45):
+            rad = math.radians(angle)
+            x1 = cx + int((br + 12) * math.cos(rad))
+            y1 = by + int((br + 12) * math.sin(rad))
+            x2 = cx + int((br + 26) * math.cos(rad))
+            y2 = by + int((br + 26) * math.sin(rad))
+            draw.line([(x1, y1), (x2, y2)], fill=white, width=5)
+
+    elif icon_type in {"question", "search", "why", "how"}:
+        # عدسة بحث وتحليل ذكية
+        lr = int(dim * 0.16)
+        lx, ly = cx - int(dim * 0.05), cy - int(dim * 0.05)
+        draw.ellipse([(lx - lr, ly - lr), (lx + lr, ly + lr)], outline=fg, width=8)
+        draw.line(
+            [(lx + int(lr * 0.7), ly + int(lr * 0.7)), (lx + int(lr * 1.65), ly + int(lr * 1.65))],
+            fill=fg2,
+            width=10
+        )
+
+    elif icon_type in {"code", "tech", "system"}:
+        # رمز برمجة وتقنية < / >
+        offset = int(dim * 0.16)
+        h_off = int(dim * 0.12)
+        draw.line([(cx - offset // 2, cy - h_off), (cx - offset, cy), (cx - offset // 2, cy + h_off)], fill=fg2, width=7)
+        draw.line([(cx + offset // 2, cy - h_off), (cx + offset, cy), (cx + offset // 2, cy + h_off)], fill=fg2, width=7)
+        draw.line([(cx + 12, cy - h_off - 6), (cx - 12, cy + h_off + 6)], fill=fg, width=7)
+
+    elif icon_type in {"warning", "alert", "fire", "important"}:
+        # صاعقة طاقة / تنبيه مهم
+        bolt = [
+            (cx + 10, cy - int(dim * 0.24)),
+            (cx - int(dim * 0.14), cy + 4),
+            (cx + 2, cy + 4),
+            (cx - 12, cy + int(dim * 0.24)),
+            (cx + int(dim * 0.15), cy - 6),
+            (cx - 2, cy - 6),
+        ]
+        draw.polygon(bolt, fill=fg, outline=white)
+
+    else:
+        # نجمة/هدف النجاح (Success / Star / Target)
+        points = []
+        outer_r = int(dim * 0.22)
+        inner_r = int(dim * 0.10)
+        for i in range(10):
+            ang = math.radians(i * 36 - 90)
+            r = outer_r if i % 2 == 0 else inner_r
+            points.append((cx + int(r * math.cos(ang)), cy + int(r * math.sin(ang))))
+        draw.polygon(points, fill=fg, outline=white)
+
+    return img.resize((size, size), Image.Resampling.LANCZOS)
+
+
+# ==============================================================================
+# 3. تحليل الجمل واستخراج الكلمة المفتاحية ونوع الأيقونة (AI + Algerian Darija Rules)
+# ==============================================================================
+def analyze_sentence_visual_metadata(
+    sentence: str,
+    model_name: str = "llama3",
+    ollama_url: str = "http://localhost:11434",
+    groq_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None
+) -> Dict[str, str]:
+    """
+    استخراج:
+    - keyword: كلمة أو عنوان مختصر (1 إلى 3 كلمات) يلخص الفكرة لعرضه في بطاقة الموشن جرافيك.
+    - icon_type: فئة الأيقونة المناسبة (idea, money, time, question, code, warning, success).
+    يدعم الدارجة الجزائرية والعربية الفصحى عبر السحابة أو محلياً.
+    """
+    if not sentence or not sentence.strip():
+        return {"keyword": "نقطة مهمة", "icon_type": "success"}
+
+    # تصنيف سريع للكلمات المفتاحية الجزائرية والعربية كقاعدة مضمونة
+    s_lower = sentence.strip()
+    heuristic_icon = "success"
+    if any(w in s_lower for w in ["دراهم", "مال", "ربح", "سومة", "سعر", "مشروع", "بيع", "شراء", "تجارة", "دولار", "دينار", "ثروة"]):
+        heuristic_icon = "money"
+    elif any(w in s_lower for w in ["وقت", "ساعة", "نهار", "يوم", "بكري", "درك", "دوكا", "سرعة", "تاريخ", "دقيقة"]):
+        heuristic_icon = "time"
+    elif any(w in s_lower for w in ["علاش", "كيفاش", "واش", "شكون", "وين", "سؤال", "مشكل", "سبب", "طريقة", "؟"]):
+        heuristic_icon = "question"
+    elif any(w in s_lower for w in ["ذكاء", "فكرة", "عفسة", "معلومة", "تعلم", "قراية", "فهم", "عقل", "إبداع", "سر"]):
+        heuristic_icon = "idea"
+    elif any(w in s_lower for w in ["برمجة", "تطبيق", "موقع", "تليفون", "انترنت", "كود", "خوارزمية", "حاسوب", "فيديو"]):
+        heuristic_icon = "code"
+    elif any(w in s_lower for w in ["رد بالك", "خطير", "مهم", "بزاف", "لازم", "ضروري", "غلط", "احذر", "قوة"]):
+        heuristic_icon = "warning"
+
+    prompt = (
+        f"الجملة التالية بالدارجة الجزائرية أو العربية: \"{sentence}\"\n"
+        "استخرج منها:\n"
+        "1. keyword: عنوان جذاب مختصر جداً (كلمة أو كلمتين فقط بالعربية الفصحى أو الدارجة الواضحة) يمثل الفكرة الرئيسية.\n"
+        "2. icon_type: اختر قيمة واحدة فقط من القائمة: [idea, money, time, question, code, warning, success].\n"
+        "أرجع JSON فقط بهذا الشكل: {\"keyword\": \"...\", \"icon_type\": \"...\"}"
+    )
+
+    ai_resp = query_hybrid_llm(
+        prompt=prompt,
+        system_prompt="أنت مخرج موشن جرافيك محترف يفهم الدارجة الجزائرية والعربية. أرجع JSON فقط.",
+        groq_api_key=groq_api_key,
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key,
+        ollama_model=model_name,
+        ollama_url=ollama_url,
+        temperature=0.2,
+        max_tokens=100
+    )
+
+    if ai_resp:
+        try:
+            match = re.search(r"\{.*?\}", ai_resp, re.DOTALL)
+            if match:
+                data = json.loads(match.group(0))
+                kw = str(data.get("keyword", "")).strip()
+                ic = str(data.get("icon_type", heuristic_icon)).strip().lower()
+                if kw and len(kw) <= 28:
+                    if ic not in {"idea", "money", "time", "question", "code", "warning", "success"}:
+                        ic = heuristic_icon
+                    return {"keyword": kw, "icon_type": ic}
+        except Exception:
+            pass
+
+    # استخراج ذكي محلي في حال عدم توفر استجابة JSON
+    stop_words = {
+        "في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "هاذ", "هذيك", "اللي", "التي",
+        "الذي", "أن", "إن", "ما", "لا", "كان", "هو", "هي", "راكم", "راني", "باش", "كيما"
+    }
+    words = [w for w in re.findall(r"[\w\u0621-\u064A]+", sentence) if w not in stop_words and len(w) > 2]
+    keyword = words[0] if words else "فكرة أساسية"
+    if len(words) >= 2 and len(words[0]) + len(words[1]) < 14:
+        keyword = f"{words[0]} {words[1]}"
+    return {"keyword": keyword, "icon_type": heuristic_icon}
+
+
 def extract_keyword_ollama(
     sentence: str,
     model_name: str = "llama3",
     ollama_url: str = "http://localhost:11434"
 ) -> str:
-    """
-    الاتصال بخادم Ollama المحلي لإرسال الجملة واستخراج الكلمة المفتاحية الأكثر تعبيراً.
-    مزودة بنظام Fallback ذكي يعمل في حال كان Ollama غير مشغل.
-    """
-    if not sentence or not sentence.strip():
-        return ""
-
-    prompt = (
-        f"أنت خبير في تلخيص وتحليل النصوص. بناءً على هذه الجملة: '{sentence}'، "
-        "استخرج كلمة مفتاحية رئيسية واحدة فقط تمثل المفهوم الأهم (مثال: ذكاء، مال، وقت، نجاح، تسويق). "
-        "أرجع الكلمة المفتاحية فقط دون أي شرح أو مقدمات أو علامات ترقيم."
-    )
-
-    try:
-        response = requests.post(
-            f"{ollama_url}/api/generate",
-            json={
-                "model": model_name,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": 0.2,
-                    "num_predict": 10
-                }
-            },
-            timeout=8
-        )
-
-        if response.status_code == 200:
-            raw_text = response.json().get("response", "").strip()
-            # تنظيف النتيجة لاستخراج أول كلمة صالحة فقط
-            words = re.findall(r"[\w\u0621-\u064A]+", raw_text)
-            if words:
-                keyword = words[0]
-                logger.info(f"Ollama ({model_name}) استخرج الكلمة المفتاحية: [{keyword}] للجملة: '{sentence[:30]}...'")
-                return keyword
-
-    except Exception as e:
-        logger.warning(f"تعذر الاتصال بـ Ollama ({str(e)}). جاري تفعيل نظام الاستخراج البديل المدمج.")
-
-    # نظام بديل (Heuristic Fallback): استخراج أطول كلمة ذات دلالة وتجاوز حروف الجر
-    stop_words = {"في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "التي", "الذي", "أن", "إن", "ما", "لا", "كان", "هو", "هي"}
-    words = [w for w in re.findall(r"[\w\u0621-\u064A]+", sentence) if w not in stop_words and len(w) > 2]
-    if words:
-        words.sort(key=len, reverse=True)
-        return words[0]
-
-    return ""
+    """دالة متوافقة مع الإصدارات السابقة لاستخراج الكلمة المفتاحية."""
+    meta = analyze_sentence_visual_metadata(sentence, model_name=model_name, ollama_url=ollama_url)
+    return meta["keyword"]
 
 
 def find_matching_icon(keyword: str, icons_dir: str = "assets/icons") -> Optional[str]:
-    """البحث عن أيقونة تطابق الكلمة المفتاحية في مجلد assets/icons/."""
+    """البحث عن أيقونة تطابق الكلمة المفتاحية في مجلد assets/icons/ إن وجدت."""
     if not keyword or not os.path.exists(icons_dir):
         return None
-
     kw = keyword.strip().lower()
     valid_exts = {".png", ".jpg", ".jpeg", ".webp"}
-
     for fname in os.listdir(icons_dir):
         base, ext = os.path.splitext(fname.lower())
-        if ext in valid_exts:
-            if base == kw or kw in base or base in kw:
-                return os.path.join(icons_dir, fname)
-
+        if ext in valid_exts and (base == kw or kw in base or base in kw):
+            return os.path.join(icons_dir, fname)
     return None
 
 
 # ==============================================================================
-# 3. محرك تصيير الكلمات والتحريك (Pop-up & Rise Kinetic Typography)
+# 4. توليد الخلفية السينمائية وطبقات الموشن جرافيك (Studio Canvas & Overlays)
 # ==============================================================================
+def create_studio_background(
+    width: int,
+    height: int,
+    theme_name: str = "cyber_gold"
+) -> np.ndarray:
+    """
+    إنشاء خلفية موشن جرافيك سينمائية تحتوي على:
+    - تدرج لوني عميق (Vertical Gradient).
+    - إضاءة محيطية في المنتصف (Radial Spotlight Glow).
+    - شبكة هندسية خفيفة جداً وعناصر HUD جمالية في الزوايا.
+    """
+    theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
+    top_c = np.array(theme["top_bg"], dtype=np.float32)
+    bot_c = np.array(theme["bottom_bg"], dtype=np.float32)
+    glow_c = np.array(theme["glow"], dtype=np.float32)
+
+    y_idx = np.linspace(0, 1, height, dtype=np.float32)[:, None, None]
+    grad = top_c * (1.0 - y_idx) + bot_c * y_idx
+    canvas_np = np.broadcast_to(grad, (height, width, 3)).copy()
+
+    # إضافة إضاءة دائرية ناعمة في المركز (Radial Glow)
+    yy, xx = np.ogrid[:height, :width]
+    cx, cy = width * 0.5, height * 0.45
+    dist_sq = ((xx - cx) / (width * 0.55)) ** 2 + ((yy - cy) / (height * 0.42)) ** 2
+    radial_mask = np.exp(-dist_sq * 1.8)[:, :, None] * 0.24
+    canvas_np = np.clip(canvas_np * (1.0 - radial_mask) + glow_c * radial_mask, 0, 255).astype(np.uint8)
+
+    img = Image.fromarray(canvas_np, mode="RGB")
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # رسم شبكة هندسية ناعمة وزخارف زوايا
+    step = max(60, min(width, height) // 12)
+    for x in range(0, width, step):
+        draw.line([(x, 0), (x, height)], fill=(255, 255, 255, 10), width=1)
+    for y in range(0, height, step):
+        draw.line([(0, y), (width, y)], fill=(255, 255, 255, 10), width=1)
+
+    # أقواس زخرفية في الزوايا
+    pad = 36
+    corner_len = 55
+    acc = (*theme["secondary"], 110)
+    # أعلى اليسار
+    draw.line([(pad, pad), (pad + corner_len, pad)], fill=acc, width=3)
+    draw.line([(pad, pad), (pad, pad + corner_len)], fill=acc, width=3)
+    # أعلى اليمين
+    draw.line([(width - pad - corner_len, pad), (width - pad, pad)], fill=acc, width=3)
+    draw.line([(width - pad, pad), (width - pad, pad + corner_len)], fill=acc, width=3)
+    # أسفل اليسار
+    draw.line([(pad, height - pad), (pad + corner_len, height - pad)], fill=acc, width=3)
+    draw.line([(pad, height - pad - corner_len), (pad, height - pad)], fill=acc, width=3)
+    # أسفل اليمين
+    draw.line([(width - pad - corner_len, height - pad), (width - pad, height - pad)], fill=acc, width=3)
+    draw.line([(width - pad, height - pad - corner_len), (width - pad, height - pad)], fill=acc, width=3)
+
+    return np.array(img)
+
+
 def render_kinetic_frame(
     current_word: str,
     prev_word: Optional[str],
     video_width: int,
     video_height: int,
-    icon_path: Optional[str] = None
+    icon_path: Optional[str] = None,
+    keyword_title: Optional[str] = None,
+    icon_type: str = "success",
+    phrase_words: Optional[List[str]] = None,
+    active_word_index: int = 0,
+    progress_ratio: float = 0.0,
+    theme_name: str = "cyber_gold"
 ) -> np.ndarray:
     """
-    تصيير إطار شفاف يحتوي على:
-    - الكلمة الحالية: تظهر كبيرة في المنتصف باللون الأصفر (#FFE600).
-    - الكلمة السابقة: تصغر وترتفع للأعلى بلون رمادي/شفاف (#90A4AE).
-    - الأيقونة المفتاحية: تظهر في الأعلى عند توفرها.
+    تصيير إطار موشن جرافيك احترافي شفاف (RGBA) يضم:
+    1. شارة علوية زجاجية (Topic Header Badge) مع أيقونة فيكتور مرسومة بدقة.
+    2. الكلمة/العبارة السابقة في الأعلى بشفافية ناعمة.
+    3. بطاقة الكلمة النشطة في المنتصف مع إبراز مضيء وعرض سياق الجملة (Karaoke Context).
+    4. شريط تقدم سفلي متفاعل مع الصوت.
     """
+    theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
     center_x = video_width // 2
     center_y = video_height // 2
 
-    # أبعاد الخطوط المتجاوبة
-    current_font_size = max(48, int(video_height * 0.075))
-    prev_font_size = max(28, int(current_font_size * 0.58))
+    main_font_size = max(50, int(min(video_width, video_height) * 0.082))
+    phrase_font_size = max(32, int(main_font_size * 0.56))
+    badge_font_size = max(26, int(main_font_size * 0.44))
 
-    current_font = get_arabic_font(current_font_size, bold=True)
-    prev_font = get_arabic_font(prev_font_size, bold=False)
+    main_font = get_arabic_font(main_font_size, bold=True)
+    phrase_font = get_arabic_font(phrase_font_size, bold=True)
+    badge_font = get_arabic_font(badge_font_size, bold=False)
 
-    # 1. رسم الأيقونة (إن وجدت) أعلى الكلمة السابقة
+    # 1. رسم الأيقونة (إما من ملف أو مرسومة برمجياً كفيكتور) + شارة العنوان المفتاحي
+    icon_size = max(110, int(min(video_width, video_height) * 0.14))
+    icon_y = center_y - int(main_font_size * 2.55)
+
+    icon_img = None
     if icon_path and os.path.exists(icon_path):
         try:
-            icon_img = Image.open(icon_path).convert("RGBA")
-            icon_size = max(64, int(video_height * 0.12))
-            icon_img = icon_img.resize((icon_size, icon_size), Image.Resampling.LANCZOS)
-            icon_x = center_x - (icon_size // 2)
-            icon_y = center_y - int(current_font_size * 2.3)
-            canvas.paste(icon_img, (icon_x, icon_y), icon_img)
-        except Exception as e:
-            logger.warning(f"تعذر تحميل الأيقونة: {e}")
-
-    # 2. رسم الكلمة السابقة (تصغر وترتفع للأعلى)
-    if prev_word:
-        prev_y = center_y - int(current_font_size * 1.05)
-        # رسم خلفية خفيفة جداً للكلمة السابقة
-        try:
-            bbox_prev = draw.textbbox((0, 0), prev_word, font=prev_font, direction="rtl")
+            icon_img = Image.open(icon_path).convert("RGBA").resize((icon_size, icon_size), Image.Resampling.LANCZOS)
         except Exception:
-            bbox_prev = draw.textbbox((0, 0), prev_word, font=prev_font)
+            icon_img = None
 
-        pw = bbox_prev[2] - bbox_prev[0]
-        ph = bbox_prev[3] - bbox_prev[1]
-        draw.rounded_rectangle(
-            [(center_x - (pw//2) - 18, prev_y - (ph//2) - 8),
-             (center_x + (pw//2) + 18, prev_y + (ph//2) + 8)],
-            radius=12,
-            fill=(20, 20, 35, 130)
+    if icon_img is None:
+        icon_img = draw_procedural_vector_icon(
+            icon_type=icon_type,
+            size=icon_size,
+            accent_color=theme["primary"],
+            secondary_color=theme["secondary"]
         )
 
-        try:
-            draw.text(
-                (center_x, prev_y),
-                prev_word,
-                font=prev_font,
-                fill=(176, 190, 197, 210),  # رمادي فاتح شفاف
-                anchor="mm",
-                direction="rtl"
-            )
-        except Exception:
-            draw.text(
-                (center_x, prev_y),
-                prev_word,
-                font=prev_font,
-                fill=(176, 190, 197, 210),
-                anchor="mm"
-            )
+    icon_x = center_x - (icon_size // 2)
+    if icon_y > 20:
+        canvas.paste(icon_img, (icon_x, icon_y), icon_img)
 
-    # 3. رسم الكلمة الحالية (كبيرة في المنتصف مع Pop-up card)
-    curr_y = center_y + int(current_font_size * 0.15)
-    try:
-        bbox_curr = draw.textbbox((0, 0), current_word, font=current_font, direction="rtl")
-    except Exception:
-        bbox_curr = draw.textbbox((0, 0), current_word, font=current_font)
+    # شارة الكلمة المفتاحية أسفل الأيقونة مباشرة
+    if keyword_title:
+        kw_y = icon_y + icon_size + int(badge_font_size * 0.85)
+        kw_w, kw_h = measure_arabic_text(draw, keyword_title, badge_font)
+        pill_pad_x = 28
+        pill_pad_y = 12
+        draw.rounded_rectangle(
+            [(center_x - kw_w // 2 - pill_pad_x, kw_y - kw_h // 2 - pill_pad_y),
+             (center_x + kw_w // 2 + pill_pad_x, kw_y + kw_h // 2 + pill_pad_y)],
+            radius=24,
+            fill=(15, 23, 42, 220),
+            outline=(*theme["secondary"], 200),
+            width=2
+        )
+        draw_arabic_text(
+            draw,
+            (center_x, kw_y),
+            keyword_title,
+            font=badge_font,
+            fill=(*theme["secondary"], 255)
+        )
 
-    cw = bbox_curr[2] - bbox_curr[0]
-    ch = bbox_curr[3] - bbox_curr[1]
-    pad_x = int(current_font_size * 0.5)
-    pad_y = int(current_font_size * 0.3)
+    # 2. رسم الكلمة السابقة (ترتفع للأعلى وتصغر بنعومة)
+    if prev_word and prev_word != current_word:
+        prev_y = center_y - int(main_font_size * 0.95)
+        pw, ph = measure_arabic_text(draw, prev_word, badge_font)
+        draw.rounded_rectangle(
+            [(center_x - pw // 2 - 22, prev_y - ph // 2 - 10),
+             (center_x + pw // 2 + 22, prev_y + ph // 2 + 10)],
+            radius=16,
+            fill=(20, 26, 45, 135)
+        )
+        draw_arabic_text(
+            draw,
+            (center_x, prev_y),
+            prev_word,
+            font=badge_font,
+            fill=(190, 205, 220, 195)
+        )
 
-    # بطاقة داكنة شبه شفافة محيطة بالكلمة الحالية
+    # 3. رسم البطاقة الرئيسية للكلمة الحالية بالمنتصف (Pop-up Main Kinetic Card)
+    curr_y = center_y + int(main_font_size * 0.20)
+    cw, ch = measure_arabic_text(draw, current_word, main_font)
+    pad_x = max(42, int(main_font_size * 0.65))
+    pad_y = max(24, int(main_font_size * 0.38))
+
+    box_x1 = center_x - cw // 2 - pad_x
+    box_y1 = curr_y - ch // 2 - pad_y
+    box_x2 = center_x + cw // 2 + pad_x
+    box_y2 = curr_y + ch // 2 + pad_y
+
+    # ظل خلفي مضيء للبطاقة
     draw.rounded_rectangle(
-        [(center_x - (cw//2) - pad_x, curr_y - (ch//2) - pad_y),
-         (center_x + (cw//2) + pad_x, curr_y + (ch//2) + pad_y)],
-        radius=18,
-        fill=(0, 0, 0, 190),
-        outline=(255, 230, 0, 120),  # إطار أصفر خفيف
-        width=2
+        [(box_x1 - 6, box_y1 - 6), (box_x2 + 6, box_y2 + 6)],
+        radius=28,
+        fill=(*theme["primary"], 45)
+    )
+    # جسم البطاقة الزجاجية الداكنة
+    draw.rounded_rectangle(
+        [(box_x1, box_y1), (box_x2, box_y2)],
+        radius=24,
+        fill=theme["card_bg"],
+        outline=(*theme["primary"], 230),
+        width=4
+    )
+    # شريط زخرفي جانبي داخل البطاقة
+    draw.rounded_rectangle(
+        [(box_x2 - 12, box_y1 + 14), (box_x2 - 6, box_y2 - 14)],
+        radius=3,
+        fill=(*theme["secondary"], 255)
     )
 
-    try:
-        draw.text(
-            (center_x, curr_y),
-            current_word,
-            font=current_font,
-            fill=(255, 230, 0, 255),  # أصفر تيك توك ساطع
-            anchor="mm",
-            direction="rtl"
+    draw_arabic_text(
+        draw,
+        (center_x, curr_y),
+        current_word,
+        font=main_font,
+        fill=(*theme["primary"], 255),
+        stroke_width=2,
+        stroke_fill=(0, 0, 0, 220)
+    )
+
+    # 4. شريط سياق العبارة أسفل الكلمة الرئيسية (يعرض 3-4 كلمات من الجملة لسهولة المتابعة)
+    if phrase_words and len(phrase_words) > 1:
+        phrase_text = " ".join(phrase_words)
+        sub_y = box_y2 + int(phrase_font_size * 1.45)
+        sw, sh = measure_arabic_text(draw, phrase_text, phrase_font)
+        max_bar_w = int(video_width * 0.88)
+        bar_w = min(max_bar_w, sw + 48)
+        draw.rounded_rectangle(
+            [(center_x - bar_w // 2, sub_y - sh // 2 - 14),
+             (center_x + bar_w // 2, sub_y + sh // 2 + 14)],
+            radius=18,
+            fill=(10, 15, 30, 195),
+            outline=(255, 255, 255, 65),
+            width=1
         )
-    except Exception:
-        draw.text(
-            (center_x, curr_y),
-            current_word,
-            font=current_font,
-            fill=(255, 230, 0, 255),
-            anchor="mm"
+        draw_arabic_text(
+            draw,
+            (center_x, sub_y),
+            phrase_text,
+            font=phrase_font,
+            fill=(245, 247, 250, 240)
+        )
+
+    # 5. شريط التقدم السفلي الأنيق
+    if progress_ratio > 0:
+        bar_margin = int(video_width * 0.12)
+        bar_y = video_height - 56
+        full_w = video_width - 2 * bar_margin
+        prog_w = int(full_w * min(1.0, max(0.02, progress_ratio)))
+        draw.rounded_rectangle(
+            [(bar_margin, bar_y), (bar_margin + full_w, bar_y + 10)],
+            radius=5,
+            fill=(255, 255, 255, 45)
+        )
+        draw.rounded_rectangle(
+            [(bar_margin, bar_y), (bar_margin + prog_w, bar_y + 10)],
+            radius=5,
+            fill=(*theme["secondary"], 240)
+        )
+
+    return np.array(canvas)
+
+
+def render_video_motion_overlay_card(
+    keyword_title: str,
+    icon_type: str,
+    video_width: int,
+    video_height: int,
+    mode: str = "corner_card",
+    subtitle_line: str = "",
+    theme_name: str = "cyber_gold"
+) -> np.ndarray:
+    """
+    توليد طبقة موشن جرافيك شفافة (Overlay) مخصصة للدمج فوق الفيديو الأصلي للمستخدم:
+    - mode == "corner_card": بطاقة أنفوجرافيك زجاجية علوية (Upper-Right / Upper-Center Glass Card) مع أيقونة فيكتور وعنوان الفكرة.
+    - mode == "graphic_burst": لوحة موشن جرافيك سينمائية بارزة (Split / Floating Callout Panel) للجمل المحورية.
+    """
+    theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
+    canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    title_font_size = max(28, int(min(video_width, video_height) * 0.042))
+    sub_font_size = max(22, int(title_font_size * 0.78))
+    title_font = get_arabic_font(title_font_size, bold=True)
+    sub_font = get_arabic_font(sub_font_size, bold=False)
+
+    icon_size = max(68, int(min(video_width, video_height) * 0.085))
+    icon_img = draw_procedural_vector_icon(
+        icon_type=icon_type,
+        size=icon_size,
+        accent_color=theme["primary"],
+        secondary_color=theme["secondary"]
+    )
+
+    if mode == "graphic_burst":
+        # بطاقة موشن جرافيك عريضة بارزة في الثلث العلوي من الفيديو مع هالة ضوئية
+        tw, th = measure_arabic_text(draw, keyword_title, title_font)
+        card_w = min(int(video_width * 0.86), max(tw + icon_size + 90, int(video_width * 0.55)))
+        card_h = icon_size + 44
+        cx = video_width // 2
+        top_y = int(video_height * 0.09)
+
+        x1, y1 = cx - card_w // 2, top_y
+        x2, y2 = cx + card_w // 2, top_y + card_h
+
+        # هالة وخلفية زجاجية مزدوجة
+        draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 55))
+        draw.rounded_rectangle(
+            [(x1, y1), (x2, y2)],
+            radius=24,
+            fill=(11, 17, 34, 232),
+            outline=(*theme["primary"], 240),
+            width=3
+        )
+        # شريط نيون سفلي داخل البطاقة
+        draw.rounded_rectangle(
+            [(x1 + 24, y2 - 8), (x2 - 24, y2 - 3)],
+            radius=3,
+            fill=(*theme["secondary"], 255)
+        )
+
+        # وضع الأيقونة على يمين البطاقة والنص بجانبها
+        icon_x = x2 - icon_size - 22
+        icon_y = y1 + (card_h - icon_size) // 2
+        canvas.paste(icon_img, (icon_x, icon_y), icon_img)
+
+        text_center_x = x1 + (icon_x - x1) // 2
+        text_center_y = y1 + card_h // 2
+        draw_arabic_text(
+            draw,
+            (text_center_x, text_center_y),
+            keyword_title,
+            font=title_font,
+            fill=(*theme["primary"], 255)
+        )
+    else:
+        # بطاقة زاوية علوية أنيقة (Upper-Right Infographic Badge) لا تغطي وجه المتحدث
+        tw, th = measure_arabic_text(draw, keyword_title, title_font)
+        card_w = min(int(video_width * 0.82), tw + icon_size + 68)
+        card_h = icon_size + 24
+        margin_x = int(video_width * 0.045)
+        margin_y = int(video_height * 0.065)
+
+        x2 = video_width - margin_x
+        x1 = max(margin_x, x2 - card_w)
+        y1 = margin_y
+        y2 = y1 + card_h
+
+        draw.rounded_rectangle(
+            [(x1, y1), (x2, y2)],
+            radius=20,
+            fill=(15, 23, 42, 215),
+            outline=(*theme["secondary"], 215),
+            width=3
+        )
+        icon_x = x2 - icon_size - 14
+        icon_y = y1 + (card_h - icon_size) // 2
+        canvas.paste(icon_img, (icon_x, icon_y), icon_img)
+
+        text_cx = x1 + (icon_x - x1) // 2
+        text_cy = y1 + card_h // 2
+        draw_arabic_text(
+            draw,
+            (text_cx, text_cy),
+            keyword_title,
+            font=title_font,
+            fill=(255, 255, 255, 255)
         )
 
     return np.array(canvas)
 
 
 # ==============================================================================
-# 4. مسار المعالجة والتصدير الرئيسي
+# 5. مسار التوليد والتصدير الرئيسي لفيديو الموشن جرافيك النصي
 # ==============================================================================
 def create_kinetic_typography_video(
     input_path: str,
     output_path: str,
-    video_resolution: Tuple[int, int] = (1080, 1920),  # 9:16 عمودي لوسائل التواصل
+    video_resolution: Tuple[int, int] = (1080, 1920),
     whisper_model: str = "small",
     ollama_model: str = "llama3",
+    dialect_mode: str = "algerian_darija",
+    groq_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
     """
-    إنشاء فيديو موشن جرافيك نصي متكامل بدون استخدام فيديو المستخدم الأصلي:
-    1. استخراج الصوت وتفريغه عبر faster-whisper.
-    2. استخراج الكلمات المفتاحية عبر Ollama والربط بالأيقونات.
-    3. إنشاء خلفية تدرج لوني سينمائية.
-    4. تراكب الكلمات المتحركة المتزامنة (Pop-up + Rise).
+    إنشاء فيديو موشن جرافيك نصي وأنفوجرافيك متكامل:
+    1. تفريغ الصوت بدقة الكلمة مع دعم كامل للدارجة الجزائرية والعربية.
+    2. استخراج الأفكار الرئيسية ونوع الأيقونة لكل جملة عبر الذكاء الاصطناعي الهجين.
+    3. رسم خلفية أستوديو سينمائية مع أيقونات فيكتور ديناميكية وبطاقات كاريوكي مضيئة.
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف المدخل غير موجود: {input_path}")
@@ -309,11 +822,7 @@ def create_kinetic_typography_video(
             progress_callback(val, msg)
         logger.info(f"Progress: {val*100:.1f}% - {msg}")
 
-    from moviepy.editor import (
-        AudioFileClip,
-        ImageClip,
-        CompositeVideoClip
-    )
+    from moviepy.editor import AudioFileClip, ImageClip, CompositeVideoClip
 
     audio_clip = None
     bg_clip = None
@@ -321,37 +830,65 @@ def create_kinetic_typography_video(
     frame_clips = []
 
     try:
-        update_progress(0.1, "1/4: قراءة وتفريغ الملف الصوتي بدقة الكلمة عبر faster-whisper...")
+        update_progress(0.1, "1/4: قراءة وتفريغ الصوت (بدعم الدارجة الجزائرية والعربية)...")
         audio_clip = AudioFileClip(input_path)
         total_duration = audio_clip.duration
 
         if total_duration <= 0.2:
             raise ValueError("الملف الصوتي قصير جداً وغير صالح للمعالجة.")
 
-        # استخراج الكلمات والجمل
-        words_data = transcribe_audio(input_path, model_size=whisper_model, language="ar")
-        sentences_data = transcribe_sentences(input_path, model_size=whisper_model, language="ar")
+        words_data = transcribe_audio(
+            input_path,
+            model_size=whisper_model,
+            language="ar",
+            dialect_mode=dialect_mode,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key
+        )
+        sentences_data = transcribe_sentences(
+            input_path,
+            model_size=whisper_model,
+            language="ar",
+            dialect_mode=dialect_mode,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key
+        )
 
         if not words_data:
             raise ValueError("لم يتم استخراج أي كلمات من الملف الصوتي.")
 
-        # الخطوة 2: استخراج الكلمات المفتاحية لكل جملة والبحث عن الأيقونات
-        update_progress(0.3, f"2/4: استخراج الكلمات المفتاحية عبر الذكاء الاصطناعي المحلي ({ollama_model})...")
-        sentence_icon_map = {}
-        for sent in sentences_data:
+        update_progress(0.3, "2/4: تصميم المشاهد والأيقونات المفتاحية عبر الذكاء الاصطناعي...")
+        theme_keys = list(MOTION_THEMES.keys())
+        sentence_meta_list = []
+
+        for idx, sent in enumerate(sentences_data):
             sent_text = sent["text"]
-            keyword = extract_keyword_ollama(sent_text, model_name=ollama_model)
-            matched_icon = find_matching_icon(keyword, icons_dir=icons_dir)
-            sentence_icon_map[sent["start"]] = (keyword, matched_icon)
+            meta = analyze_sentence_visual_metadata(
+                sent_text,
+                model_name=ollama_model,
+                groq_api_key=groq_api_key,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key
+            )
+            matched_icon = find_matching_icon(meta["keyword"], icons_dir=icons_dir)
+            sentence_meta_list.append({
+                "start": sent["start"],
+                "end": sent["end"],
+                "keyword": meta["keyword"],
+                "icon_type": meta["icon_type"],
+                "icon_path": matched_icon,
+                "theme": theme_keys[idx % len(theme_keys)],
+                "words": [w["word"] for w in sent.get("words", [])]
+            })
 
-        # الخطوة 3: إنشاء خلفية التدرج اللوني السينمائية
-        update_progress(0.5, "3/4: توليد خلفية التدرج اللوني (Gradient Canvas)...")
+        update_progress(0.5, "3/4: توليد خلفية الأستوديو السينمائية...")
         w, h = video_resolution
-        gradient_arr = create_vertical_gradient(width=w, height=h)
-        bg_clip = ImageClip(gradient_arr).set_duration(total_duration)
+        studio_bg_arr = create_studio_background(width=w, height=h, theme_name="cyber_gold")
+        bg_clip = ImageClip(studio_bg_arr).set_duration(total_duration)
 
-        # الخطوة 4: بناء إطارات Kinetic Typography المتزامنة
-        update_progress(0.7, "4/4: إنشاء الكروت النصية المتزامنة (Pop-up & Rise Animation)...")
+        update_progress(0.7, "4/4: بناء طبقات الموشن جرافيك والأيقونات الفيكتور المتزامنة...")
         for i, item in enumerate(words_data):
             curr_w = item["word"]
             prev_w = words_data[i - 1]["word"] if i > 0 else None
@@ -361,25 +898,39 @@ def create_kinetic_typography_video(
             if w_start >= total_duration:
                 continue
 
-            # مدة بقاء الكلمة الحالية: حتى بداية الكلمة التالية أو انتهاء الكلمة
             if i + 1 < len(words_data):
                 next_start = words_data[i + 1]["start"]
-                duration = max(0.12, next_start - w_start)
+                duration = max(0.10, next_start - w_start)
             else:
                 duration = max(0.15, min(w_end - w_start, total_duration - w_start))
 
-            # البحث عن أيقونة الجملة التي تنتمي إليها هذه الكلمة
-            current_icon = None
-            for s_start, (kw, icon_p) in sentence_icon_map.items():
-                if w_start >= s_start:
-                    current_icon = icon_p
+            # تحديد الجملة الحالية لعرض أيقونتها وعنوانها وسياقها
+            active_meta = sentence_meta_list[0] if sentence_meta_list else {
+                "keyword": "موشن جرافيك",
+                "icon_type": "success",
+                "icon_path": None,
+                "theme": "cyber_gold",
+                "words": [curr_w]
+            }
+            for sm in sentence_meta_list:
+                if w_start >= sm["start"] - 0.05:
+                    active_meta = sm
+
+            # نافذة قصيرة من الكلمات المحيطة (4 كلمات)
+            window_start = (i // 4) * 4
+            phrase_window = [w_obj["word"] for w_obj in words_data[window_start:window_start + 4]]
 
             frame_arr = render_kinetic_frame(
                 current_word=curr_w,
                 prev_word=prev_w,
                 video_width=w,
                 video_height=h,
-                icon_path=current_icon
+                icon_path=active_meta["icon_path"],
+                keyword_title=active_meta["keyword"],
+                icon_type=active_meta["icon_type"],
+                phrase_words=phrase_window,
+                progress_ratio=(w_start / max(1.0, total_duration)),
+                theme_name=active_meta["theme"]
             )
 
             txt_clip = (
@@ -390,11 +941,10 @@ def create_kinetic_typography_video(
             )
             frame_clips.append(txt_clip)
 
-        # دمج الخلفية المتدرجة مع الصوت وطبقات الكلمات المتحركة
         composite_layers = [bg_clip, *frame_clips]
         final_video = CompositeVideoClip(composite_layers, size=(w, h)).set_audio(audio_clip)
 
-        update_progress(0.85, "جاري رندرة وتصدير فيديو الموشن جرافيك النصي...")
+        update_progress(0.85, "جاري رندرة وتصدير فيديو الموشن جرافيك النهائي...")
         temp_audio_file = os.path.join(temp_dir, "temp_motion_audio.m4a")
 
         final_video.write_videofile(
@@ -409,7 +959,7 @@ def create_kinetic_typography_video(
             logger=None
         )
 
-        update_progress(1.0, "تم إنتاج فيديو Kinetic Typography بنجاح!")
+        update_progress(1.0, "تم إنتاج فيديو الموشن جرافيك الاحترافي بنجاح!")
         return output_path
 
     except Exception as err:
@@ -422,19 +972,16 @@ def create_kinetic_typography_video(
                 fc.close()
             except Exception:
                 pass
-
         if bg_clip is not None:
             try:
                 bg_clip.close()
             except Exception:
                 pass
-
         if audio_clip is not None:
             try:
                 audio_clip.close()
             except Exception:
                 pass
-
         if final_video is not None:
             try:
                 final_video.close()

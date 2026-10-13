@@ -1,24 +1,25 @@
 # ==============================================================================
-# AI Video Automation & Motion Graphics System - Requirements
+# AI Video Automation & Motion Graphics System (Cloud + Local Hybrid)
 # ==============================================================================
 
-# Web User Interface
-streamlit>=1.35.0
+# Web User Interface (v1.39+ supports native st.audio_input microphone recording)
+streamlit>=1.39.0
 
 # Video & Audio Processing Engines
-# Note: moviepy v1.0.3 provides rock-solid backward and forward compatibility with standard subclip API
 moviepy>=1.0.3,<2.0.0
 ffmpeg-python>=0.2.0
 pydub>=0.25.1
 
-# High-Speed Local Speech Transcription (Whisper)
+# Speech Transcription (Local Faster-Whisper + Cloud Whisper Support)
 faster-whisper>=1.0.2
 
-# Motion Graphics & Visual Animation
+# Motion Graphics, Visual Animation & Proper Arabic Typography Shaping
 manim>=0.18.1
 Pillow>=10.2.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
 
-# Local AI / LLM Integration (Ollama Local REST API) & Utilities
+# Cloud & Local AI Integration & Utilities
 requests>=2.31.0
 numpy>=1.24.3,<2.0.0
 tqdm>=4.66.0
