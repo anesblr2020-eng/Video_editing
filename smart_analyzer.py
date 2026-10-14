@@ -12,7 +12,29 @@ if _CURRENT_DIR not in sys.path:
 
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+    import PIL.ImageDraw
+_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
+
+def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
+    try:
+        if isinstance(xy[0], (list, tuple)):
+            (x0, y0), (x1, y1) = xy
+        else:
+            x0, y0, x1, y1 = xy
+        x_min, x_max = min(x0, x1), max(x0, x1)
+        y_min, y_max = min(y0, y1), max(y0, y1)
+        if x_max - x_min < 1:
+            x_max = x_min + 1
+        if y_max - y_min < 1:
+            y_max = y_min + 1
+        safe_r = max(0, min(int(radius), int((x_max - x_min) // 2), int((y_max - y_min) // 2)))
+        return _orig_rounded_rect(self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners)
+    except Exception:
+        pass
+
+PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
+
+PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import re
 import json

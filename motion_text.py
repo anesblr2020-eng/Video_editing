@@ -20,7 +20,29 @@ if _CURRENT_DIR not in sys.path:
 # معالجة فورية لتوافق Pillow 10+ مع MoviePy
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+    import PIL.ImageDraw
+_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
+
+def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
+    try:
+        if isinstance(xy[0], (list, tuple)):
+            (x0, y0), (x1, y1) = xy
+        else:
+            x0, y0, x1, y1 = xy
+        x_min, x_max = min(x0, x1), max(x0, x1)
+        y_min, y_max = min(y0, y1), max(y0, y1)
+        if x_max - x_min < 1:
+            x_max = x_min + 1
+        if y_max - y_min < 1:
+            y_max = y_min + 1
+        safe_r = max(0, min(int(radius), int((x_max - x_min) // 2), int((y_max - y_min) // 2)))
+        return _orig_rounded_rect(self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners)
+    except Exception:
+        pass
+
+PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
+
+PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import re
 import math
@@ -403,8 +425,8 @@ def draw_animated_scene_illustration(
 
         # مستوى الشحن يصعد ديناميكياً
         fill_ratio = 0.25 + 0.75 * ((global_t * 1.2) % 1.0)
-        fh = int((bat_h - 24) * fill_ratio)
-        draw.rounded_rectangle([(bx1 + 12, by2 - 12 - fh), (bx2 - 12, by2 - 12)], radius=14, fill=(*theme["secondary"], 180))
+        fh = max(2, int((bat_h - 16) * fill_ratio))
+        draw.rounded_rectangle([(bx1 + 10, max(by1 + 4, by2 - 10 - fh)), (max(bx1 + 12, bx2 - 10), by2 - 10)], radius=max(4, int(r * 0.08)), fill=(*theme["secondary"], 180))
 
         # صاعقة شحن كهربائية نابضة في المنتصف
         bolt = [
@@ -463,18 +485,19 @@ def draw_animated_scene_illustration(
 
     # مشهد 3: بناء المنصة والواجهة الذكية
     elif scene_type == "platform_builder":
-        win_w, win_h = int(r * 1.80), int(r * 1.35)
+        win_w, win_h = max(24, int(r * 1.80)), max(20, int(r * 1.35))
         wx1, wy1 = cx - win_w // 2, cy - win_h // 2
         wx2, wy2 = cx + win_w // 2, cy + win_h // 2
-        draw.rounded_rectangle([(wx1, wy1), (wx2, wy2)], radius=22, fill=dark_panel, outline=sec, width=4)
-        pad = 18
-        body_y1 = wy1 + 42
-        sb_w = int((win_w - 3 * pad) * 0.30)
-        draw.rounded_rectangle([(wx1 + pad, body_y1), (wx1 + pad + sb_w, wy2 - pad)], radius=12, fill=(20, 32, 58, 230))
+        draw.rounded_rectangle([(wx1, wy1), (wx2, wy2)], radius=max(4, int(r * 0.12)), fill=dark_panel, outline=sec, width=max(2, int(r * 0.03)))
+        pad = max(4, int(r * 0.08))
+        body_y1 = wy1 + max(8, int(win_h * 0.22))
+        body_y2 = max(body_y1 + 4, wy2 - pad)
+        sb_w = max(6, int((win_w - 3 * pad) * 0.28))
+        draw.rounded_rectangle([(wx1 + pad, body_y1), (wx1 + pad + sb_w, body_y2)], radius=max(3, int(r * 0.06)), fill=(20, 32, 58, 230))
         main_x1 = wx1 + 2 * pad + sb_w
-        main_w = wx2 - pad - main_x1
-        card_h_top = int((wy2 - pad - body_y1) * 0.52)
-        draw.rounded_rectangle([(main_x1, body_y1), (main_x1 + main_w, body_y1 + card_h_top)], radius=12, fill=(28, 42, 78, 235), outline=prim, width=3)
+        main_w = max(6, wx2 - pad - main_x1)
+        card_h_top = max(4, int((body_y2 - body_y1) * 0.52))
+        draw.rounded_rectangle([(main_x1, body_y1), (main_x1 + main_w, body_y1 + card_h_top)], radius=max(3, int(r * 0.06)), fill=(28, 42, 78, 235), outline=prim, width=2)
         pts = [
             (main_x1 + 14 + int((main_w - 28) * (step_i / 6.0)), body_y1 + card_h_top // 2 + int(18 * math.sin(global_t * 6.0 + step_i)))
             for step_i in range(7)
