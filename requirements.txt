@@ -10,7 +10,8 @@ moviepy>=1.0.3,<2.0.0
 ffmpeg-python>=0.2.0
 pydub>=0.25.1
 
-# Speech Transcription (Local Faster-Whisper + Cloud Whisper Support)
+# Speech Transcription (Algerian Darija ar-DZ Engine + Faster-Whisper + Cloud Support)
+SpeechRecognition>=3.10.0
 faster-whisper>=1.0.2
 
 # Motion Graphics, Visual Animation & Proper Arabic Typography Shaping

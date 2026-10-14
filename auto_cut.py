@@ -26,8 +26,12 @@ import subprocess
 import logging
 from typing import List, Tuple, Callable, Optional
 import numpy as np
-from pydub import AudioSegment
-from pydub.silence import detect_nonsilent
+try:
+    from pydub import AudioSegment
+    from pydub.silence import detect_nonsilent
+except ImportError:
+    AudioSegment = object
+    detect_nonsilent = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
