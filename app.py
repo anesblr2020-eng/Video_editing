@@ -1,10 +1,10 @@
 """
-app.py - الواجهة التفاعلية لنظام أتمتة المونتاج والموشن جرافيك ومحرر الكابشن التفاعلي
-====================================================================================
+app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، الموشن جرافيك، واستيراد مشاهد B-Roll الحقيقية
+=============================================================================================
 التحديثات الجوهرية:
-1. محرر كابشن تفاعلي شامل يظهر بعد انتهاء المعالجة في جميع الأنماط (تعديل جملة بجملة أو كلمة بكلمة مع التوقيت الزمني وإعادة تحديث الفيديو بضغطة زر دون إعادة تشغيل Whisper).
-2. قص صمت طبيعي ككلام الإنسان (Natural Human Cadence) يحمي مخارج الحروف الضعيفة والتنفس الطبيعي ولا يلصق الكلام ببعضه.
-3. نمط مونتاج إعلانات المنتجات (E-Commerce & Product Ads) + النمط التلقائي الشامل + دمج الموشن جرافيك بالفيديو الأصلي.
+1. استيراد مشاهد B-Roll واقعية خالية من حقوق الملكية (No Copyright / CC0) من الإنترنت تلقائياً (3 إلى 4 مشاهد متناسقة مع الكلام لكسر الملل دون إزعاج).
+2. عقل المخرج الشامل (Master Director) الذي يوزع اللقطات مكانياً وزمنياً بدقة متناهية (شاشة كاملة، B-roll، علوي، سفلي، ولقطات صافية).
+3. قص صمت طبيعي ككلام الإنسان (يحمي مخارج الحروف وأواخر الكلمات) + محرر كابشن تفاعلي لجميع الأنماط.
 """
 
 import sys
@@ -14,32 +14,9 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
 
-# معالجة فورية لتوافق Pillow 10+ مع MoviePy لمنع خطأ 'PIL.Image' has no attribute 'ANTIALIAS'
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    import PIL.ImageDraw
-_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
-
-def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
-    try:
-        if isinstance(xy[0], (list, tuple)):
-            (x0, y0), (x1, y1) = xy
-        else:
-            x0, y0, x1, y1 = xy
-        x_min, x_max = min(x0, x1), max(x0, x1)
-        y_min, y_max = min(y0, y1), max(y0, y1)
-        if x_max - x_min < 1:
-            x_max = x_min + 1
-        if y_max - y_min < 1:
-            y_max = y_min + 1
-        safe_r = max(0, min(int(radius), int((x_max - x_min) // 2), int((y_max - y_min) // 2)))
-        return _orig_rounded_rect(self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners)
-    except Exception:
-        pass
-
-PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
-
-PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import shutil
 import time
@@ -60,9 +37,6 @@ from transcriber import (
     clear_custom_caption_override
 )
 
-# ==============================================================================
-# 1. إعداد مسارات المجلدات وضمان وجودها تلقائياً
-# ==============================================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 INPUTS_DIR = os.path.join(BASE_DIR, "inputs")
 OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
@@ -75,7 +49,6 @@ for directory in [INPUTS_DIR, OUTPUTS_DIR, TEMP_DIR, ICONS_DIR, FONTS_DIR]:
 
 
 def cleanup_temp_directory(temp_path: str = TEMP_DIR):
-    """تنظيف مجلد temp بعد اكتمال المعالجة."""
     if os.path.exists(temp_path):
         for filename in os.listdir(temp_path):
             file_path = os.path.join(temp_path, filename)
@@ -88,11 +61,8 @@ def cleanup_temp_directory(temp_path: str = TEMP_DIR):
                 pass
 
 
-# ==============================================================================
-# 2. إعدادات واجهة Streamlit والتصميم البصري
-# ==============================================================================
 st.set_page_config(
-    page_title="استوديو المونتاج وإعلانات المنتجات الذكي",
+    page_title="استوديو المونتاج والموشن جرافيك ومشاهد B-Roll الذكي",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -131,22 +101,27 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي وإعلانات المنتجات التجارية</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك ومشاهد B-Roll الحقيقية</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">مونتاج احترافي لإعلانات المنتجات • قص صمت طبيعي ككلام الإنسان • تعديل الكابشن بعد ظهور النتيجة في كل الأنماط • دعم الدارجة الجزائرية 🇩🇿</div>',
+    '<div class="sub-title">تحليل دقيق للفيديو • استيراد 3-4 مشاهد B-Roll خالية من حقوق الملكية من الإنترنت • موشن جرافيك متعدد الأبعاد • قص صمت طبيعي</div>',
     unsafe_allow_html=True
 )
 
 # ==============================================================================
-# 3. الشريط الجانبي: إعدادات الذكاء الاصطناعي والدارجة الجزائرية
+# 3. الشريط الجانبي
 # ==============================================================================
 with st.sidebar:
     st.header("⚙️ الإعدادات الذكية والاتصال")
 
     auto_optimize = st.toggle(
         "🤖 تحديد أفضل الموديلات والإعدادات تلقائياً (موصى به)",
+        value=True
+    )
+
+    enable_broll_toggle = st.toggle(
+        "🎥 استيراد مشاهد B-Roll حقيقية (بدون حقوق ملكية)",
         value=True,
-        help="يقوم النظام بتحليل الصوت والضجيج لضبط عتبة صمت طبيعية تحمي مخارج الحروف وتنفس المتحدث."
+        help="يجلب تلقائياً 3 إلى 4 مشاهد فيديو واقعية ومفتوحة الترخيص من الإنترنت لدعم الأفكار التي لا تناسبها الرسوم فقط."
     )
 
     st.subheader("🇩🇿 إعدادات اللغة واللهجة")
@@ -161,9 +136,10 @@ with st.sidebar:
     dialect_mode = "algerian_darija" if "الدارجة" in dialect_choice_label else "msa_simplified"
 
     st.markdown("---")
-    st.subheader("🌐 محرك الذكاء الاصطناعي (الإنترنت / السحابة)")
+    st.subheader("🌐 محرك الذكاء الاصطناعي ومكتبات B-Roll")
     with st.expander("🔑 مفاتيح سحابية اختيارية (لأقصى سرعة وجودة)", expanded=False):
-        st.caption("يعمل النظام بالإنترنت مجاناً بشكل تلقائي! ويمكنك اختيارياً وضع مفتاح Groq أو Gemini:")
+        st.caption("النظام يجلب مشاهد B-Roll مجانية بدون أي مفتاح! ويمكنك اختيارياً إضافة مفتاح Pexels أو Groq:")
+        pexels_api_key = st.text_input("Pexels API Key (اختياري - لملايين الفيديوهات المجانية):", type="password", value=os.environ.get("PEXELS_API_KEY", ""))
         groq_api_key = st.text_input("Groq API Key (اختياري):", type="password", value=os.environ.get("GROQ_API_KEY", ""))
         gemini_api_key = st.text_input("Gemini API Key (اختياري):", type="password", value=os.environ.get("GEMINI_API_KEY", ""))
         openai_api_key = st.text_input("OpenAI API Key (اختياري):", type="password", value=os.environ.get("OPENAI_API_KEY", ""))
@@ -182,7 +158,7 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🎚️ إعدادات قص الصمت الطبيعي والموديلات")
     if auto_optimize:
-        st.caption("✅ **القص البشري الطبيعي مفعّل:** يحمي بدايات ونهايات الكلمات والتنفس الطبيعي (250ms) ولا يقص إلا السكوت الطويل (> 700ms).")
+        st.caption("✅ **القص البشري الطبيعي مفعّل:** عتبة آمنة (250ms) تحمي بدايات ونهايات الكلمات.")
         silence_threshold = -42.0
         chunk_size = 10
         padding_ms = 250
@@ -190,14 +166,7 @@ with st.sidebar:
     else:
         silence_threshold = st.slider("عتبة الصمت (dBFS)", min_value=-60.0, max_value=-20.0, value=-42.0, step=1.0)
         chunk_size = st.slider("دقة الفحص (Chunk Size ms)", min_value=5, max_value=50, value=10, step=5)
-        padding_ms = st.slider(
-            "هامش حماية الكلام الطبيعي قبل وبعد الجمل (ms)",
-            min_value=150,
-            max_value=450,
-            value=250,
-            step=10,
-            help="كلما زادت القيمة كان تدفق الكلام أكثر طبيعية وهدوءاً دون أي بتر للحروف."
-        )
+        padding_ms = st.slider("هامش حماية الكلام الطبيعي (ms)", min_value=150, max_value=450, value=250, step=10)
         whisper_model_choice = st.selectbox(
             "حجم نموذج Whisper المحلي:",
             options=["tiny", "base", "small", "medium", "large-v3"],
@@ -214,12 +183,12 @@ with st.sidebar:
 
 
 # ==============================================================================
-# 4. دالة موحدة لتشغيل أي نمط مونتاج (تستخدم عند البدء وعند تحديث الكابشن)
+# 4. دالة تشغيل المسارات الموحدة
 # ==============================================================================
 STYLE_OPTIONS = [
+    "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
-    "✨ النمط التلقائي الذكي - يدمج كل الأدوار بمعايير علمية (Smart Director All-in-One)",
-    "🎨 دمج الموشن جرافيك بالفيديو الأصلي (Motion Graphics Overlay on Video)",
+    "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
     "🚀 موشن جرافيك نصي وأنفوجرافيك احترافي (Studio Kinetic Typography)",
     "📐 موشن جرافيك هندسي ذكي (Manim + AI Infographics)",
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
@@ -239,6 +208,7 @@ def run_selected_pipeline(
     ollama_model: str,
     manim_quality: str,
     dialect: str,
+    pexels_key: str,
     groq_key: str,
     gemini_key: str,
     openai_key: str,
@@ -247,8 +217,24 @@ def run_selected_pipeline(
     progress_cb,
     force_caption_overlay_on_cut_mode: bool = False
 ) -> str:
-    """تشغيل مسار المعالجة المختار وإرجاع مسار الملف النهائي مع ضمان استخراج الكابشن للتعديل."""
     if style_name == STYLE_OPTIONS[0]:
+        from dynamic_edit import apply_smart_director_all_in_one
+        out, _ = apply_smart_director_all_in_one(
+            input_path=input_path,
+            output_path=output_path,
+            media_analysis=media_analysis,
+            whisper_model=eff_whisper_model,
+            ollama_model=ollama_model,
+            dialect_mode=dialect,
+            pexels_api_key=pexels_key,
+            groq_api_key=groq_key,
+            gemini_api_key=gemini_key,
+            openai_api_key=openai_key,
+            progress_callback=progress_cb
+        )
+        return out
+
+    elif style_name == STYLE_OPTIONS[1]:
         from dynamic_edit import apply_product_ad_mode
         out, _ = apply_product_ad_mode(
             input_path=input_path,
@@ -259,22 +245,7 @@ def run_selected_pipeline(
             padding_ms=eff_padding_ms,
             whisper_model=eff_whisper_model,
             dialect_mode=dialect,
-            groq_api_key=groq_key,
-            gemini_api_key=gemini_key,
-            openai_api_key=openai_key,
-            progress_callback=progress_cb
-        )
-        return out
-
-    elif style_name == STYLE_OPTIONS[1]:
-        from dynamic_edit import apply_smart_director_all_in_one
-        out, _ = apply_smart_director_all_in_one(
-            input_path=input_path,
-            output_path=output_path,
-            media_analysis=media_analysis,
-            whisper_model=eff_whisper_model,
-            ollama_model=ollama_model,
-            dialect_mode=dialect,
+            pexels_api_key=pexels_key,
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
@@ -293,6 +264,7 @@ def run_selected_pipeline(
             whisper_model=eff_whisper_model,
             ollama_model=ollama_model,
             dialect_mode=dialect,
+            pexels_api_key=pexels_key,
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
@@ -339,6 +311,7 @@ def run_selected_pipeline(
             zoom_factor=1.0 if force_caption_overlay_on_cut_mode else 1.15,
             whisper_model=eff_whisper_model,
             dialect_mode=dialect,
+            pexels_api_key=pexels_key,
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
@@ -346,7 +319,6 @@ def run_selected_pipeline(
         )
 
     else:
-        # نمط قص الصمت الطبيعي: نقص الصمت ونفرغ النص أيضاً لتمكين المستخدم من مراجعة وتعديل الكابشن إن أراد
         out = remove_silence(
             input_path=input_path,
             output_path=output_path,
@@ -371,7 +343,7 @@ def run_selected_pipeline(
 
 
 # ==============================================================================
-# 5. القسم الرئيسي: رفع ملف أو تسجيل صوتي مباشر
+# 5. جسم الصفحة: رفع ملف ومحرر الإعدادات
 # ==============================================================================
 col1, col2 = st.columns([1.08, 1.0], gap="large")
 
@@ -387,14 +359,10 @@ with col1:
     raw_media_name = None
 
     with tab_upload:
-        allow_any_ext = st.checkbox(
-            "🔓 السماح برفع أي ملف بدون تقييد المتصفح",
-            value=False
-        )
+        allow_any_ext = st.checkbox("🔓 السماح برفع أي ملف بدون تقييد المتصفح", value=False)
         uploaded_file = st.file_uploader(
             "اختر ملف فيديو (MP4, MOV, MKV...) أو التسجيل الصوتي",
-            type=None if allow_any_ext else ALL_SUPPORTED_EXTENSIONS,
-            help="يدعم جميع صيغ الفيديو والتسجيلات الصوتية."
+            type=None if allow_any_ext else ALL_SUPPORTED_EXTENSIONS
         )
         if uploaded_file is not None:
             raw_media_bytes = uploaded_file.getvalue()
@@ -418,7 +386,6 @@ with col1:
         safe_ext = os.path.splitext(raw_media_name)[1].lower() or ".wav"
         saved_input_path = os.path.join(INPUTS_DIR, f"media_{file_hash}{safe_ext}")
 
-        # إذا قام المستخدم برفع ملف جديد، نصفر الكابشن المعدل السابق
         if st.session_state.get("last_file_hash") != file_hash:
             clear_custom_caption_override()
             st.session_state["last_file_hash"] = file_hash
@@ -452,14 +419,14 @@ with col1:
         else:
             st.audio(active_input_path)
 
-        with st.expander("📊 تقرير التحليل الذكي ومعايير المونتاج", expanded=True):
+        with st.expander("📊 تقرير التحليل الذكي ومخطط المخرج الشامل", expanded=True):
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("متوسط الصوت", f"{media_analysis['mean_dbfs']} dBFS")
             m2.metric("عتبة الصمت الآمنة", f"{media_analysis['optimal_silence_threshold']} dBFS")
             m3.metric("نسبة الصمت", f"{media_analysis['silence_percent']}%")
             m4.metric("موديل التفريغ", media_analysis["optimal_whisper_model"].upper())
 
-            st.markdown("**📌 المعايير المطبقة لحماية الكلام الطبيعي:**")
+            st.markdown("**📌 معايير المخرج الذكي:**")
             for reason in media_analysis.get("criteria_reasons", []):
                 st.markdown(f"- {reason}")
 
@@ -477,39 +444,37 @@ with col2:
 
     if selected_style == STYLE_OPTIONS[0]:
         st.info(
-            "🛍️ **مونتاج إعلانات المنتجات 100% احترافي وغير عشوائي:**\n"
-            "- **قص السكوت الطبيعي:** يزيل فترات السكوت الطويلة فقط مع الحفاظ التام على مخارج الحروف والتنفس الطبيعي.\n"
-            "- **الخطاف البصري (Hook 0-3s):** زوم مفاجئ (1.18x) ولافتة علوية ساطعة لإيقاف التمرير.\n"
-            "- **إبراز المشكلة والمميزات وشارات الثقة (توصيل 58 ولاية 🚚 / الدفع عند الاستلام 💵) ولافتة الشراء CTA.**"
+            "🧠 **النمط التلقائي الشامل (Smart Director All-in-One):**\n"
+            "- **استيراد 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية** في اللحظات المناسبة لكسر الملل.\n"
+            "- **تنقل ذكي بين الأنماط:** شاشة موشن جرافيك كاملة للمفاهيم، بطاقات علوية، شارات سفلية، ولقطات صافية لراحة العين."
         )
-        with st.expander("📝 تخصيص نصوص الإعلان (اختياري)", expanded=False):
-            product_custom_hook = st.text_input("عنوان الخطاف العلوي (Hook Banner):", placeholder="مثال: 🔥 المنتج الأقوى والأكثر طلباً في الجزائر!")
-            product_custom_cta = st.text_input("نص نداء الشراء السفلي (Call To Action):", placeholder="مثال: 🛒 اطلب الآن والدفع عند الاستلام حتى لباب دارك!")
     elif selected_style == STYLE_OPTIONS[1]:
-        st.info("🧠 **المخرج الذكي الشامل (All-in-One):** يحلل كل جملة ويوزع الأدوار بين الزوم وبطاقات الموشن والكابشن مع قص صمت طبيعي.")
+        st.info("🛍️ **إعلانات المنتجات والتجارة الإلكترونية:** خطاف Hook 0-3s، إبراز المشكلة، ميزات المنتج، شارات الثقة (58 ولاية / دفع عند الاستلام)، ولافتة الشراء CTA.")
+        with st.expander("📝 تخصيص نصوص الإعلان (اختياري)", expanded=False):
+            product_custom_hook = st.text_input("عنوان الخطاف العلوي (Hook Banner):", placeholder="مثال: 🔥 المنتج الأقوى في الجزائر!")
+            product_custom_cta = st.text_input("نص نداء الشراء السفلي (Call To Action):", placeholder="مثال: 🛒 اطلب الآن والدفع عند الاستلام!")
     elif selected_style == STYLE_OPTIONS[2]:
-        st.info("🎨 **دمج الموشن جرافيك بالفيديو الأصلي:** بطاقات زجاجية وأيقونات فيكتور علوية وكابشن بالثلث السفلي.")
+        st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات زجاجية علوية ومشاهد B-Roll واقعية وكابشن بالثلث السفلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك نصي احترافي:** خلفية أستوديو سينمائية وأيقونات فيكتور مع كابشن كاريوكي.")
+        st.info("🚀 **موشن جرافيك نصي احترافي:** خلفيات أستوديو متعددة الثيمات ورسومات متجددة مع كابشن كاريوكي.")
     elif selected_style == STYLE_OPTIONS[4]:
-        st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة مع كابشن متزامن.")
+        st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
         st.info("🔍 **مونتاج ديناميكي:** قص صمت طبيعي مع زوم 15% متناوب وكابشن أصفر.")
     else:
-        st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري (ويمكنك إضافة وتعديل الكابشن بعد ظهور النتيجة!).")
+        st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري.")
 
     st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button("🚀 بدء صناعة ومونتاج الفيديو (Start Processing)", use_container_width=True)
 
 
 # ==============================================================================
-# 6. تنفيذ المعالجة الأولية عند الضغط على زر البدء
+# 6. تنفيذ المعالجة
 # ==============================================================================
 if start_btn:
     if active_input_path is None or not os.path.exists(active_input_path):
         st.warning("⚠️ يرجى رفع ملف فيديو أو صوت (أو تسجيل صوتك) أولاً قبل بدء المعالجة.")
     else:
-        # عند الضغط على بدء جديد، نعيد ضبط التعديلات اليدوية السابقة للكابشن
         clear_custom_caption_override()
 
         if auto_optimize and media_analysis is not None:
@@ -538,7 +503,7 @@ if start_btn:
             status_text.markdown(f"**⏳ الحالة الجارية:** {text}")
 
         try:
-            with st.spinner("🎬 جاري تشغيل محرك المونتاج الذكي..."):
+            with st.spinner("🎬 جاري تشغيل عقل المخرج الذكي الشامل..."):
                 processed_path = run_selected_pipeline(
                     style_name=selected_style,
                     input_path=active_input_path,
@@ -551,6 +516,7 @@ if start_btn:
                     ollama_model=ollama_model_choice,
                     manim_quality=manim_flag,
                     dialect=dialect_mode,
+                    pexels_key=pexels_api_key,
                     groq_key=groq_api_key,
                     gemini_key=gemini_api_key,
                     openai_key=openai_api_key,
@@ -579,12 +545,12 @@ if start_btn:
 
 
 # ==============================================================================
-# 7. عرض النتيجة النهائية + محرر الكابشن التفاعلي (يعمل في جميع الأنماط!)
+# 7. عرض النتيجة النهائية ومحرر الكابشن التفاعلي
 # ==============================================================================
 result_path = st.session_state.get("processed_result_path")
 if result_path and os.path.exists(result_path):
     st.markdown("---")
-    st.success("🎉 **الفيديو الجاهز للعرض والتحميل (يمكنك تعديل الكابشن بالأسفل في أي وقت!):**")
+    st.success("🎉 **الفيديو الجاهز للعرض والتحميل (مع مشاهد B-Roll والموشن جرافيك):**")
 
     res_col1, res_col2 = st.columns([1.0, 1.15], gap="large")
 
@@ -607,10 +573,8 @@ if result_path and os.path.exists(result_path):
             )
 
     with res_col2:
-        st.markdown("### ✏️ تعديل الكابشن والنصوص في الفيديو (في جميع الأنماط)")
-        st.caption(
-            "عدّل أي كلمة أو جملة مكتوبة في الفيديو بكل سهولة، ثم اضغط على زر التحديث بالأسفل ليتم تعديل الكابشن والبطاقات في الفيديو فوراً بدون إعادة التفريغ الصوتي!"
-        )
+        st.markdown("### ✏️ تعديل الكابشن والنصوص في الفيديو")
+        st.caption("عدّل أي كلمة أو جملة ثم اضغط زر التحديث ليتم تعديل الكابشن في الفيديو فوراً.")
 
         current_words = st.session_state.get("caption_words", [])
         current_sentences = st.session_state.get("caption_sentences", [])
@@ -625,7 +589,6 @@ if result_path and os.path.exists(result_path):
                 st.info("لا توجد جمل مستخرجة حالياً.")
             else:
                 with st.form("sentence_caption_editor_form"):
-                    st.markdown("**عدّل نص أي جملة بالدارجة الجزائرية أو العربية ثم اضغط زر التحديث بالأسفل:**")
                     edited_sentences_list = []
                     for s_idx, sent_obj in enumerate(current_sentences):
                         s_start = sent_obj.get("start", 0.0)
@@ -658,7 +621,7 @@ if result_path and os.path.exists(result_path):
                         stat_edit.markdown(f"**⏳ جاري تحديث الفيديو بالكابشن الجديد:** {txt}")
 
                     try:
-                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو في ثوانٍ..."):
+                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو..."):
                             chosen_style = st.session_state.get("processed_style", selected_style)
                             force_cap = (chosen_style == STYLE_OPTIONS[6])
                             updated_video_path = run_selected_pipeline(
@@ -673,6 +636,7 @@ if result_path and os.path.exists(result_path):
                                 ollama_model=ollama_model_choice,
                                 manim_quality=manim_flag,
                                 dialect=dialect_mode,
+                                pexels_key=pexels_api_key,
                                 groq_key=groq_api_key,
                                 gemini_key=gemini_api_key,
                                 openai_key=openai_api_key,
@@ -691,32 +655,15 @@ if result_path and os.path.exists(result_path):
                 st.info("لا توجد كلمات مستخرجة حالياً.")
             else:
                 with st.form("word_caption_editor_form"):
-                    st.markdown("**عدّل الكلمات المفردة أو تواقيتها الزمنية:**")
                     edited_words_list = []
                     for w_idx, w_obj in enumerate(current_words):
                         wc1, wc2, wc3 = st.columns([2.2, 1.0, 1.0])
                         with wc1:
-                            new_w_txt = st.text_input(
-                                f"الكلمة #{w_idx + 1}",
-                                value=str(w_obj.get("word", "")),
-                                key=f"w_txt_{w_idx}"
-                            )
+                            new_w_txt = st.text_input(f"الكلمة #{w_idx + 1}", value=str(w_obj.get("word", "")), key=f"w_txt_{w_idx}")
                         with wc2:
-                            new_w_start = st.number_input(
-                                f"البداية (ث) #{w_idx + 1}",
-                                value=float(w_obj.get("start", 0.0)),
-                                step=0.05,
-                                format="%.2f",
-                                key=f"w_start_{w_idx}"
-                            )
+                            new_w_start = st.number_input(f"البداية (ث) #{w_idx + 1}", value=float(w_obj.get("start", 0.0)), step=0.05, format="%.2f", key=f"w_start_{w_idx}")
                         with wc3:
-                            new_w_end = st.number_input(
-                                f"النهاية (ث) #{w_idx + 1}",
-                                value=float(w_obj.get("end", 0.2)),
-                                step=0.05,
-                                format="%.2f",
-                                key=f"w_end_{w_idx}"
-                            )
+                            new_w_end = st.number_input(f"النهاية (ث) #{w_idx + 1}", value=float(w_obj.get("end", 0.2)), step=0.05, format="%.2f", key=f"w_end_{w_idx}")
                         if new_w_txt.strip():
                             edited_words_list.append({
                                 "word": new_w_txt.strip(),
@@ -743,7 +690,7 @@ if result_path and os.path.exists(result_path):
                         stat_edit2.markdown(f"**⏳ جاري تحديث الفيديو بالكابشن الجديد:** {txt}")
 
                     try:
-                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو في ثوانٍ..."):
+                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو..."):
                             chosen_style = st.session_state.get("processed_style", selected_style)
                             force_cap = (chosen_style == STYLE_OPTIONS[6])
                             updated_video_path = run_selected_pipeline(
@@ -758,6 +705,7 @@ if result_path and os.path.exists(result_path):
                                 ollama_model=ollama_model_choice,
                                 manim_quality=manim_flag,
                                 dialect=dialect_mode,
+                                pexels_key=pexels_api_key,
                                 groq_key=groq_api_key,
                                 gemini_key=gemini_api_key,
                                 openai_key=openai_api_key,

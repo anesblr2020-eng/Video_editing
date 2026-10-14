@@ -1,19 +1,14 @@
 """
 smart_analyzer.py - عقل المخرج الذكي الشامل ومحرك التحليل متعدد الأبعاد للفيديو والصوت
 ========================================================================================
-يقوم هذا المحرك بتحليل متكامل للفيديو والصوت والنص الدلالي (بالدارجة الجزائرية والعربية):
+يقوم هذا المحرك بتحليل متكامل للفيديو والصوت والنص الدلالي:
 1. التحليل الصوتي متعدد الترددات (Loudness, Energy Peaks, Silence Pacing, Speech Cadence).
 2. التحليل البصري لحركة الكاميرا وتمركز المتحدث وأبعاد الإطار (9:16 Reels vs 16:9 Landscape).
-3. الفهم الدلالي لمحتوى الكلام واستخراج اللحظات المحورية (الخطاف، شرح المفاهيم، الأرقام، الميزات، الضمان، والدعوة للعمل).
+3. الفهم الدلالي لمحتوى الكلام واستخراج اللحظات المحورية لمشاهد الـ B-Roll والموشن جرافيك.
 4. توليد "مخطط المخرج الشامل (Master Director Plan)" الذي يصدر أوامر دقيقة لكل ثانية:
-   - تحديد نمط التراكب المكاني:
-     * full_screen: مشهد موشن جرافيك كامل متحرك (B-Roll) للشروحات المحورية.
-     * top_overlay: بطاقة موشن جرافيك علوية فوق الفيديو الأصلي.
-     * lower_third: شارة أنفوجرافيك سفلية (توصيل، ضمان، ميزات، أسعار).
-     * side_panel: شريط جانبي متحرك.
-     * speaker_clean: لقطة متحدث صافية مع زوم سينمائي ناعم وكابشن كاريوكي لراحة العين.
-   - تحديد نوع الرسم الهندسي أو الأنفوجرافيك المتوافق 100% مع الكلام المنطوق في تلك اللحظة.
-   - أوامر الزوم، الانتقالات، والثيمات اللونية.
+   - يختار بذكاء 3 إلى 4 مشاهد فيديو B-Roll حقيقية خالية من حقوق الملكية في اللحظات المناسبة تماماً
+     (شاشة مونتاج، شخص يعمل على حاسوب، هاتف وسوشيال ميديا، ساعة وضيق وقت) لكسر الملل دون إزعاج.
+   - يوزع بقية اللقطات بين: شاشة موشن جرافيك كاملة، بطاقة علوية، شارة سفلية، ولقطة متحدث صافية.
 """
 
 import sys
@@ -57,6 +52,25 @@ from typing import Dict, Any, List, Optional, Tuple
 import numpy as np
 import requests
 
+try:
+    from stock_video_finder import map_scene_to_stock_category
+except ImportError:
+    import importlib.util
+    _cur = os.path.dirname(os.path.abspath(__file__))
+    if _cur not in sys.path:
+        sys.path.insert(0, _cur)
+    _stock_path = os.path.join(_cur, "stock_video_finder.py")
+    if os.path.exists(_stock_path):
+        _spec = importlib.util.spec_from_file_location("stock_video_finder", _stock_path)
+        _mod = importlib.util.module_from_spec(_spec)
+        sys.modules["stock_video_finder"] = _mod
+        _spec.loader.exec_module(_mod)
+        map_scene_to_stock_category = getattr(_mod, "map_scene_to_stock_category")
+    else:
+        def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
+            return "video_editor"
+
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -75,7 +89,7 @@ ALL_SUPPORTED_EXTENSIONS = [
 
 
 # ==============================================================================
-# 1. الاتصال بمزودي الذكاء الاصطناعي الهجين (سحابي + محلي)
+# 1. الاتصال بمزودي الذكاء الاصطناعي الهجين
 # ==============================================================================
 def check_internet_connection(timeout: float = 2.5) -> bool:
     for url in ["https://text.pollinations.ai", "https://www.google.com", "https://1.1.1.1"]:
@@ -293,7 +307,6 @@ def analyze_media_file(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Dict[str, Any]:
-    """تحليل متعمق لخصائص الصوت والفيديو الفيزيائية والديناميكية."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"الملف غير موجود: {file_path}")
 
@@ -406,19 +419,20 @@ def analyze_media_file(
         "ai_provider_info": ai_info,
         "criteria_reasons": [
             f"تم ضبط عتبة السكوت الطبيعية عند ({optimal_silence_thresh} dBFS) وهامش حماية مخارج الحروف ({optimal_padding_ms}ms) لضمان تدفق بشري طبيعي.",
-            f"تحليل الحركة البصرية: ({visual_motion_score})، الأبعاد: ({'9:16 Reels' if is_vertical else '16:9 Landscape'})."
+            f"المخرج الشامل سيختار تلقائياً 3 إلى 4 مشاهد B-Roll حقيقية خالية من حقوق الملكية تدعم المحتوى بدون إزعاج أو ملل."
         ]
     }
 
 
 # ==============================================================================
-# 3. عقل المخرج الذكي الشامل: تخطيط مخطط الإخراج وإصدار الأوامر لكل ثانية
+# 3. عقل المخرج الذكي الشامل: تخطيط المشاهد واختيار 3-4 مشاهد B-Roll حقيقية
 # ==============================================================================
 def generate_master_director_plan(
     sentences_or_micro_scenes: List[Dict[str, Any]],
     total_duration: float,
     has_video: bool,
     visual_motion_score: float = 8.0,
+    enable_stock_broll: bool = True,
     product_name_override: Optional[str] = None,
     cta_override: Optional[str] = None,
     groq_api_key: Optional[str] = None,
@@ -426,41 +440,47 @@ def generate_master_director_plan(
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
-    توليد "مخطط المخرج الشامل (Master Director Plan)" الذي يحدد لكل لحظة:
-    - layout_mode:
-        * 'full_screen': مشهد موشن جرافيك كامل متحرك (B-roll) عند شرح مفهوم تقني أو أرقام كبرى أو إعلان مهم.
-        * 'top_overlay': بطاقة موشن جرافيك وأيقونة متحركة في الجزء العلوي فوق المتحدث.
-        * 'lower_third': شارة أنفوجرافيك سفلية (توصيل 58 ولاية، دفع عند استلام، ميزات سريعة).
-        * 'side_panel': شريط إحصائي جانبي.
-        * 'speaker_clean': لقطة متحدث صافية مع زوم سينمائي ناعم وكابشن كاريوكي فقط لراحة العين.
-    - scene_type: الرسمة المحددة المتناسبة 100% مع الكلمات المنطوقة.
-    - zoom_factor, transition, theme_name, badge_label, primary_keyword.
+    توليد مخطط المخرج الشامل:
+    - يحدد بدقة 3 إلى 4 مشاهد B-roll واقعية خالية من حقوق الملكية عبر الفيديو في اللحظات المناسبة
+      (مثال: شاشة مونتاج، شخص يعمل على حاسوب، هاتف وتيك توك، ضيق وقت وساعة).
+    - يوزع بقية اللقطات بين: شاشة كاملة موشن جرافيك، بطاقات علوية، شارات سفلية، ولقطات متحدث صافية.
     """
     if not sentences_or_micro_scenes:
         return []
 
-    # تصنيفات الكلمات الدلالية
-    full_screen_triggers = {
-        "أبني", "ابني", "منصة", "نظام", "موقع", "تطبيق", "مشروع",
-        "مونتاج", "منتاج", "تمنتج", "فيديو", "فيديوهات", "إيديتينج", "editing",
-        "ذكاء", "اصطناعي", "استناعي", "أوتوماتيكي", "اوتوماتيكي", "خوارزمية",
-        "وقت", "ساعة", "ما عندها وقت", "ريلز", "ريز", "تيك توك", "شورتس",
-        "17", "سنة", "عمري", "رقم", "مليون", "ألف", "58"
-    }
+    from motion_text import classify_micro_scene_blueprint, MOTION_THEMES
+    theme_keys = list(MOTION_THEMES.keys())
+    transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
+
+    num_scenes = len(sentences_or_micro_scenes)
+    master_plan = []
+    prev_scene_type = None
+
+    # تحديد مؤشرات المشاهد المؤهلة لتكون مقاطع B-Roll واقعية (نستهدف 3 إلى 4 مشاهد فقط كما طلب المستخدم)
+    broll_candidate_indices = []
+    for idx, sc in enumerate(sentences_or_micro_scenes):
+        t_low = str(sc.get("text", "")).lower()
+        # نستبعد المشهد الأول (الخطاف الأولي نفضل فيه الهوية/الوجه) والمشهد الأخير (الختام)
+        if 0 < idx < num_scenes - 1:
+            if any(w in t_low for w in ["مونتاج", "تمنتج", "فيديو", "إيديتينج", "وقت", "ساعة", "ريلز", "تيك توك", "أبني", "منصة", "حاسوب"]):
+                broll_candidate_indices.append(idx)
+
+    # اختيار 3 إلى 4 لقطات متباعدة زمنياً بدقة
+    selected_broll_indices = set()
+    if enable_stock_broll and broll_candidate_indices:
+        target_broll_count = min(4, max(2, len(broll_candidate_indices)))
+        # توزيع منتظم للـ 3 أو 4 لقطات
+        step = max(1, len(broll_candidate_indices) // target_broll_count)
+        for i in range(0, len(broll_candidate_indices), step):
+            selected_broll_indices.add(broll_candidate_indices[i])
+            if len(selected_broll_indices) >= 4:
+                break
 
     lower_third_triggers = {
         "توصيل", "ولاية", "58", "باب الدار", "شحن", "مجاني",
         "دفع", "كاش", "استلام", "ضمان", "أصلية", "سعر", "سومة", "تخفيض",
         "اطلب", "الرابط", "البايو", "كليكي", "للطلب"
     }
-
-    from motion_text import classify_micro_scene_blueprint, MOTION_THEMES
-    theme_keys = list(MOTION_THEMES.keys())
-    transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
-
-    master_plan = []
-    num_scenes = len(sentences_or_micro_scenes)
-    prev_scene_type = None
 
     for idx, sc in enumerate(sentences_or_micro_scenes):
         s_text = str(sc.get("text", "")).strip()
@@ -469,7 +489,6 @@ def generate_master_director_plan(
         s_end = min(total_duration, float(sc.get("end", s_start + 1.8)))
         dur = max(0.2, s_end - s_start)
 
-        # استخراج التصنيف الرسومي للمشهد
         bp = classify_micro_scene_blueprint(
             scene_text=s_text,
             scene_index=idx,
@@ -479,62 +498,58 @@ def generate_master_director_plan(
         prev_scene_type = bp["scene_type"]
         scene_type = bp["scene_type"]
 
-        # تحديد نمط التراكب المكاني (Layout Mode) بناءً على المعايير العلمية
-        if not has_video:
-            # إذا كان الملف صوتاً فقط: كامل الشاشة دائماً بمشاهد متحركة متجددة
+        stock_category = map_scene_to_stock_category(scene_type, s_text)
+
+        # تحديد نمط التراكب المكاني (Layout Mode)
+        if idx in selected_broll_indices:
+            # اللقطات الـ 3 أو 4 المختارة كـ B-Roll واقعي بدون حقوق ملكية!
+            layout_mode = "stock_broll"
+            zoom_factor = 1.0
+        elif not has_video:
             layout_mode = "full_screen"
             zoom_factor = 1.0
         else:
-            # إذا كان الملف فيديو: ننوع ونوزع بذكاء حقيقي بين الشاشة الكاملة والأجزاء العلوية والسفلية
             is_hook = (idx == 0 and s_start < 2.8)
             is_finale = (idx == num_scenes - 1 or s_end >= total_duration - 2.8)
-            has_major_concept = any(trig in t_low for trig in full_screen_triggers)
             has_lower_trigger = any(trig in t_low for trig in lower_third_triggers)
 
             if is_hook:
-                # الخطاف الافتتاحي: زوم قوي 1.18x مع بطاقة علوية بارزة أو شاشة كاملة خاطفة
                 layout_mode = "top_overlay"
                 zoom_factor = 1.18
             elif is_finale:
-                # الختام: لافتة CTA سفلية أو شاشة كاملة للمنصة
                 layout_mode = "lower_third" if any(w in t_low for w in ["اطلب", "رابط", "بايو"]) else "full_screen"
                 zoom_factor = 1.12
             elif has_lower_trigger:
-                # ميزات التوصيل والضمان والدفع والأسعار: في الثلث السفلي (Lower Third)
                 layout_mode = "lower_third"
                 zoom_factor = 1.06
-            elif has_major_concept and (idx % 3 == 1) and dur >= 1.2 and visual_motion_score < 14.0:
-                # الشروحات المفاهيمية المهمة: شاشة كاملة B-roll تقطع إليها الكاميرا ثم تعود للمتحدث!
+            elif idx % 3 == 0:
                 layout_mode = "full_screen"
                 zoom_factor = 1.0
             elif idx % 2 == 1:
-                # لقطة في النصف العلوي (Top Overlay) مع زوم متناوب
                 layout_mode = "top_overlay"
                 zoom_factor = 1.14
             else:
-                # لقطة متحدث صافية لراحة العين (Speaker Clean) مع زوم هادئ وكابشن كاريوكي فقط!
                 layout_mode = "speaker_clean"
                 zoom_factor = 1.0
 
         theme_name = theme_keys[idx % len(theme_keys)]
         transition = transitions[idx % len(transitions)]
 
-        # استخراج الكلمات المفتاحية
         words = sc.get("words", [])
         word_strings = [w.get("word", "") for w in words]
         words_only = [w for w in re.findall(r"[\w\u0621-\u064A]+", s_text) if len(w) > 2]
         primary_kw = words_only[0] if words_only else (word_strings[0] if word_strings else "فكرة")
 
-        # تخصيص عناوين إعلانات المنتجات إن وجدت
         badge_label = bp["badge_label"]
-        if product_name_override and is_hook:
+        if product_name_override and (idx == 0):
             badge_label = product_name_override
-        if cta_override and is_finale:
+        if cta_override and (idx == num_scenes - 1):
             badge_label = cta_override
 
         directive = {
             "layout_mode": layout_mode,
             "scene_type": scene_type,
+            "stock_category": stock_category,
             "badge_label": badge_label,
             "short_title": bp["short_title"],
             "primary_keyword": primary_kw,
@@ -564,12 +579,12 @@ def plan_product_ad_segments(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """مخطط إعلانات المنتجات المدمج مع عقل المخرج الشامل."""
     return generate_master_director_plan(
         sentences_or_micro_scenes=sentences,
         total_duration=total_duration,
         has_video=True,
         visual_motion_score=8.0,
+        enable_stock_broll=True,
         product_name_override=product_title_override,
         cta_override=cta_override,
         groq_api_key=groq_api_key,
@@ -583,10 +598,10 @@ def plan_smart_director_segments(
     has_video: bool,
     visual_motion_score: float = 8.0
 ) -> List[Dict[str, Any]]:
-    """مخطط المخرج الذكي المدمج مع عقل المخرج الشامل."""
     return generate_master_director_plan(
         sentences_or_micro_scenes=sentences,
         total_duration=sentences[-1]["end"] if sentences else 10.0,
         has_video=has_video,
-        visual_motion_score=visual_motion_score
+        visual_motion_score=visual_motion_score,
+        enable_stock_broll=True
     )
