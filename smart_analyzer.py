@@ -1,6 +1,19 @@
 """
-smart_analyzer.py - المحلل الذكي للوسائط، محرك الذكاء الاصطناعي الهجين، ومخرج الإعلانات التجارية المتقدم
-========================================================================================================
+smart_analyzer.py - عقل المخرج الذكي الشامل ومحرك التحليل متعدد الأبعاد للفيديو والصوت
+========================================================================================
+يقوم هذا المحرك بتحليل متكامل للفيديو والصوت والنص الدلالي (بالدارجة الجزائرية والعربية):
+1. التحليل الصوتي متعدد الترددات (Loudness, Energy Peaks, Silence Pacing, Speech Cadence).
+2. التحليل البصري لحركة الكاميرا وتمركز المتحدث وأبعاد الإطار (9:16 Reels vs 16:9 Landscape).
+3. الفهم الدلالي لمحتوى الكلام واستخراج اللحظات المحورية (الخطاف، شرح المفاهيم، الأرقام، الميزات، الضمان، والدعوة للعمل).
+4. توليد "مخطط المخرج الشامل (Master Director Plan)" الذي يصدر أوامر دقيقة لكل ثانية:
+   - تحديد نمط التراكب المكاني:
+     * full_screen: مشهد موشن جرافيك كامل متحرك (B-Roll) للشروحات المحورية.
+     * top_overlay: بطاقة موشن جرافيك علوية فوق الفيديو الأصلي.
+     * lower_third: شارة أنفوجرافيك سفلية (توصيل، ضمان، ميزات، أسعار).
+     * side_panel: شريط جانبي متحرك.
+     * speaker_clean: لقطة متحدث صافية مع زوم سينمائي ناعم وكابشن كاريوكي لراحة العين.
+   - تحديد نوع الرسم الهندسي أو الأنفوجرافيك المتوافق 100% مع الكلام المنطوق في تلك اللحظة.
+   - أوامر الزوم، الانتقالات، والثيمات اللونية.
 """
 
 import sys
@@ -12,7 +25,9 @@ if _CURRENT_DIR not in sys.path:
 
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    import PIL.ImageDraw
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+
+import PIL.ImageDraw
 _orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
@@ -34,8 +49,6 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
 
 PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
 
-PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
-
 import re
 import json
 import math
@@ -47,9 +60,6 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# ==============================================================================
-# 1. إعدادات الصيغ المدعومة
-# ==============================================================================
 SUPPORTED_VIDEO_EXTENSIONS = {
     ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".3gp", ".ts", ".wmv", ".flv"
 }
@@ -65,16 +75,10 @@ ALL_SUPPORTED_EXTENSIONS = [
 
 
 # ==============================================================================
-# 2. فحص الاتصال بالإنترنت ومزودي الذكاء الاصطناعي
+# 1. الاتصال بمزودي الذكاء الاصطناعي الهجين (سحابي + محلي)
 # ==============================================================================
-def check_internet_connection(timeout: float = 3.0) -> bool:
-    """التحقق السريع من توفر اتصال بالإنترنت."""
-    test_urls = [
-        "https://text.pollinations.ai",
-        "https://www.google.com",
-        "https://1.1.1.1"
-    ]
-    for url in test_urls:
+def check_internet_connection(timeout: float = 2.5) -> bool:
+    for url in ["https://text.pollinations.ai", "https://www.google.com", "https://1.1.1.1"]:
         try:
             resp = requests.head(url, timeout=timeout)
             if resp.status_code < 500:
@@ -84,8 +88,7 @@ def check_internet_connection(timeout: float = 3.0) -> bool:
     return False
 
 
-def check_ollama_available(ollama_url: str = "http://localhost:11434", timeout: float = 1.5) -> bool:
-    """التحقق مما إذا كان خادم Ollama المحلي يعمل."""
+def check_ollama_available(ollama_url: str = "http://localhost:11434", timeout: float = 1.2) -> bool:
     try:
         resp = requests.get(f"{ollama_url}/api/tags", timeout=timeout)
         return resp.status_code == 200
@@ -99,7 +102,6 @@ def detect_best_ai_provider(
     openai_api_key: Optional[str] = None,
     prefer_internet: bool = True
 ) -> Dict[str, Any]:
-    """تحديد أفضل مزود ذكاء اصطناعي."""
     groq_key = (groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
     gemini_key = (gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     openai_key = (openai_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
@@ -141,7 +143,7 @@ def detect_best_ai_provider(
             "stt_provider": "faster_whisper",
             "stt_model": "auto",
             "online": True,
-            "label": "الذكاء السحابي المجاني المتصل بالإنترنت (Cloud AI + Faster-Whisper Enhanced)"
+            "label": "الذكاء السحابي المجاني المتصل بالإنترنت (Cloud AI + Whisper)"
         }
 
     if has_ollama:
@@ -166,7 +168,7 @@ def detect_best_ai_provider(
 
 def query_hybrid_llm(
     prompt: str,
-    system_prompt: str = "أنت خبير في تحرير الفيديو، إعلانات التجارة الإلكترونية، والدارجة الجزائرية والعربية.",
+    system_prompt: str = "أنت مخرج فيديو ومحلل محتوى سينمائي وإعلاني خبير في الدارجة الجزائرية والعربية.",
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
@@ -175,7 +177,6 @@ def query_hybrid_llm(
     temperature: float = 0.25,
     max_tokens: int = 800
 ) -> Optional[str]:
-    """استدعاء الذكاء الاصطناعي الهجين."""
     groq_key = (groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
     gemini_key = (gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     openai_key = (openai_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
@@ -194,9 +195,9 @@ def query_hybrid_llm(
                 timeout=15
             )
             if resp.status_code == 200:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                if content:
-                    return content
+                c = resp.json()["choices"][0]["message"]["content"].strip()
+                if c:
+                    return c
         except Exception:
             pass
 
@@ -235,9 +236,9 @@ def query_hybrid_llm(
                 timeout=15
             )
             if resp.status_code == 200:
-                content = resp.json()["choices"][0]["message"]["content"].strip()
-                if content:
-                    return content
+                c = resp.json()["choices"][0]["message"]["content"].strip()
+                if c:
+                    return c
         except Exception:
             pass
 
@@ -256,9 +257,9 @@ def query_hybrid_llm(
         if resp.status_code == 200:
             data = resp.json()
             if isinstance(data, dict) and "choices" in data and data["choices"]:
-                content = data["choices"][0].get("message", {}).get("content", "").strip()
-                if content:
-                    return content
+                c = data["choices"][0].get("message", {}).get("content", "").strip()
+                if c:
+                    return c
     except Exception:
         pass
 
@@ -274,9 +275,9 @@ def query_hybrid_llm(
             timeout=8
         )
         if resp.status_code == 200:
-            content = resp.json().get("response", "").strip()
-            if content:
-                return content
+            c = resp.json().get("response", "").strip()
+            if c:
+                return c
     except Exception:
         pass
 
@@ -284,7 +285,7 @@ def query_hybrid_llm(
 
 
 # ==============================================================================
-# 3. التحليل الهندسي الذكي للصوت والفيديو (مع حماية الكلام البشري الطبيعي)
+# 2. أداة التحليل الهندسي المتقدم للصوت والفيديو
 # ==============================================================================
 def analyze_media_file(
     file_path: str,
@@ -292,7 +293,7 @@ def analyze_media_file(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Dict[str, Any]:
-    """تحليل شامل للملف المرفوع مع ضبط عتبة صمت تحافظ على مخارج الحروف والتنفس الطبيعي."""
+    """تحليل متعمق لخصائص الصوت والفيديو الفيزيائية والديناميكية."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"الملف غير موجود: {file_path}")
 
@@ -316,7 +317,7 @@ def analyze_media_file(
                     fps = int(clip.fps) if clip.fps and clip.fps > 1 else 24
                     video_duration = float(clip.duration)
 
-                    sample_times = np.linspace(0.1, max(0.2, video_duration - 0.1), min(8, max(2, int(video_duration))))
+                    sample_times = np.linspace(0.1, max(0.2, video_duration - 0.1), min(10, max(2, int(video_duration))))
                     prev_small = None
                     diffs = []
                     for t in sample_times:
@@ -337,8 +338,7 @@ def analyze_media_file(
     noise_floor_dbfs = -48.0
     optimal_silence_thresh = -42.0
     silence_ratio = 0.18
-    optimal_padding_ms = 250  # هامش أمان بشري طبيعي يمنع بتر الحروف أو التصاق الكلمات
-    optimal_chunk_size = 10
+    optimal_padding_ms = 250
 
     try:
         from pydub import AudioSegment
@@ -358,7 +358,6 @@ def analyze_media_file(
                 p85 = float(np.percentile(chunk_levels, 85))
                 noise_floor_dbfs = round(p15, 1)
 
-                # وضع العتبة قريباً من أرضية الضجيج (18% فقط من المدى) لحماية كل همس أو نهاية كلمة
                 raw_thresh = p15 + 0.18 * (p85 - p15)
                 optimal_silence_thresh = round(max(-54.0, min(-32.0, raw_thresh, mean_dbfs - 11.0)), 1)
                 silent_chunks = sum(1 for lvl in chunk_levels if lvl < optimal_silence_thresh)
@@ -382,6 +381,7 @@ def analyze_media_file(
         pass
 
     optimal_whisper_model = "medium" if has_cuda else "small"
+    is_vertical = (height >= width)
 
     return {
         "file_path": file_path,
@@ -392,7 +392,7 @@ def analyze_media_file(
         "width": width,
         "height": height,
         "fps": fps,
-        "aspect_ratio": "عمودي (9:16)" if height >= width else "أفقي (16:9)",
+        "aspect_ratio": "عمودي (9:16)" if is_vertical else "أفقي (16:9)",
         "mean_dbfs": mean_dbfs,
         "max_dbfs": max_dbfs,
         "noise_floor_dbfs": noise_floor_dbfs,
@@ -401,21 +401,160 @@ def analyze_media_file(
         "visual_motion_score": visual_motion_score,
         "optimal_silence_threshold": optimal_silence_thresh,
         "optimal_padding_ms": optimal_padding_ms,
-        "optimal_chunk_size": optimal_chunk_size,
+        "optimal_chunk_size": 10,
         "optimal_whisper_model": optimal_whisper_model,
         "ai_provider_info": ai_info,
-        "recommended_style": "product_ad",
-        "recommended_style_name": "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce Ad)",
         "criteria_reasons": [
-            f"ضبط عتبة الصمت عند ({optimal_silence_thresh} dBFS) وهامش أمان بشري ({optimal_padding_ms}ms) لحماية مخارج الحروف والتنفس الطبيعي ومنع التصاق الكلمات.",
-            "توزيع بصري احترافي لهيكل الإعلان (خطاف Hook، إبراز المشكلة، كشف مميزات المنتج، شارات الثقة، ونداء الشراء CTA)."
+            f"تم ضبط عتبة السكوت الطبيعية عند ({optimal_silence_thresh} dBFS) وهامش حماية مخارج الحروف ({optimal_padding_ms}ms) لضمان تدفق بشري طبيعي.",
+            f"تحليل الحركة البصرية: ({visual_motion_score})، الأبعاد: ({'9:16 Reels' if is_vertical else '16:9 Landscape'})."
         ]
     }
 
 
 # ==============================================================================
-# 4. محرك تحليل وهيكلة إعلانات المنتجات التجارية (E-Commerce Ad Intelligence)
+# 3. عقل المخرج الذكي الشامل: تخطيط مخطط الإخراج وإصدار الأوامر لكل ثانية
 # ==============================================================================
+def generate_master_director_plan(
+    sentences_or_micro_scenes: List[Dict[str, Any]],
+    total_duration: float,
+    has_video: bool,
+    visual_motion_score: float = 8.0,
+    product_name_override: Optional[str] = None,
+    cta_override: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    توليد "مخطط المخرج الشامل (Master Director Plan)" الذي يحدد لكل لحظة:
+    - layout_mode:
+        * 'full_screen': مشهد موشن جرافيك كامل متحرك (B-roll) عند شرح مفهوم تقني أو أرقام كبرى أو إعلان مهم.
+        * 'top_overlay': بطاقة موشن جرافيك وأيقونة متحركة في الجزء العلوي فوق المتحدث.
+        * 'lower_third': شارة أنفوجرافيك سفلية (توصيل 58 ولاية، دفع عند استلام، ميزات سريعة).
+        * 'side_panel': شريط إحصائي جانبي.
+        * 'speaker_clean': لقطة متحدث صافية مع زوم سينمائي ناعم وكابشن كاريوكي فقط لراحة العين.
+    - scene_type: الرسمة المحددة المتناسبة 100% مع الكلمات المنطوقة.
+    - zoom_factor, transition, theme_name, badge_label, primary_keyword.
+    """
+    if not sentences_or_micro_scenes:
+        return []
+
+    # تصنيفات الكلمات الدلالية
+    full_screen_triggers = {
+        "أبني", "ابني", "منصة", "نظام", "موقع", "تطبيق", "مشروع",
+        "مونتاج", "منتاج", "تمنتج", "فيديو", "فيديوهات", "إيديتينج", "editing",
+        "ذكاء", "اصطناعي", "استناعي", "أوتوماتيكي", "اوتوماتيكي", "خوارزمية",
+        "وقت", "ساعة", "ما عندها وقت", "ريلز", "ريز", "تيك توك", "شورتس",
+        "17", "سنة", "عمري", "رقم", "مليون", "ألف", "58"
+    }
+
+    lower_third_triggers = {
+        "توصيل", "ولاية", "58", "باب الدار", "شحن", "مجاني",
+        "دفع", "كاش", "استلام", "ضمان", "أصلية", "سعر", "سومة", "تخفيض",
+        "اطلب", "الرابط", "البايو", "كليكي", "للطلب"
+    }
+
+    from motion_text import classify_micro_scene_blueprint, MOTION_THEMES
+    theme_keys = list(MOTION_THEMES.keys())
+    transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
+
+    master_plan = []
+    num_scenes = len(sentences_or_micro_scenes)
+    prev_scene_type = None
+
+    for idx, sc in enumerate(sentences_or_micro_scenes):
+        s_text = str(sc.get("text", "")).strip()
+        t_low = s_text.lower()
+        s_start = max(0.0, float(sc.get("start", 0.0)))
+        s_end = min(total_duration, float(sc.get("end", s_start + 1.8)))
+        dur = max(0.2, s_end - s_start)
+
+        # استخراج التصنيف الرسومي للمشهد
+        bp = classify_micro_scene_blueprint(
+            scene_text=s_text,
+            scene_index=idx,
+            total_scenes=num_scenes,
+            prev_scene_type=prev_scene_type
+        )
+        prev_scene_type = bp["scene_type"]
+        scene_type = bp["scene_type"]
+
+        # تحديد نمط التراكب المكاني (Layout Mode) بناءً على المعايير العلمية
+        if not has_video:
+            # إذا كان الملف صوتاً فقط: كامل الشاشة دائماً بمشاهد متحركة متجددة
+            layout_mode = "full_screen"
+            zoom_factor = 1.0
+        else:
+            # إذا كان الملف فيديو: ننوع ونوزع بذكاء حقيقي بين الشاشة الكاملة والأجزاء العلوية والسفلية
+            is_hook = (idx == 0 and s_start < 2.8)
+            is_finale = (idx == num_scenes - 1 or s_end >= total_duration - 2.8)
+            has_major_concept = any(trig in t_low for trig in full_screen_triggers)
+            has_lower_trigger = any(trig in t_low for trig in lower_third_triggers)
+
+            if is_hook:
+                # الخطاف الافتتاحي: زوم قوي 1.18x مع بطاقة علوية بارزة أو شاشة كاملة خاطفة
+                layout_mode = "top_overlay"
+                zoom_factor = 1.18
+            elif is_finale:
+                # الختام: لافتة CTA سفلية أو شاشة كاملة للمنصة
+                layout_mode = "lower_third" if any(w in t_low for w in ["اطلب", "رابط", "بايو"]) else "full_screen"
+                zoom_factor = 1.12
+            elif has_lower_trigger:
+                # ميزات التوصيل والضمان والدفع والأسعار: في الثلث السفلي (Lower Third)
+                layout_mode = "lower_third"
+                zoom_factor = 1.06
+            elif has_major_concept and (idx % 3 == 1) and dur >= 1.2 and visual_motion_score < 14.0:
+                # الشروحات المفاهيمية المهمة: شاشة كاملة B-roll تقطع إليها الكاميرا ثم تعود للمتحدث!
+                layout_mode = "full_screen"
+                zoom_factor = 1.0
+            elif idx % 2 == 1:
+                # لقطة في النصف العلوي (Top Overlay) مع زوم متناوب
+                layout_mode = "top_overlay"
+                zoom_factor = 1.14
+            else:
+                # لقطة متحدث صافية لراحة العين (Speaker Clean) مع زوم هادئ وكابشن كاريوكي فقط!
+                layout_mode = "speaker_clean"
+                zoom_factor = 1.0
+
+        theme_name = theme_keys[idx % len(theme_keys)]
+        transition = transitions[idx % len(transitions)]
+
+        # استخراج الكلمات المفتاحية
+        words = sc.get("words", [])
+        word_strings = [w.get("word", "") for w in words]
+        words_only = [w for w in re.findall(r"[\w\u0621-\u064A]+", s_text) if len(w) > 2]
+        primary_kw = words_only[0] if words_only else (word_strings[0] if word_strings else "فكرة")
+
+        # تخصيص عناوين إعلانات المنتجات إن وجدت
+        badge_label = bp["badge_label"]
+        if product_name_override and is_hook:
+            badge_label = product_name_override
+        if cta_override and is_finale:
+            badge_label = cta_override
+
+        directive = {
+            "layout_mode": layout_mode,
+            "scene_type": scene_type,
+            "badge_label": badge_label,
+            "short_title": bp["short_title"],
+            "primary_keyword": primary_kw,
+            "target_number": bp.get("target_number", 17),
+            "zoom_factor": zoom_factor,
+            "theme_name": theme_name,
+            "transition": transition
+        }
+
+        entry = dict(sc)
+        entry["index"] = idx
+        entry["start"] = s_start
+        entry["end"] = s_end
+        entry["word_strings"] = word_strings
+        entry.update(directive)
+        master_plan.append(entry)
+
+    return master_plan
+
+
 def plan_product_ad_segments(
     sentences: List[Dict[str, Any]],
     total_duration: float,
@@ -425,79 +564,18 @@ def plan_product_ad_segments(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """تخطيط ومونتاج فيديو إعلان المنتج وفق معايير تسويقية صارمة."""
-    if not sentences:
-        return []
-
-    problem_keywords = [
-        "مشكل", "تعبت", "ديما", "يخسر", "بطيء", "يتكسر", "غالي", "حرت", "صعيب", "ضياع",
-        "تضييع", "تلف", "قلق", "يفسد", "معاناة", "رديء", "فاشل", "مقلد", "مغشوش"
-    ]
-    trust_keywords = [
-        "توصيل", "ولاية", "58", "باب الدار", "ضمان", "كوندوسيو", "أصلية", "استرجاع",
-        "مجاني", "الدفع عند الاستلام", "دفع", "كاش", "سريع", "لباب", "مضمون", "ثقة"
-    ]
-    cta_keywords = [
-        "اطلب", "الرابط", "البايو", "السعر", "سومة", "تخفيض", "كمية محدودة", "كليكي",
-        "برومو", "عرض", "تواصل", "رقم", "سارع", "احجز", "موقع", "صفحة", "للطلب"
-    ]
-
-    planned = []
-    num_sentences = len(sentences)
-
-    for idx, sent in enumerate(sentences):
-        text = sent.get("text", "")
-        t_start = float(sent.get("start", 0.0))
-        t_end = float(sent.get("end", 0.0))
-
-        is_hook = (idx == 0 or t_start < 3.2)
-        is_cta = (idx == num_sentences - 1 or t_end >= total_duration - 4.5 or any(k in text for k in cta_keywords))
-        is_trust = any(k in text for k in trust_keywords)
-        is_problem = any(k in text for k in problem_keywords) and not is_hook and not is_cta
-
-        if is_hook:
-            ad_role = "ad_hook"
-            zoom = 1.18
-            badge_title = product_title_override or "🔥 عفسة هبال لازم تشوفها!"
-            icon_cat = "warning"
-        elif is_cta:
-            ad_role = "ad_cta"
-            zoom = 1.14
-            badge_title = cta_override or "🛒 اطلب الآن والدفع عند الاستلام!"
-            icon_cat = "money"
-        elif is_trust:
-            ad_role = "ad_trust"
-            zoom = 1.08
-            if any(w in text for w in ["توصيل", "ولاية", "58", "باب"]):
-                badge_title = "🚚 توصيل سريع متوفر لـ 58 ولاية"
-                icon_cat = "time"
-            elif any(w in text for w in ["دفع", "استلام", "كاش"]):
-                badge_title = "💵 الدفع عند الاستلام بعد المعاينة"
-                icon_cat = "money"
-            else:
-                badge_title = "🛡️ ضمان الجودة والاستبدال 100%"
-                icon_cat = "success"
-        elif is_problem:
-            ad_role = "ad_problem"
-            zoom = 1.06
-            badge_title = "❌ المشكلة الشائعة"
-            icon_cat = "warning"
-        else:
-            ad_role = "ad_feature"
-            zoom = 1.13 if (idx % 2 == 1) else 1.05
-            words = text.split()
-            clean_feat = " ".join(words[:3]) if len(words) >= 3 else text
-            badge_title = f"✨ {clean_feat}"
-            icon_cat = "idea" if any(w in text for w in ["ذكاء", "فكرة", "حل"]) else "success"
-
-        enriched = dict(sent)
-        enriched["ad_role"] = ad_role
-        enriched["zoom_factor"] = zoom
-        enriched["badge_title"] = badge_title
-        enriched["icon_cat"] = icon_cat
-        planned.append(enriched)
-
-    return planned
+    """مخطط إعلانات المنتجات المدمج مع عقل المخرج الشامل."""
+    return generate_master_director_plan(
+        sentences_or_micro_scenes=sentences,
+        total_duration=total_duration,
+        has_video=True,
+        visual_motion_score=8.0,
+        product_name_override=product_title_override,
+        cta_override=cta_override,
+        groq_api_key=groq_api_key,
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key
+    )
 
 
 def plan_smart_director_segments(
@@ -505,39 +583,10 @@ def plan_smart_director_segments(
     has_video: bool,
     visual_motion_score: float = 8.0
 ) -> List[Dict[str, Any]]:
-    """توزيع الأدوار للمخرج الذكي العام."""
-    planned = []
-    emphasis_markers = {
-        "مهم", "سر", "أول", "ثاني", "ثالث", "لازم", "ضروري", "بزاف", "خطير", "نتيجة",
-        "الحل", "الطريقة", "علاش", "كيفاش", "نصيحة", "قاعدة", "مثال", "فكرة", "مشكل",
-        "1", "2", "3", "٪", "%", "مليون", "ألف", "دينار", "دولار"
-    }
-
-    for idx, sent in enumerate(sentences):
-        text = sent.get("text", "")
-        duration = max(0.2, sent.get("end", 0.0) - sent.get("start", 0.0))
-        has_emphasis = any(m in text for m in emphasis_markers) or ("؟" in text) or ("!" in text)
-
-        if not has_video:
-            role = "kinetic_infographic" if (idx == 0 or has_emphasis or idx % 2 == 0) else "kinetic_minimal"
-            zoom = 1.12 if idx % 2 == 1 else 1.0
-        else:
-            if idx == 0 and duration >= 1.2:
-                role = "hook_motion_overlay"
-                zoom = 1.14
-            elif has_emphasis and duration >= 1.8 and idx % 3 == 1:
-                role = "graphic_burst_overlay"
-                zoom = 1.16 if visual_motion_score < 14.0 else 1.06
-            elif has_emphasis or idx % 2 == 1:
-                role = "motion_card_overlay"
-                zoom = 1.14 if visual_motion_score < 14.0 else 1.05
-            else:
-                role = "clean_karaoke"
-                zoom = 1.0
-
-        enriched = dict(sent)
-        enriched["director_role"] = role
-        enriched["zoom_factor"] = zoom
-        planned.append(enriched)
-
-    return planned
+    """مخطط المخرج الذكي المدمج مع عقل المخرج الشامل."""
+    return generate_master_director_plan(
+        sentences_or_micro_scenes=sentences,
+        total_duration=sentences[-1]["end"] if sentences else 10.0,
+        has_video=has_video,
+        visual_motion_score=visual_motion_score
+    )

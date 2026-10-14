@@ -1,10 +1,9 @@
 """
-dynamic_edit.py - وحدة المونتاج الديناميكي ودمج الموشن جرافيك المتحرك إطاراً بإطار فوق الفيديو الأصلي
-====================================================================================================
-يعالج هذا الملف مشكلة بقاء بطاقة واحدة ثابتة أو تقطع الكابشن في الفيديوهات (مثل 6314.mp4) عبر:
-1. استخدام المحرك اللحظي `render_live_video_motion_frame` الذي يرسم ويحرك الموشن جرافيك والكابشن إطاراً بإطار (`VideoClip.fl`) فوق الفيديو الأصلي!
-2. توليد مشهد رسومي وبطاقة متحركة جديدة كل 1.4 - 1.9 ثانية (`Micro-Scenes`) تنزلق بفيزياء زنبركية وتتغير مع كل فكرة في الكلام.
-3. شريط كابشن كاريوكي متصل يعرض العبارة كاملة ويضيء الكلمة المنطوقة لحظياً ليمشي "سوا سوا" مع الصوت بدون أي اختفاء.
+dynamic_edit.py - وحدة المونتاج الديناميكي، دمج المشاهد الرسومية المتحركة بالفيديو، والمخرج الذكي الشامل
+=========================================================================================================
+تنفذ هذه الوحدة أوامر "مخطط المخرج الشامل (Master Director Plan)" الصادرة من المحلل الذكي:
+- تتنقل بين أنماط التراكب بذكاء: الشاشة الكاملة (Full-screen B-roll)، النصف العلوي (Top Overlay)، الثلث السفلي (Lower Third)، واللقطات الصافية (Speaker Clean).
+- تغير الرسومات والمخططات كل 1.5 إلى 2.5 ثانية بدقة متناهية متوافقة مع الكلمات المنطوقة وتوقيتها.
 """
 
 import sys
@@ -17,7 +16,9 @@ if _CURRENT_DIR not in sys.path:
 # معالجة فورية لتوافق Pillow 10+ مع MoviePy
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    import PIL.ImageDraw
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+
+import PIL.ImageDraw
 _orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
@@ -39,8 +40,6 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
 
 PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
 
-PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
-
 import logging
 from typing import List, Dict, Any, Tuple, Optional, Callable
 import numpy as np
@@ -54,7 +53,8 @@ from motion_text import (
     measure_arabic_text,
     classify_micro_scene_blueprint,
     create_studio_background,
-    render_live_video_motion_frame,
+    render_single_scene_canvas,
+    render_master_directed_video_frame,
     create_kinetic_typography_video,
     MOTION_THEMES
 )
@@ -62,11 +62,13 @@ from motion_text import (
 try:
     from smart_analyzer import (
         analyze_media_file,
+        generate_master_director_plan,
         plan_smart_director_segments,
         plan_product_ad_segments
     )
 except ImportError:
     analyze_media_file = None
+    generate_master_director_plan = None
     plan_smart_director_segments = None
     plan_product_ad_segments = None
 
@@ -95,8 +97,10 @@ def generate_caption_image(
     dummy_draw = ImageDraw.Draw(dummy_img)
 
     text_w, text_h = measure_arabic_text(dummy_draw, word_text, font)
+
     pad_x = int(font_size * 0.65)
     pad_y = int(font_size * 0.38)
+
     box_w = text_w + (pad_x * 2)
     box_h = text_h + (pad_y * 2)
 
@@ -105,27 +109,16 @@ def generate_caption_image(
 
     corner_radius = max(12, int(box_h * 0.28))
     draw.rounded_rectangle([(0, 0), (box_w + 6, box_h + 6)], radius=corner_radius + 2, fill=(0, 0, 0, 95))
-    draw.rounded_rectangle(
-        [(3, 3), (box_w + 3, box_h + 3)],
-        radius=corner_radius,
-        fill=(12, 16, 28, 215),
-        outline=(*highlight_color, 210),
-        width=3
-    )
+    draw.rounded_rectangle([(3, 3), (box_w + 3, box_h + 3)], radius=corner_radius, fill=(12, 16, 28, 215), outline=(*highlight_color, 210), width=3)
 
-    draw_arabic_text(
-        draw,
-        ((box_w + 6) // 2, (box_h + 6) // 2),
-        word_text,
-        font=font,
-        fill=(*highlight_color, 255),
-        stroke_width=2,
-        stroke_fill=(0, 0, 0, 230)
-    )
+    text_x = (box_w + 6) // 2
+    text_y = (box_h + 6) // 2
+
+    draw_arabic_text(draw, (text_x, text_y), word_text, font=font, fill=(*highlight_color, 255), stroke_width=2, stroke_fill=(0, 0, 0, 230))
     return np.array(canvas)
 
 
-def apply_zoom_in_crop(clip, zoom_factor: float = 1.14):
+def apply_zoom_in_crop(clip, zoom_factor: float = 1.15):
     """اقتصاص وتكبير المقطع من المنتصف بسلاسة."""
     if zoom_factor <= 1.01:
         return clip
@@ -174,59 +167,10 @@ def _build_base_video_from_audio_or_video(
         return vid_clip, False
 
 
-def _build_storyboard_for_video(
-    words_data: List[Dict[str, Any]],
-    total_duration: float,
-    product_name_override: Optional[str] = None,
-    cta_override: Optional[str] = None
-) -> List[Dict[str, Any]]:
-    """
-    بناء جدول المشاهد المتجددة (كل 1.4 إلى 1.9 ثانية) للفيديو بحيث يحصل كل مشهد على:
-    - رسمة موشن جرافيك متحركة خاصة به (`scene_type`)
-    - عنوان تسويقي واضح (`badge_label`)
-    - ثيم لوني متجدد (`theme_name`)
-    - نسبة تكبير كاميرا ديناميكية (`zoom_factor`).
-    """
-    micro_scenes = split_words_into_micro_scenes(words_data, max_words_per_scene=4, max_duration_per_scene=1.9)
-    storyboard: List[Dict[str, Any]] = []
-    prev_s_type = None
-
-    for idx, sc in enumerate(micro_scenes):
-        bp = classify_micro_scene_blueprint(
-            scene_text=sc["text"],
-            scene_index=idx,
-            total_scenes=len(micro_scenes),
-            prev_scene_type=prev_s_type
-        )
-        prev_s_type = bp["scene_type"]
-
-        if idx == 0 and product_name_override:
-            bp["badge_label"] = product_name_override
-        elif idx == len(micro_scenes) - 1 and cta_override:
-            bp["badge_label"] = cta_override
-
-        s_start = float(sc["start"])
-        s_end = float(micro_scenes[idx + 1]["start"]) if (idx + 1 < len(micro_scenes)) else total_duration
-
-        zoom = 1.15 if idx == 0 else (1.12 if idx % 2 == 1 else 1.0)
-        storyboard.append({
-            "index": idx,
-            "start": s_start,
-            "end": max(s_start + 0.18, s_end),
-            "text": sc["text"],
-            "words": sc["words"],
-            "word_strings": [w["word"] for w in sc["words"]],
-            "zoom_factor": zoom,
-            **bp
-        })
-
-    return storyboard
-
-
 # ==============================================================================
-# 1. محرك الرندرة الموحد للفيديو مع الموشن جرافيك المتحرك إطاراً بإطار
+# المحرك التنفيذي الموحد لأوامر مخطط المخرج الشامل (Master Director Execution Engine)
 # ==============================================================================
-def _render_video_with_live_motion_graphics(
+def _execute_master_director_pipeline(
     input_path: str,
     output_path: str,
     silence_threshold: float = -42.0,
@@ -242,8 +186,11 @@ def _render_video_with_live_motion_graphics(
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> Tuple[str, Dict[str, Any]]:
     """
-    يركب الموشن جرافيك المتحرك والكابشن الكاريوكي المتزامن إطاراً بإطار (`fl`) فوق الفيديو الأصلي،
-    مما يضمن تغير الرسومات والبطاقات كل 1.5 ثانية وتحركها الفعلي ومزامنتها التامة مع الدارجة الجزائرية!
+    تنفيذ أوامر مخطط المخرج الشامل الصادرة من المحلل الذكي بدقة متناهية:
+    - قص الصمت الطبيعي.
+    - استخراج الكلمات بدقة الملي ثانية.
+    - توليد مخطط المخرج متعدد الأنماط المكانية (شاشة كاملة، علوي، سفلي، لقطة صافية).
+    - رندرة الإطارات إطاراً بإطار (24 FPS) مع الزوم السينمائي والانتقالات بين اللقطات.
     """
     base_dir = os.path.dirname(os.path.abspath(output_path))
     temp_dir = os.path.join(base_dir, "temp")
@@ -254,6 +201,7 @@ def _render_video_with_live_motion_graphics(
             progress_callback(val, msg)
         logger.info(f"Progress: {val*100:.1f}% - {msg}")
 
+    # إذا كان الملف صوتياً فقط: تشغيل محرك الموشن جرافيك الكامل مباشرة
     if not is_video_file(input_path):
         clean_audio = os.path.join(temp_dir, "temp_clean_audio.mp3")
         remove_silence(input_path, clean_audio, silence_threshold=silence_threshold, padding_ms=padding_ms)
@@ -267,7 +215,7 @@ def _render_video_with_live_motion_graphics(
             openai_api_key=openai_api_key,
             progress_callback=progress_callback
         )
-        return out, {"scenes_count": 12}
+        return out, {"director_plan_scenes": 12}
 
     from moviepy.editor import concatenate_videoclips
 
@@ -277,7 +225,7 @@ def _render_video_with_live_motion_graphics(
     sentence_clips = []
 
     try:
-        update_progress(0.12, "1/4: إزالة السكوت الطويل بانسيابية طبيعية وتجهيز الفيديو...")
+        update_progress(0.12, "1/4: تحليل الإشارة الصوتية وإزالة السكوت الطويل بانسيابية طبيعية...")
         base_clip, _ = _build_base_video_from_audio_or_video(
             media_path=input_path,
             temp_dir=temp_dir,
@@ -287,7 +235,7 @@ def _render_video_with_live_motion_graphics(
         )
         transcribe_source = getattr(base_clip, "filename", input_path) or input_path
 
-        update_progress(0.32, "2/4: تفريغ الدارجة الجزائرية عبر المحرك الثلاثي (ar-DZ + Whisper)...")
+        update_progress(0.30, "2/4: تفريغ الكلام بدقة وتوليد مخطط المخرج متعدد الأنماط المكانية...")
         word_data = transcribe_audio(
             audio_path=transcribe_source,
             model_size=whisper_model,
@@ -297,20 +245,29 @@ def _render_video_with_live_motion_graphics(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-
+        micro_scenes = split_words_into_micro_scenes(word_data, max_words_per_scene=4, max_duration_per_scene=2.0)
         video_duration = float(base_clip.duration)
-        storyboard = _build_storyboard_for_video(
-            words_data=word_data,
-            total_duration=video_duration,
-            product_name_override=product_name_override,
-            cta_override=cta_override
-        )
 
-        update_progress(0.55, f"3/4: تطبيق التكبير السينمائي وتجهيز {len(storyboard)} مشهد موشن جرافيك متحرك...")
+        if generate_master_director_plan is not None:
+            master_plan = generate_master_director_plan(
+                sentences_or_micro_scenes=micro_scenes,
+                total_duration=video_duration,
+                has_video=True,
+                visual_motion_score=8.0,
+                product_name_override=product_name_override,
+                cta_override=cta_override,
+                groq_api_key=groq_api_key,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key
+            )
+        else:
+            master_plan = micro_scenes
+
+        update_progress(0.52, f"3/4: تنفيذ أوامر الكاميرا والزوم السينمائي لـ {len(master_plan)} لقطة مخرجة...")
         current_time = 0.0
-        for sc in storyboard:
-            s_start = max(0.0, float(sc["start"]))
-            s_end = min(video_duration, float(sc["end"]))
+        for sc in master_plan:
+            s_start = max(0.0, float(sc.get("start", 0.0)))
+            s_end = min(video_duration, float(sc.get("end", s_start + 1.8)))
             z_factor = float(sc.get("zoom_factor", 1.12))
 
             if s_start > current_time + 0.04:
@@ -328,23 +285,33 @@ def _render_video_with_live_motion_graphics(
 
         zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
 
-        # تطبيق دالة الرسم المتحرك إطاراً بإطار فوق الفيديو
-        def _frame_filter(get_frame, t: float) -> np.ndarray:
+        video_w, video_h = zoomed_base.size
+        bg_cache = {
+            t_name: create_studio_background(video_w, video_h, theme_name=t_name)
+            for t_name in MOTION_THEMES.keys()
+        }
+
+        update_progress(0.68, "4/4: تصيير الموشن جرافيك متعدد الأنماط (شاشة كاملة، علوي، سفلي، لقطات صافية)...")
+
+        def _master_frame_filter(get_frame, t: float) -> np.ndarray:
             raw_frame = get_frame(t)
-            return render_live_video_motion_frame(
+            return render_master_directed_video_frame(
                 base_frame_rgb=raw_frame,
                 t=t,
                 total_duration=video_duration,
-                storyboard=storyboard,
-                words_data=word_data
+                master_plan=master_plan,
+                words_data=word_data,
+                bg_cache=bg_cache,
+                audio_level=0.75
             )
 
-        final_video = zoomed_base.fl(_frame_filter)
+        final_video = zoomed_base.fl(_master_frame_filter)
 
-        update_progress(0.82, "4/4: رندرة وتصدير الفيديو النهائي مع الموشن جرافيك المتحرك...")
-        temp_audio = os.path.join(temp_dir, "temp_live_motion_audio.m4a")
+        update_progress(0.85, "جاري الرندرة النهائية وتصدير الفيديو المخرج بالكامل...")
+        temp_audio = os.path.join(temp_dir, "temp_master_audio.m4a")
         final_video.write_videofile(
             output_path,
+            fps=24,
             codec="libx264",
             audio_codec="aac",
             temp_audiofile=temp_audio,
@@ -354,11 +321,11 @@ def _render_video_with_live_motion_graphics(
             logger=None
         )
 
-        update_progress(1.0, f"اكتمل إنتاج الفيديو بنجاح ({len(storyboard)} مشهد موشن جرافيك متحرك ومتزامن)!")
-        return output_path, {"scenes_count": len(storyboard), "duration": video_duration}
+        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح عبر عقل المخرج الشامل ({len(master_plan)} لقطة موشن جرافيك)! ")
+        return output_path, {"director_scenes": len(master_plan), "duration": video_duration}
 
     except Exception as err:
-        logger.error(f"خطأ أثناء رندرة الموشن جرافيك على الفيديو: {str(err)}", exc_info=True)
+        logger.error(f"خطأ أثناء تنفيذ الإخراج الشامل: {str(err)}", exc_info=True)
         raise err
 
     finally:
@@ -380,7 +347,7 @@ def _render_video_with_live_motion_graphics(
 
 
 # ==============================================================================
-# 2. الدوال القياسية المستدعاة من الواجهة (app.py)
+# الدوال القياسية المربوطة بواجهة المستخدم (app.py)
 # ==============================================================================
 def apply_product_ad_mode(
     input_path: str,
@@ -396,7 +363,7 @@ def apply_product_ad_mode(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> Tuple[str, Dict[str, Any]]:
-    return _render_video_with_live_motion_graphics(
+    return _execute_master_director_pipeline(
         input_path=input_path,
         output_path=output_path,
         silence_threshold=silence_threshold,
@@ -426,7 +393,7 @@ def apply_motion_overlay_on_video(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    out_path, _ = _render_video_with_live_motion_graphics(
+    out, _ = _execute_master_director_pipeline(
         input_path=input_path,
         output_path=output_path,
         silence_threshold=silence_threshold,
@@ -439,7 +406,7 @@ def apply_motion_overlay_on_video(
         openai_api_key=openai_api_key,
         progress_callback=progress_callback
     )
-    return out_path
+    return out
 
 
 def apply_smart_director_all_in_one(
@@ -454,37 +421,18 @@ def apply_smart_director_all_in_one(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> Tuple[str, Dict[str, Any]]:
-    if media_analysis is None and analyze_media_file is not None:
-        media_analysis = analyze_media_file(
-            input_path,
-            groq_api_key=groq_api_key,
-            gemini_api_key=gemini_api_key,
-            openai_api_key=openai_api_key
-        )
-    elif media_analysis is None:
-        media_analysis = {
-            "has_video": is_video_file(input_path),
-            "optimal_silence_threshold": -42.0,
-            "optimal_padding_ms": 250,
-            "optimal_chunk_size": 10,
-            "optimal_whisper_model": whisper_model or "small",
-        }
-
-    out_path, info = _render_video_with_live_motion_graphics(
+    return _execute_master_director_pipeline(
         input_path=input_path,
         output_path=output_path,
-        silence_threshold=float(media_analysis.get("optimal_silence_threshold", -42.0)),
-        chunk_size=int(media_analysis.get("optimal_chunk_size", 10)),
-        padding_ms=int(media_analysis.get("optimal_padding_ms", 250)),
-        whisper_model=whisper_model or str(media_analysis.get("optimal_whisper_model", "small")),
+        silence_threshold=-42.0,
+        padding_ms=250,
+        whisper_model=whisper_model or "small",
         dialect_mode=dialect_mode,
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         progress_callback=progress_callback
     )
-    media_analysis.update(info)
-    return out_path, media_analysis
 
 
 def apply_dynamic_edit(
@@ -501,7 +449,7 @@ def apply_dynamic_edit(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    out_path, _ = _render_video_with_live_motion_graphics(
+    out, _ = _execute_master_director_pipeline(
         input_path=input_path,
         output_path=output_path,
         silence_threshold=silence_threshold,
@@ -514,4 +462,4 @@ def apply_dynamic_edit(
         openai_api_key=openai_api_key,
         progress_callback=progress_callback
     )
-    return out_path
+    return out

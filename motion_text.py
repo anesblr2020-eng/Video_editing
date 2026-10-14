@@ -1,13 +1,12 @@
 """
-motion_text.py - محرك الموشن جرافيك الكامل والمتحرك إطاراً بإطار (للصوت وللفيديو المدمج)
-========================================================================================
-يقوم هذا المحرك بـ:
-1. تقسيم الفيديو أو الصوت إلى مشاهد قصيرة متجددة كل 1.4 إلى 1.9 ثانية (Micro-Scenes) بحيث يتغير الجرافيك باستمرار.
-2. فهم كلمات الدارجة الجزائرية والعربية (اصبر، ما حبستكش، كابل تيب سي، سيبور تيليفون، تشارجي، قاع يتقطع، 58/69 ولاية، اكموندي...) وتوليد رسمة متحركة مطابقة لمعنى كل جملة.
-3. تحريك حقيقي إطاراً بإطار (24/30 FPS) يشمل:
-   - دخول البطاقات والرسومات بفيزياء زنبركية (Slide & Spring Bounce).
-   - حركة داخلية مستمرة للرسومات (عدادات، رادار توصيل، هاتف ذكي، شاحن وطاقة، درع متانة، شريط مونتاج، شبكة ذكاء اصطناعي).
-   - شريط كابشن كاريوكي متصل يعرض العبارة كاملة مع إضاءة وتكبير الكلمة المنطوقة لحظياً ليمشي "سوا سوا" مع الصوت بدون أي تقطيع.
+motion_text.py - محرك الموشن جرافيك الكامل متعدد الأبعاد ومتعدد الأنماط المكانية (Multi-Layout Motion Engine)
+=============================================================================================================
+يدعم هذا المحرك تنفيذ أوامر "مخطط المخرج الشامل (Master Director Plan)" في كل لقطة:
+1. full_screen: شاشة موشن جرافيك كاملة ومتحركة (B-roll Cutaway) مع انتقالات كاميرا سينمائية.
+2. top_overlay: بطاقة موشن جرافيك ورسمة متحركة في النصف العلوي فوق المتحدث.
+3. lower_third: شارة أو لافتة موشن جرافيك في الثلث السفلي (توصيل، ضمان، ميزات، أسعار).
+4. speaker_clean: لقطة متحدث صافية مع زوم هادئ وكابشن كاريوكي فقط لراحة العين.
+5. رسومات متحركة إطاراً بإطار (24 FPS) تتطابق 100% مع الكلمات المنطوقة وتوقيتها.
 """
 
 import sys
@@ -20,7 +19,9 @@ if _CURRENT_DIR not in sys.path:
 # معالجة فورية لتوافق Pillow 10+ مع MoviePy
 import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
-    import PIL.ImageDraw
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+
+import PIL.ImageDraw
 _orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
@@ -41,8 +42,6 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
         pass
 
 PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
-
-PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import re
 import math
@@ -66,7 +65,7 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 1. إعداد الخطوط العربية وتشكيل الحروف السليم مع التخزين المؤقت للسرعة
+# 1. إعداد الخطوط العربية وتشكيل الحروف
 # ==============================================================================
 _FONT_DOWNLOAD_ATTEMPTED = False
 _FONT_OBJECT_CACHE: Dict[Tuple[int, bool], ImageFont.FreeTypeFont] = {}
@@ -78,7 +77,6 @@ except Exception:
 
 
 def shape_arabic_text(text: str) -> str:
-    """ضمان ظهور الحروف العربية متصلة وبالاتجاه الصحيح."""
     if not text:
         return ""
     if _HAS_RAQM:
@@ -102,7 +100,6 @@ def draw_arabic_text(
     stroke_width: int = 0,
     stroke_fill: Optional[Tuple[int, int, int, int]] = None
 ):
-    """رسم نص عربي بدقة عالية."""
     prepared = shape_arabic_text(text)
     kwargs = {"font": font, "fill": fill, "anchor": anchor}
     if stroke_width > 0 and stroke_fill is not None:
@@ -128,7 +125,6 @@ def measure_arabic_text(
     text: str,
     font: ImageFont.FreeTypeFont
 ) -> Tuple[int, int]:
-    """قياس عرض وارتفاع النص العربي بدقة."""
     prepared = shape_arabic_text(text)
     try:
         if _HAS_RAQM:
@@ -141,7 +137,6 @@ def measure_arabic_text(
 
 
 def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
-    """جلب أفضل خط عربي متوفر مع تخزينه في الذاكرة."""
     global _FONT_DOWNLOAD_ATTEMPTED
     cache_key = (int(font_size), bool(bold))
     if cache_key in _FONT_OBJECT_CACHE:
@@ -194,7 +189,7 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
 
 
 # ==============================================================================
-# 2. الثيمات اللونية المتعددة للمشاهد (6 ثيمات أستوديو سينمائية)
+# 2. الثيمات اللونية المتعددة للمشاهد
 # ==============================================================================
 MOTION_THEMES = {
     "cyber_gold": {
@@ -204,7 +199,7 @@ MOTION_THEMES = {
         "primary": (255, 220, 0),
         "secondary": (0, 245, 212),
         "accent": (99, 102, 241),
-        "card_bg": (13, 20, 40, 230)
+        "card_bg": (13, 20, 40, 225)
     },
     "emerald_tech": {
         "top_bg": (5, 24, 22),
@@ -213,7 +208,7 @@ MOTION_THEMES = {
         "primary": (52, 211, 153),
         "secondary": (251, 191, 36),
         "accent": (6, 182, 212),
-        "card_bg": (7, 32, 28, 230)
+        "card_bg": (7, 32, 28, 225)
     },
     "royal_purple": {
         "top_bg": (20, 10, 38),
@@ -222,7 +217,7 @@ MOTION_THEMES = {
         "primary": (255, 195, 0),
         "secondary": (255, 77, 141),
         "accent": (168, 85, 247),
-        "card_bg": (28, 14, 52, 230)
+        "card_bg": (28, 14, 52, 225)
     },
     "crimson_energy": {
         "top_bg": (28, 9, 16),
@@ -231,7 +226,7 @@ MOTION_THEMES = {
         "primary": (255, 230, 0),
         "secondary": (255, 115, 0),
         "accent": (239, 68, 68),
-        "card_bg": (36, 12, 22, 230)
+        "card_bg": (36, 12, 22, 225)
     },
     "ocean_neon": {
         "top_bg": (6, 18, 36),
@@ -240,7 +235,7 @@ MOTION_THEMES = {
         "primary": (56, 189, 248),
         "secondary": (250, 204, 21),
         "accent": (45, 212, 191),
-        "card_bg": (10, 26, 48, 230)
+        "card_bg": (10, 26, 48, 225)
     },
     "sunset_violet": {
         "top_bg": (24, 12, 32),
@@ -249,13 +244,13 @@ MOTION_THEMES = {
         "primary": (251, 146, 60),
         "secondary": (56, 189, 248),
         "accent": (232, 121, 249),
-        "card_bg": (32, 14, 42, 230)
+        "card_bg": (32, 14, 42, 225)
     }
 }
 
 
 # ==============================================================================
-# 3. مصنف المشاهد الذكي (يدعم مفردات الدارجة الجزائرية والتقنية والمنتجات)
+# 3. مصنف المشاهد الرسومية المخصص لكل لقطة (Micro-Scene Classifier)
 # ==============================================================================
 def classify_micro_scene_blueprint(
     scene_text: str,
@@ -263,10 +258,6 @@ def classify_micro_scene_blueprint(
     total_scenes: int,
     prev_scene_type: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    تحديد نوع المشهد الرسومي المتحرك وعنوانه باللغة العربية/الدارجة بناءً على الكلمات المنطوقة
-    في هذه الثانية أو الثانيتين، مع ضمان عدم تكرار نفس المشهد مرتين متتاليتين أبداً!
-    """
     t = scene_text.strip()
     t_low = t.lower()
 
@@ -276,59 +267,52 @@ def classify_micro_scene_blueprint(
     chosen_type = None
     badge_label = "مشهد موشن جرافيك"
 
-    if any(w in t_low for w in ["توصيل", "ولاية", "58", "69", "باب الدار", "شحن", "متوفر", "ليفريزون"]):
-        chosen_type = "delivery_express"
-        badge_label = f"توصيل سريع {extracted_number or 58} ولاية"
-    elif any(w in t_low for w in ["اكموندي", "كوموندي", "اطلب", "الرابط", "اسفل", "أسفل", "البايو", "كليكي"]):
-        chosen_type = "brand_finale"
-        badge_label = "اطلب الآن من الرابط"
-    elif any(w in t_low for w in ["تشارجي", "شحن", "كابل", "تيب سي", "type-c", "بطارية", "طاقة", "قوة"]):
-        chosen_type = "power_charge_tech"
-        badge_label = "شحن فائق السرعة"
-    elif any(w in t_low for w in ["سيبور", "تيليفون", "تتفرج", "ريلز", "ريز", "تيك توك", "شورتس", "ترفع", "هاتف"]):
-        chosen_type = "reels_smartphone"
-        badge_label = "سيبور تيليفون ومشاهدة مريحة" if ("سيبور" in t_low or "تيليفون" in t_low or "تتفرج" in t_low) else "نشر الريلز والمحتوى"
-    elif any(w in t_low for w in ["مغلف", "قماش", "يتقطع", "ما تخافش", "متخافش", "ضمان", "أصلي", "جودة", "متين"]):
-        chosen_type = "ecommerce_showcase"
-        badge_label = "متانة وجودة عالية ضد القطع"
-    elif any(w in t_low for w in ["اصبر", "أصبر", "حبستكش", "ما حبستكش", "انتبه", "شوف"]):
-        chosen_type = "hook_energy_burst"
-        badge_label = "انتبه - منتج استثنائي"
-    elif any(w in t_low for w in ["مونتاج", "منتاج", "تمنتج", "فيديوهات", "فيديو", "ايديت", "إيديتينج"]):
-        if scene_index == total_scenes - 1 and any(w in t_low for w in ["اسم", "منصة", "إيديتينج"]):
+    if any(w in t_low for w in ["مونتاج", "منتاج", "تمنتج", "فيديوهات", "فيديو", "ايديت", "إيديتينج", "editing", "قص", "لقطات"]):
+        if scene_index == total_scenes - 1 and any(w in t_low for w in ["اسم", "منصة", "إيديتينج", "editing"]):
             chosen_type = "brand_finale"
             badge_label = "منصة تحرير الفيديو الذكية"
         else:
             chosen_type = "video_montage_studio"
             badge_label = "أستوديو المونتاج الذكي"
-    elif any(w in t_low for w in ["ذكاء", "اصطناعي", "استناعي", "أوتوماتيكي", "اوتوماتيكي", "تلقائي"]):
+    elif any(w in t_low for w in ["ذكاء", "اصطناعي", "استناعي", "أوتوماتيكي", "اوتوماتيكي", "تلقائي", "آلي", "خوارزمية"]):
         chosen_type = "ai_neural_brain"
         badge_label = "محرك الذكاء الاصطناعي"
-    elif any(w in t_low for w in ["أبني", "ابني", "منصة", "تعمل", "موقع", "تطبيق", "مشروع", "نظام"]):
+    elif any(w in t_low for w in ["ريلز", "ريز", "تيك توك", "شورتس", "ترفع", "نشر", "سوشيال", "يوتيوب", "انستغرام"]):
+        chosen_type = "reels_smartphone"
+        badge_label = "نشر الريلز والمحتوى اليومي"
+    elif any(w in t_low for w in ["أبني", "ابني", "منصة", "تعمل", "موقع", "تطبيق", "مشروع", "نظام", "برمجة"]):
         chosen_type = "platform_builder"
         badge_label = "بناء وتطوير المنصة"
-    elif extracted_number is not None or any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين", "مئة"]):
+    elif extracted_number is not None or any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين", "مئة", "ألف", "مليون"]):
         chosen_type = "age_number_counter"
         badge_label = f"محطة الإنجاز - {extracted_number or 17}"
-    elif any(w in t_low for w in ["وقت", "ساعة", "ما عندها", "سرعة", "ثواني", "نفس الوقت"]):
+    elif any(w in t_low for w in ["وقت", "ساعة", "ما عندها", "مشغولة", "تأخير", "سرعة", "ثواني"]):
         chosen_type = "time_warp_clock"
-        badge_label = "في نفس الوقت وبكل سرعة"
+        badge_label = "توفير الوقت والسرعة"
     elif any(w in t_low for w in ["أهلاً", "اهلا", "سلام", "أنا", "أنس", "اناس", "اسمي", "مرحبا", "خاوتي"]):
         chosen_type = "creator_profile"
         badge_label = "بطاقة تعريف المبدع"
-    elif any(w in t_low for w in ["أغلب", "الناس", "مال", "ربح", "دراهم", "سعر", "سومة", "تخفيض", "راحة", "كل يوم"]):
+    elif any(w in t_low for w in ["توصيل", "ولاية", "58", "باب الدار", "شحن"]):
+        chosen_type = "delivery_express"
+        badge_label = "توصيل سريع 58 ولاية"
+    elif any(w in t_low for w in ["منتج", "سلعة", "جودة", "أصلي", "عفسة", "اطلب", "شراء"]):
+        chosen_type = "ecommerce_showcase"
+        badge_label = "استعراض المنتج الأصلي"
+    elif any(w in t_low for w in ["أغلب", "الناس", "مال", "ربح", "دراهم", "سعر", "سومة", "تخفيض", "نجاح", "كل يوم"]):
         chosen_type = "growth_analytics"
-        badge_label = "أداء عالٍ وراحة تامة"
+        badge_label = "مؤشر النمو والانتشار"
+    elif scene_index == total_scenes - 1:
+        chosen_type = "brand_finale"
+        badge_label = "الإطلاق الرسمي للمنصة"
 
     fallback_cycle = [
-        ("hook_energy_burst", "ميزة استثنائية"),
-        ("power_charge_tech", "تقنية متطورة"),
-        ("reels_smartphone", "تصميم ذكي ومريح"),
-        ("ecommerce_showcase", "جودة أصلية مضمونة"),
-        ("time_warp_clock", "سرعة وكفاءة"),
-        ("growth_analytics", "الخيار الأول"),
-        ("delivery_express", "توصيل سريع لباب الدار"),
-        ("brand_finale", "اطلب الآن")
+        ("creator_profile", "إضاءة تعريفية"),
+        ("platform_builder", "هندسة وبناء النظام"),
+        ("ai_neural_brain", "نواة الذكاء الاصطناعي"),
+        ("video_montage_studio", "أتمتة شريط المونتاج"),
+        ("growth_analytics", "أداء وإنتاجية عالية"),
+        ("reels_smartphone", "محتوى ريلز تفاعلي"),
+        ("brand_finale", "أستوديو الجيل الجديد")
     ]
     if not chosen_type or chosen_type == prev_scene_type:
         alt_type, alt_label = fallback_cycle[scene_index % len(fallback_cycle)]
@@ -338,9 +322,8 @@ def classify_micro_scene_blueprint(
         if badge_label == "مشهد موشن جرافيك":
             badge_label = alt_label
 
-    stop_words = {"في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "هاذ", "اللي", "التي", "الذي", "ما", "لا", "كل"}
-    words = [w for w in re.findall(r"[\w\u0621-\u064A]+", t) if w not in stop_words and len(w) > 2]
-    short_title = " ".join(words[:3]) if len(words) >= 2 else (words[0] if words else badge_label)
+    words = [w for w in re.findall(r"[\w\u0621-\u064A]+", t) if len(w) > 2]
+    short_title = " ".join(words[:2]) if len(words) >= 2 else (words[0] if words else t[:16])
 
     theme_keys = list(MOTION_THEMES.keys())
     transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
@@ -349,14 +332,14 @@ def classify_micro_scene_blueprint(
         "scene_type": chosen_type,
         "badge_label": badge_label,
         "short_title": short_title,
-        "target_number": extracted_number if extracted_number is not None else 100,
+        "target_number": extracted_number if extracted_number is not None else 17,
         "theme_name": theme_keys[scene_index % len(theme_keys)],
         "transition_type": transitions[scene_index % len(transitions)]
     }
 
 
 # ==============================================================================
-# 4. رسام المشاهد الرسومية الكاملة والمتحركة إطاراً بإطار (12+ مشهد متحرك)
+# 4. رسام المشاهد الرسومية المتحركة إطاراً بإطار (24 FPS Frame Artists)
 # ==============================================================================
 def _ease_out_cubic(x: float) -> float:
     x = max(0.0, min(1.0, x))
@@ -382,108 +365,98 @@ def draw_animated_scene_illustration(
     target_number: int = 17,
     short_title: str = ""
 ):
-    """رسم مشهد موشن جرافيك متحرك بالكامل يتفاعل لحظياً مع الزمن global_t."""
     prim = (*theme["primary"], 255)
     sec = (*theme["secondary"], 255)
     acc = (*theme["accent"], 240)
     white = (255, 255, 255, 255)
-    dark_panel = (12, 19, 38, 240)
+    dark_panel = (12, 19, 38, 230)
 
     enter_scale = _ease_out_back(min(1.0, scene_progress * 2.8))
-    r = int(radius * max(0.25, enter_scale))
+    r = int(radius * max(0.2, enter_scale))
 
-    orbit_angle = global_t * 65.0
+    orbit_angle = global_t * 55.0
     draw.ellipse(
         [(cx - int(r * 1.05), cy - int(r * 1.05)), (cx + int(r * 1.05), cy + int(r * 1.05))],
-        fill=(14, 22, 44, 245),
-        outline=(*theme["secondary"], 110),
-        width=3
+        fill=(14, 22, 44, 255),
+        outline=(*theme["secondary"], 90),
+        width=2
     )
     draw.arc(
         [(cx - int(r * 1.14), cy - int(r * 1.14)), (cx + int(r * 1.14), cy + int(r * 1.14))],
         start=int(orbit_angle) % 360,
-        end=(int(orbit_angle) + 115) % 360,
+        end=(int(orbit_angle) + 110) % 360,
         fill=prim,
-        width=6
+        width=5
     )
     draw.arc(
         [(cx - int(r * 1.14), cy - int(r * 1.14)), (cx + int(r * 1.14), cy + int(r * 1.14))],
         start=(int(orbit_angle) + 180) % 360,
-        end=(int(orbit_angle) + 285) % 360,
+        end=(int(orbit_angle) + 280) % 360,
         fill=sec,
-        width=5
+        width=4
     )
 
-    # مشهد أ: شحن الطاقة والكابل الذكي (Power Charge & Cable Tech)
-    if scene_type == "power_charge_tech":
-        bat_w, bat_h = int(r * 1.10), int(r * 1.45)
-        bx1, by1 = cx - bat_w // 2, cy - bat_h // 2
-        bx2, by2 = cx + bat_w // 2, cy + bat_h // 2
-        # رأس البطارية/الموصل
-        draw.rounded_rectangle([(cx - int(bat_w * 0.25), by1 - 18), (cx + int(bat_w * 0.25), by1 + 4)], radius=6, fill=sec)
-        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=24, fill=dark_panel, outline=prim, width=5)
-
-        # مستوى الشحن يصعد ديناميكياً
-        fill_ratio = 0.25 + 0.75 * ((global_t * 1.2) % 1.0)
-        fh = max(2, int((bat_h - 16) * fill_ratio))
-        draw.rounded_rectangle([(bx1 + 10, max(by1 + 4, by2 - 10 - fh)), (max(bx1 + 12, bx2 - 10), by2 - 10)], radius=max(4, int(r * 0.08)), fill=(*theme["secondary"], 180))
-
-        # صاعقة شحن كهربائية نابضة في المنتصف
-        bolt = [
-            (cx + 12, cy - int(r * 0.45)),
-            (cx - int(r * 0.28), cy + 6),
-            (cx + 4, cy + 6),
-            (cx - 16, cy + int(r * 0.48)),
-            (cx + int(r * 0.30), cy - 8),
-            (cx - 4, cy - 8),
-        ]
-        draw.polygon(bolt, fill=prim, outline=white)
-
-    # مشهد ب: خطاف الانتباه الناري (Hook Energy Burst)
-    elif scene_type == "hook_energy_burst":
-        for ring_k in range(3):
-            rr = int(r * (0.42 + ring_k * 0.22 + 0.06 * math.sin(global_t * 8 + ring_k)))
-            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=prim if ring_k % 2 == 0 else sec, width=5)
-        # مثلث تنبيه / صاعقة الطاقة
-        tri_r = int(r * 0.52)
-        pts = [
-            (cx, cy - tri_r),
-            (cx - int(tri_r * 0.92), cy + int(tri_r * 0.75)),
-            (cx + int(tri_r * 0.92), cy + int(tri_r * 0.75))
-        ]
-        draw.polygon(pts, fill=dark_panel, outline=prim)
-        draw.line(pts + [pts[0]], fill=prim, width=6)
-        draw.rounded_rectangle([(cx - 8, cy - int(tri_r * 0.35)), (cx + 8, cy + int(tri_r * 0.20))], radius=6, fill=sec)
-        draw.ellipse([(cx - 9, cy + int(tri_r * 0.34)), (cx + 9, cy + int(tri_r * 0.52))], fill=prim)
-
-    # مشهد 1: بطاقة الهوية والمبدع
-    elif scene_type == "creator_profile":
+    if scene_type == "creator_profile":
         card_w, card_h = int(r * 1.75), int(r * 1.35)
         x1, y1 = cx - card_w // 2, cy - card_h // 2
         x2, y2 = cx + card_w // 2, cy + card_h // 2
 
         draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=28, fill=dark_panel, outline=prim, width=4)
+        draw.rounded_rectangle([(x1 + 20, y1 + 18), (x2 - 20, y1 + 52)], radius=12, fill=(25, 38, 68, 220))
+        for idx, dot_c in enumerate([(239, 68, 68, 255), (250, 204, 21, 255), (52, 211, 153, 255)]):
+            dx = x1 + 42 + idx * 24
+            draw.ellipse([(dx - 7, y1 + 35 - 7), (dx + 7, y1 + 35 + 7)], fill=dot_c)
+
         av_r = int(r * 0.36)
-        av_y = cy - int(r * 0.05)
-        pulse = int(7 * math.sin(global_t * 6.0))
+        av_y = cy - int(r * 0.06)
+        pulse = int(8 * math.sin(global_t * 6.0))
         draw.ellipse([(cx - av_r - pulse, av_y - av_r - pulse), (cx + av_r + pulse, av_y + av_r + pulse)], outline=sec, width=3)
-        draw.ellipse([(cx - av_r, av_y - av_r), (cx + av_r, av_y + av_r)], fill=(28, 45, 82, 255), outline=prim, width=4)
+        draw.ellipse([(cx - av_r, av_y - av_r), (cx + av_r, av_y + av_r)], fill=(28, 45, 82, 255), outline=prim, width=5)
         head_r = int(av_r * 0.34)
         draw.ellipse([(cx - head_r, av_y - int(av_r * 0.45) - head_r), (cx + head_r, av_y - int(av_r * 0.45) + head_r)], fill=prim)
-        draw.pieslice([(cx - int(av_r * 0.62), av_y + int(av_r * 0.05)), (cx + int(av_r * 0.62), av_y + int(av_r * 0.95))], start=180, end=360, fill=sec)
+        draw.pieslice(
+            [(cx - int(av_r * 0.62), av_y + int(av_r * 0.05)), (cx + int(av_r * 0.62), av_y + int(av_r * 0.95))],
+            start=180, end=360, fill=sec
+        )
+        bx, by = cx + int(av_r * 0.72), av_y + int(av_r * 0.65)
+        draw.ellipse([(bx - 22, by - 22), (bx + 22, by + 22)], fill=(16, 185, 129, 255), outline=white, width=3)
+        draw.line([(bx - 10, by), (bx - 2, by + 9), (bx + 12, by - 8)], fill=white, width=4)
 
-    # مشهد 2: عداد الأرقام الديناميكي
+        bar_y = y2 - 44
+        bar_w = int(card_w * 0.55 * min(1.0, scene_progress * 1.8))
+        draw.rounded_rectangle([(cx - bar_w // 2, bar_y - 8), (cx + bar_w // 2, bar_y + 8)], radius=8, fill=prim)
+
     elif scene_type == "age_number_counter":
-        count_progress = _ease_out_cubic(min(1.0, scene_progress * 1.5))
+        count_progress = _ease_out_cubic(min(1.0, scene_progress * 1.6))
         current_val = max(1, int(round(target_number * count_progress)))
-        gauge_r = int(r * 0.88)
-        draw.ellipse([(cx - gauge_r, cy - gauge_r), (cx + gauge_r, cy + gauge_r)], fill=dark_panel, outline=(255, 255, 255, 60), width=4)
-        sweep_deg = int(300 * count_progress)
-        draw.arc([(cx - gauge_r + 12, cy - gauge_r + 12), (cx + gauge_r - 12, cy + gauge_r - 12)], start=120, end=120 + sweep_deg, fill=prim, width=14)
-        num_font = get_arabic_font(int(r * 0.68), bold=True)
-        draw_arabic_text(draw, (cx, cy - 6), str(current_val), font=num_font, fill=prim, stroke_width=3, stroke_fill=(0, 0, 0, 240))
 
-    # مشهد 3: بناء المنصة والواجهة الذكية
+        gauge_r = int(r * 0.88)
+        draw.ellipse([(cx - gauge_r, cy - gauge_r), (cx + gauge_r, cy + gauge_r)], fill=dark_panel, outline=(255, 255, 255, 50), width=4)
+        sweep_deg = int(300 * count_progress)
+        draw.arc(
+            [(cx - gauge_r + 14, cy - gauge_r + 14), (cx + gauge_r - 14, cy + gauge_r - 14)],
+            start=120, end=120 + sweep_deg,
+            fill=prim, width=18
+        )
+        draw.arc(
+            [(cx - gauge_r + 36, cy - gauge_r + 36), (cx + gauge_r - 36, cy + gauge_r - 36)],
+            start=120, end=120 + int(sweep_deg * 0.85),
+            fill=sec, width=8
+        )
+
+        num_font = get_arabic_font(int(r * 0.72), bold=True)
+        draw_arabic_text(
+            draw, (cx, cy - 10), str(current_val),
+            font=num_font, fill=prim, stroke_width=4, stroke_fill=(0, 0, 0, 240)
+        )
+        for i in range(12):
+            ang = math.radians(i * 30 + global_t * 40)
+            x1 = cx + int((gauge_r + 12) * math.cos(ang))
+            y1 = cy + int((gauge_r + 12) * math.sin(ang))
+            x2 = cx + int((gauge_r + 32) * math.cos(ang))
+            y2 = cy + int((gauge_r + 32) * math.sin(ang))
+            draw.line([(x1, y1), (x2, y2)], fill=sec if i % 2 == 0 else prim, width=4)
+
     elif scene_type == "platform_builder":
         win_w, win_h = max(24, int(r * 1.80)), max(20, int(r * 1.35))
         wx1, wy1 = cx - win_w // 2, cy - win_h // 2
@@ -502,328 +475,198 @@ def draw_animated_scene_illustration(
             (main_x1 + 14 + int((main_w - 28) * (step_i / 6.0)), body_y1 + card_h_top // 2 + int(18 * math.sin(global_t * 6.0 + step_i)))
             for step_i in range(7)
         ]
-        draw.line(pts, fill=prim, width=4)
+        if len(pts) >= 2:
+            draw.line(pts, fill=prim, width=4)
 
-    # مشهد 4: أستوديو وشريط المونتاج المتحرك
     elif scene_type == "video_montage_studio":
-        studio_w, studio_h = int(r * 1.85), int(r * 1.40)
+        studio_w, studio_h = int(r * 1.90), int(r * 1.45)
         sx1, sy1 = cx - studio_w // 2, cy - studio_h // 2
         sx2, sy2 = cx + studio_w // 2, cy + studio_h // 2
-        draw.rounded_rectangle([(sx1, sy1), (sx2, sy2)], radius=24, fill=dark_panel, outline=prim, width=4)
-        mon_h = int(studio_h * 0.48)
-        mx1, my1 = sx1 + 18, sy1 + 18
-        mx2, my2 = sx2 - 18, sy1 + 18 + mon_h
-        draw.rounded_rectangle([(mx1, my1), (mx2, my2)], radius=14, fill=(18, 28, 54, 255), outline=sec, width=2)
-        mcx, mcy = (mx1 + mx2) // 2, (my1 + my2) // 2
-        pr_s = int(22 + 4 * math.sin(global_t * 7.0))
-        draw.polygon([(mcx - pr_s // 2, mcy - pr_s), (mcx - pr_s // 2, mcy + pr_s), (mcx + pr_s, mcy)], fill=prim)
-        tl_y1 = my2 + 16
-        track_h = max(16, int((sy2 - tl_y1 - 24) / 2))
-        for t_idx in range(2):
-            ty = tl_y1 + t_idx * (track_h + 8)
-            draw.rounded_rectangle([(mx1, ty), (mx2, ty + track_h)], radius=6, fill=(56, 189, 248, 200) if t_idx == 0 else (255, 220, 0, 200))
-        playhead_ratio = (global_t * 0.65) % 1.0
-        px = int(mx1 + 12 + (mx2 - mx1 - 24) * playhead_ratio)
-        draw.line([(px, tl_y1 - 6), (px, sy2 - 10)], fill=(255, 60, 80, 255), width=4)
 
-    # مشهد 5: شبكة الذكاء الاصطناعي العصبية
+        draw.rounded_rectangle([(sx1, sy1), (sx2, sy2)], radius=26, fill=dark_panel, outline=prim, width=4)
+        mon_h = int(studio_h * 0.50)
+        mx1, my1 = sx1 + 24, sy1 + 22
+        mx2, my2 = sx2 - 24, sy1 + 22 + mon_h
+        draw.rounded_rectangle([(mx1, my1), (mx2, my2)], radius=16, fill=(18, 28, 54, 255), outline=sec, width=3)
+
+        mcx, mcy = (mx1 + mx2) // 2, (my1 + my2) // 2
+        pr_s = int(28 + 5 * math.sin(global_t * 7.0))
+        draw.polygon([(mcx - pr_s // 2, mcy - pr_s), (mcx - pr_s // 2, mcy + pr_s), (mcx + pr_s, mcy)], fill=prim, outline=white)
+
+        tl_y1 = my2 + 22
+        track_h = max(20, int((sy2 - tl_y1 - 36) / 3))
+        track_colors = [
+            [(56, 189, 248, 220), (99, 102, 241, 220), (56, 189, 248, 220)],
+            [(255, 220, 0, 220), (249, 115, 22, 220)],
+            [(52, 211, 153, 220), (16, 185, 129, 220), (52, 211, 153, 220)]
+        ]
+        for t_idx in range(3):
+            ty = tl_y1 + t_idx * (track_h + 10)
+            draw.rounded_rectangle([(mx1, ty), (mx2, ty + track_h)], radius=8, fill=(8, 13, 26, 230))
+            segs = track_colors[t_idx]
+            seg_w = (mx2 - mx1 - 24) // len(segs)
+            for s_i, col in enumerate(segs):
+                bx1 = mx1 + 8 + s_i * (seg_w + 6)
+                bx2 = min(mx2 - 8, bx1 + seg_w - 4)
+                draw.rounded_rectangle([(bx1, ty + 3), (bx2, ty + track_h - 3)], radius=6, fill=col)
+
+        playhead_ratio = (scene_progress * 1.15) % 1.0
+        px = int(mx1 + 16 + (mx2 - mx1 - 32) * playhead_ratio)
+        draw.line([(px, tl_y1 - 10), (px, sy2 - 14)], fill=(255, 60, 80, 255), width=5)
+        draw.polygon([(px - 10, tl_y1 - 12), (px + 10, tl_y1 - 12), (px, tl_y1 + 2)], fill=(255, 220, 0, 255))
+
     elif scene_type == "ai_neural_brain":
         node_positions = []
-        outer_r = int(r * 0.82)
-        for i in range(6):
-            ang = math.radians(i * 60 + global_t * 30)
+        num_outer = 8
+        outer_r = int(r * 0.85)
+        inner_r = int(r * 0.42)
+        for i in range(num_outer):
+            ang = math.radians(i * (360 / num_outer) + global_t * 25)
             node_positions.append((cx + int(outer_r * math.cos(ang)), cy + int(outer_r * math.sin(ang))))
+        for i in range(4):
+            ang = math.radians(i * 90 - global_t * 35)
+            node_positions.append((cx + int(inner_r * math.cos(ang)), cy + int(inner_r * math.sin(ang))))
         node_positions.append((cx, cy))
-        pulse_pos = (global_t * 2.0) % 1.0
-        for i in range(len(node_positions) - 1):
-            x1, y1 = node_positions[i]
-            x2, y2 = cx, cy
-            draw.line([(x1, y1), (x2, y2)], fill=(*theme["secondary"], 140), width=3)
-            px = int(x1 + (x2 - x1) * pulse_pos)
-            py = int(y1 + (y2 - y1) * pulse_pos)
-            draw.ellipse([(px - 5, py - 5), (px + 5, py + 5)], fill=prim)
-        for idx, (nx, ny) in enumerate(node_positions):
-            nr = 22 if idx == len(node_positions) - 1 else 12
-            draw.ellipse([(nx - nr, ny - nr), (nx + nr, ny + nr)], fill=dark_panel, outline=prim if idx % 2 == 0 else sec, width=4)
 
-    # مشهد 6: الساعة والمؤقت السريع
+        pulse_pos = (global_t * 1.8) % 1.0
+        for i in range(len(node_positions)):
+            for j in range(i + 1, len(node_positions)):
+                x1, y1 = node_positions[i]
+                x2, y2 = node_positions[j]
+                if math.hypot(x2 - x1, y2 - y1) < r * 0.98:
+                    draw.line([(x1, y1), (x2, y2)], fill=(*theme["secondary"], 95), width=3)
+                    if (i + j) % 2 == 0:
+                        px = int(x1 + (x2 - x1) * pulse_pos)
+                        py = int(y1 + (y2 - y1) * pulse_pos)
+                        draw.ellipse([(px - 6, py - 6), (px + 6, py + 6)], fill=prim)
+
+        for idx, (nx, ny) in enumerate(node_positions):
+            nr = 28 if idx == len(node_positions) - 1 else 15
+            ncol = prim if idx % 2 == 0 else sec
+            draw.ellipse([(nx - nr - 5, ny - nr - 5), (nx + nr + 5, ny + nr + 5)], fill=(ncol[0], ncol[1], ncol[2], 65))
+            draw.ellipse([(nx - nr, ny - nr), (nx + nr, ny + nr)], fill=dark_panel, outline=ncol, width=4)
+
+        ai_font = get_arabic_font(int(r * 0.22), bold=True)
+        draw_arabic_text(draw, (cx, cy), "ذكاء", font=ai_font, fill=prim)
+
     elif scene_type == "time_warp_clock":
-        clock_r = int(r * 0.85)
-        draw.ellipse([(cx - clock_r, cy - clock_r), (cx + clock_r, cy + clock_r)], fill=dark_panel, outline=prim, width=5)
+        clock_r = int(r * 0.86)
+        draw.ellipse([(cx - clock_r, cy - clock_r), (cx + clock_r, cy + clock_r)], fill=dark_panel, outline=prim, width=6)
+        for h_i in range(12):
+            ang = math.radians(h_i * 30 - 90)
+            x1 = cx + int((clock_r - 24) * math.cos(ang))
+            y1 = cy + int((clock_r - 24) * math.sin(ang))
+            x2 = cx + int((clock_r - 8) * math.cos(ang))
+            y2 = cy + int((clock_r - 8) * math.sin(ang))
+            draw.line([(x1, y1), (x2, y2)], fill=sec if h_i % 3 == 0 else white, width=5 if h_i % 3 == 0 else 2)
+
         fast_ang = math.radians(global_t * 360 - 90)
         slow_ang = math.radians(global_t * 60 - 90)
-        draw.line([(cx, cy), (cx + int(clock_r * 0.50 * math.cos(slow_ang)), cy + int(clock_r * 0.50 * math.sin(slow_ang)))], fill=sec, width=6)
-        draw.line([(cx, cy), (cx + int(clock_r * 0.72 * math.cos(fast_ang)), cy + int(clock_r * 0.72 * math.sin(fast_ang)))], fill=prim, width=5)
-        draw.ellipse([(cx - 9, cy - 9), (cx + 9, cy + 9)], fill=white)
+        draw.line([(cx, cy), (cx + int(clock_r * 0.52 * math.cos(slow_ang)), cy + int(clock_r * 0.52 * math.sin(slow_ang)))], fill=sec, width=8)
+        draw.line([(cx, cy), (cx + int(clock_r * 0.74 * math.cos(fast_ang)), cy + int(clock_r * 0.74 * math.sin(fast_ang)))], fill=prim, width=6)
+        draw.ellipse([(cx - 12, cy - 12), (cx + 12, cy + 12)], fill=white)
 
-    # مشهد 7: الهاتف الذكي وحامل الهاتف (Smartphone Stand & Reels)
     elif scene_type == "reels_smartphone":
-        ph_w, ph_h = int(r * 1.02), int(r * 1.65)
+        ph_w, ph_h = int(r * 1.05), int(r * 1.72)
         px1, py1 = cx - ph_w // 2, cy - ph_h // 2
         px2, py2 = cx + ph_w // 2, cy + ph_h // 2
-        # رجل تثبيت الهاتف (Support Stand) في الخلفية
-        stand_offset = int(18 + 8 * math.sin(global_t * 4.0))
-        draw.line([(px2, cy), (px2 + 45 + stand_offset, py2 - 12), (px2, py2 - 12)], fill=sec, width=6)
-        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=28, fill=(10, 16, 32, 245), outline=prim, width=4)
-        scroll_offset = int(((global_t * 120) % 90) - 45)
+
+        draw.rounded_rectangle([(px1 - 6, py1 - 6), (px2 + 6, py2 + 6)], radius=38, fill=(*theme["primary"], 55))
+        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=34, fill=(10, 16, 32, 245), outline=prim, width=5)
+        draw.rounded_rectangle([(cx - 38, py1 + 14), (cx + 38, py1 + 26)], radius=6, fill=(40, 50, 75, 255))
+
+        scroll_offset = int(((global_t * 140) % 120) - 60)
         card_y = cy + scroll_offset
-        draw.rounded_rectangle([(px1 + 14, card_y - int(ph_h * 0.25)), (px2 - 14, card_y + int(ph_h * 0.25))], radius=16, fill=(24, 38, 72, 235), outline=sec, width=3)
-        draw.polygon([(cx - 14, card_y - 20), (cx - 14, card_y + 20), (cx + 22, card_y)], fill=prim)
+        draw.rounded_rectangle([(px1 + 18, card_y - int(ph_h * 0.28)), (px2 - 18, card_y + int(ph_h * 0.28))], radius=20, fill=(24, 38, 72, 235), outline=sec, width=3)
+        draw.polygon([(cx - 18, card_y - 26), (cx - 18, card_y + 26), (cx + 28, card_y)], fill=prim)
 
-    # مشهد 8: درع المتانة والمنتج الأصلي (Product Durability Shield & Stars)
+        for k in range(4):
+            fy = py2 - 40 - int(((global_t * 180 + k * 95) % (ph_h - 60)))
+            fx = px2 + 34 + int(14 * math.sin(global_t * 5 + k))
+            b_col = (244, 63, 94, 240) if k % 2 == 0 else prim
+            draw.ellipse([(fx - 18, fy - 18), (fx + 18, fy + 18)], fill=b_col, outline=white, width=2)
+
     elif scene_type == "ecommerce_showcase":
-        float_y = int(10 * math.sin(global_t * 4.5))
-        box_s = int(r * 0.62)
-        by_center = cy + float_y
-        draw.regular_polygon((cx, by_center, int(r * 0.76)), n_sides=6, rotation=int(global_t * 20), fill=dark_panel, outline=prim)
-        draw.ellipse([(cx - int(box_s * 0.6), by_center - int(box_s * 0.6)), (cx + int(box_s * 0.6), by_center + int(box_s * 0.6))], fill=sec)
-        draw.line([(cx - 18, by_center), (cx - 4, by_center + 16), (cx + 22, by_center - 14)], fill=(10, 16, 30, 255), width=6)
+        float_y = int(14 * math.sin(global_t * 4.5))
+        ped_y = cy + int(r * 0.52)
+        draw.ellipse([(cx - int(r * 0.75), ped_y - 28), (cx + int(r * 0.75), ped_y + 28)], fill=(*theme["secondary"], 85), outline=sec, width=4)
+        draw.ellipse([(cx - int(r * 0.50), ped_y - 16), (cx + int(r * 0.50), ped_y + 16)], fill=(*theme["primary"], 140))
 
-    # مشهد 9: رادار وخريطة التوصيل السريع (Express Delivery Radar)
+        box_s = int(r * 0.62)
+        by_center = cy - int(r * 0.12) + float_y
+        draw.rounded_rectangle([(cx - box_s, by_center - box_s), (cx + box_s, by_center + box_s)], radius=28, fill=dark_panel, outline=prim, width=5)
+
+        num_stars = min(5, max(1, int(scene_progress * 7)))
+        star_y = by_center - box_s - 34
+        for s_i in range(num_stars):
+            sx = cx - 100 + s_i * 50
+            draw.regular_polygon((sx, star_y, 18), n_sides=5, rotation=int(global_t * 30), fill=prim, outline=white)
+
+        draw.ellipse([(cx - 42, by_center - 42), (cx + 42, by_center + 42)], fill=sec)
+        draw.line([(cx - 20, by_center), (cx - 4, by_center + 18), (cx + 24, by_center - 16)], fill=(10, 16, 30, 255), width=7)
+
     elif scene_type == "delivery_express":
-        map_w, map_h = int(r * 1.75), int(r * 1.25)
+        map_w, map_h = int(r * 1.80), int(r * 1.30)
         mx1, my1 = cx - map_w // 2, cy - map_h // 2
         mx2, my2 = cx + map_w // 2, cy + map_h // 2
-        draw.rounded_rectangle([(mx1, my1), (mx2, my2)], radius=22, fill=dark_panel, outline=sec, width=4)
-        p_start = (mx1 + 38, my2 - 38)
-        p_mid = (cx, my1 + 32)
-        p_end = (mx2 - 38, my2 - 42)
-        route_pts = [
-            (
-                int((1 - (step / 20.0)) ** 2 * p_start[0] + 2 * (1 - (step / 20.0)) * (step / 20.0) * p_mid[0] + (step / 20.0) ** 2 * p_end[0]),
-                int((1 - (step / 20.0)) ** 2 * p_start[1] + 2 * (1 - (step / 20.0)) * (step / 20.0) * p_mid[1] + (step / 20.0) ** 2 * p_end[1])
-            )
-            for step in range(21)
-        ]
-        draw.line(route_pts, fill=(255, 255, 255, 85), width=4)
-        active_idx = max(2, int(len(route_pts) * ((global_t * 0.85) % 1.0)))
-        draw.line(route_pts[:active_idx], fill=prim, width=6)
-        cur_x, cur_y = route_pts[active_idx - 1]
-        draw.ellipse([(cur_x - 14, cur_y - 14), (cur_x + 14, cur_y + 14)], fill=sec, outline=white, width=3)
+        draw.rounded_rectangle([(mx1, my1), (mx2, my2)], radius=26, fill=dark_panel, outline=sec, width=4)
 
-    # مشهد 10: مخطط النمو الصاعد
+        p_start = (mx1 + 55, my2 - 55)
+        p_mid = (cx, my1 + 45)
+        p_end = (mx2 - 55, my2 - 65)
+        route_pts = []
+        for step in range(25):
+            u = step / 24.0
+            rx = int((1 - u) ** 2 * p_start[0] + 2 * (1 - u) * u * p_mid[0] + u ** 2 * p_end[0])
+            ry = int((1 - u) ** 2 * p_start[1] + 2 * (1 - u) * u * p_mid[1] + u ** 2 * p_end[1])
+            route_pts.append((rx, ry))
+        draw.line(route_pts, fill=(255, 255, 255, 90), width=5)
+
+        active_idx = max(2, int(len(route_pts) * min(1.0, scene_progress * 1.35)))
+        draw.line(route_pts[:active_idx], fill=prim, width=8)
+        cur_x, cur_y = route_pts[active_idx - 1]
+        draw.ellipse([(cur_x - 20, cur_y - 20), (cur_x + 20, cur_y + 20)], fill=sec, outline=white, width=4)
+        draw.ellipse([(p_end[0] - 16, p_end[1] - 16), (p_end[0] + 16, p_end[1] + 16)], fill=prim, outline=white, width=3)
+
     elif scene_type == "growth_analytics":
-        chart_w, chart_h = int(r * 1.70), int(r * 1.30)
+        chart_w, chart_h = int(r * 1.75), int(r * 1.35)
         cx1, cy1 = cx - chart_w // 2, cy - chart_h // 2
         cx2, cy2 = cx + chart_w // 2, cy + chart_h // 2
-        draw.rounded_rectangle([(cx1, cy1), (cx2, cy2)], radius=20, fill=dark_panel, outline=(255, 255, 255, 80), width=3)
-        num_bars = 4
-        bar_space = (chart_w - 50) // num_bars
-        bar_w = int(bar_space * 0.62)
-        base_y = cy2 - 22
-        max_bh = chart_h - 60
-        for b_i, rat in enumerate([0.35, 0.55, 0.78, 1.0]):
-            anim_p = _ease_out_back(min(1.0, max(0.1, scene_progress * 1.8 - b_i * 0.12)))
-            bh = int(max_bh * rat * anim_p)
-            bx = cx1 + 28 + b_i * bar_space
-            draw.rounded_rectangle([(bx, base_y - bh), (bx + bar_w, base_y)], radius=8, fill=prim if b_i == 3 else sec)
+        draw.rounded_rectangle([(cx1, cy1), (cx2, cy2)], radius=24, fill=dark_panel, outline=(255, 255, 255, 80), width=3)
 
-    # مشهد 11: الختام ونداء الطلب
+        num_bars = 5
+        bar_space = (chart_w - 70) // num_bars
+        bar_w = int(bar_space * 0.62)
+        base_y = cy2 - 32
+        max_bh = chart_h - 85
+        ratios = [0.32, 0.48, 0.64, 0.82, 1.0]
+        top_points = []
+
+        for b_i, rat in enumerate(ratios):
+            anim_p = _ease_out_back(min(1.0, max(0.05, scene_progress * 2.0 - b_i * 0.15)))
+            bh = int(max_bh * rat * anim_p)
+            bx = cx1 + 42 + b_i * bar_space
+            b_col = prim if b_i == num_bars - 1 else (sec if b_i >= 2 else acc)
+            draw.rounded_rectangle([(bx, base_y - bh), (bx + bar_w, base_y)], radius=10, fill=b_col, outline=white, width=2)
+            top_points.append((bx + bar_w // 2, base_y - bh - 14))
+
+        if len(top_points) >= 2:
+            draw.line(top_points, fill=prim, width=6)
+            lx, ly = top_points[-1]
+            draw.ellipse([(lx - 12, ly - 12), (lx + 12, ly + 12)], fill=white, outline=prim, width=4)
+
     else:
         for ring_i in range(3):
-            rr = int(r * (0.45 + ring_i * 0.22 + 0.05 * math.sin(global_t * 6 + ring_i)))
-            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=prim if ring_i == 0 else sec, width=4)
-        draw.regular_polygon((cx, cy, int(r * 0.45)), n_sides=6, rotation=int(global_t * 30), fill=dark_panel, outline=prim)
-        draw.regular_polygon((cx, cy, int(r * 0.28)), n_sides=3, rotation=int(-global_t * 45), fill=sec, outline=white)
+            rr = int(r * (0.45 + ring_i * 0.24 + 0.05 * math.sin(global_t * 5 + ring_i)))
+            col = prim if ring_i == 0 else (sec if ring_i == 1 else acc)
+            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=col, width=5 - ring_i)
+
+        draw.regular_polygon((cx, cy, int(r * 0.48)), n_sides=6, rotation=int(global_t * 25), fill=dark_panel, outline=prim)
+        draw.regular_polygon((cx, cy, int(r * 0.32)), n_sides=3, rotation=int(-global_t * 40), fill=sec, outline=white)
 
 
 # ==============================================================================
-# 5. محرك تراكب الموشن جرافيك والكابشن المتزامن إطاراً بإطار فوق الفيديو الأصلي!
-# ==============================================================================
-def render_live_video_motion_frame(
-    base_frame_rgb: np.ndarray,
-    t: float,
-    total_duration: float,
-    storyboard: List[Dict[str, Any]],
-    words_data: List[Dict[str, Any]]
-) -> np.ndarray:
-    """
-    يرسم الموشن جرافيك المتحرك والكابشن الكاريوكي مباشرة فوق إطار الفيديو الأصلي `base_frame_rgb` في اللحظة `t`:
-    1. يحدد المشهد القصير النشط (`sc`) عند الثانية `t` (يتغير كل 1.4 - 1.9 ثانية!).
-    2. يحرك بطاقة الموشن جرافيك العلوية (انزلاق زنبركي + رسمة تتحرك فعلياً في كل إطار `t` + تبديل الموقع والثيم في كل مشهد).
-    3. يرسم شريط الكابشن الكاريوكي المتصل أسفل الفيديو، حيث تضيء وتكبر الكلمة المنطوقة حالياً ("يمشي سوا سوا" مع الصوت بدون اختفاء أو تقطيع).
-    """
-    h, w, _ = base_frame_rgb.shape
-    img = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
-    draw = ImageDraw.Draw(img, "RGBA")
-
-    if not storyboard:
-        return base_frame_rgb
-
-    # 1. تحديد المشهد القصير الحالي عند اللحظة t
-    active_sc_idx = 0
-    for idx, sc in enumerate(storyboard):
-        if t >= sc["start"]:
-            active_sc_idx = idx
-        else:
-            break
-
-    sc = storyboard[active_sc_idx]
-    sc_dur = max(0.18, sc["end"] - sc["start"])
-    sc_prog = max(0.0, min(1.0, (t - sc["start"]) / sc_dur))
-    theme = MOTION_THEMES.get(sc["theme_name"], MOTION_THEMES["cyber_gold"])
-
-    # 2. تحريك بطاقة الموشن جرافيك العلوية (Animated Motion Graphics HUD Card)
-    # دخول انسيابي خلال أول 0.22 ثانية من كل مشهد قصير
-    slide_in = _ease_out_back(min(1.0, (t - sc["start"]) / 0.22)) if (t >= sc["start"]) else 1.0
-    y_slide_offset = int(-140 * (1.0 - slide_in))
-
-    icon_r = max(46, int(min(w, h) * 0.062))
-    title_font = get_arabic_font(max(26, int(min(w, h) * 0.040)), bold=True)
-    sub_badge_font = get_arabic_font(max(19, int(min(w, h) * 0.027)), bold=True)
-
-    badge_title = sc.get("badge_label", sc.get("short_title", "ميزة حصرية"))
-    short_sub = sc.get("short_title", "")
-
-    tw, th = measure_arabic_text(draw, badge_title, title_font)
-    card_w = min(int(w * 0.90), max(tw + icon_r * 2 + 75, int(w * 0.58)))
-    card_h = icon_r * 2 + 30
-
-    cx = w // 2
-    # تناوب بسيط في موضع البطاقة العلوية بين المشاهد لكسر الجمود
-    if active_sc_idx % 3 == 1:
-        card_cx = max(card_w // 2 + 20, int(w * 0.54))
-    elif active_sc_idx % 3 == 2:
-        card_cx = min(w - card_w // 2 - 20, int(w * 0.46))
-    else:
-        card_cx = cx
-
-    top_y = int(h * 0.055) + y_slide_offset
-    x1, y1 = card_cx - card_w // 2, top_y
-    x2, y2 = card_cx + card_w // 2, top_y + card_h
-
-    # هالة مضيئة وخلفية زجاجية داكنة للبطاقة
-    draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 60))
-    draw.rounded_rectangle(
-        [(x1, y1), (x2, y2)],
-        radius=24,
-        fill=(10, 16, 34, 232),
-        outline=(*theme["primary"], 245),
-        width=3
-    )
-    # شريط طاقة متحرك أسفل البطاقة يعبر عن تقدم المشهد
-    prog_bar_w = int((card_w - 48) * min(1.0, max(0.05, sc_prog)))
-    draw.rounded_rectangle([(x1 + 24, y2 - 9), (x1 + 24 + prog_bar_w, y2 - 4)], radius=3, fill=(*theme["secondary"], 255))
-
-    # رسم المشهد المتحرك الحي داخل البطاقة (على اليمين)
-    illus_cx = x2 - icon_r - 18
-    illus_cy = y1 + card_h // 2
-    draw_animated_scene_illustration(
-        draw=draw,
-        scene_type=sc["scene_type"],
-        cx=illus_cx,
-        cy=illus_cy,
-        radius=int(icon_r * 0.86),
-        scene_progress=sc_prog,
-        global_t=t,
-        theme=theme,
-        target_number=sc.get("target_number", 58),
-        short_title=short_sub
-    )
-
-    # رسم عنوان الفكرة والشارة النصية داخل البطاقة
-    text_area_cx = x1 + (illus_cx - icon_r - x1) // 2
-    draw_arabic_text(
-        draw,
-        (text_area_cx, y1 + int(card_h * 0.40)),
-        badge_title,
-        font=title_font,
-        fill=(*theme["primary"], 255),
-        stroke_width=2,
-        stroke_fill=(0, 0, 0, 220)
-    )
-    if short_sub and short_sub != badge_title:
-        draw_arabic_text(
-            draw,
-            (text_area_cx, y1 + int(card_h * 0.75)),
-            short_sub,
-            font=sub_badge_font,
-            fill=(235, 245, 255, 235)
-        )
-
-    # 3. شريط الكابشن الكاريوكي المتزامن في الثلث السفلي ("يمشي سوا سوا مع الكلام")
-    sc_words = sc.get("words", [])
-    act_word_str = ""
-    w_local_prog = 0.5
-
-    for wi, w_obj in enumerate(sc_words):
-        ws = float(w_obj["start"])
-        we = float(sc_words[wi + 1]["start"]) if (wi + 1 < len(sc_words)) else float(w_obj["end"])
-        if t >= ws - 0.04:
-            act_word_str = w_obj["word"]
-            wdur = max(0.10, we - ws)
-            w_local_prog = max(0.0, min(1.0, (t - ws) / wdur))
-
-    if not act_word_str and sc_words:
-        act_word_str = sc_words[0]["word"]
-
-    if act_word_str:
-        # أ) البطاقة البارزة للكلمة المنطوقة حالياً بفيزياء زنبركية (Active Spoken Word Pop)
-        pop_scale = _ease_out_back(min(1.0, w_local_prog * 3.0))
-        base_cap_size = max(42, int(min(w, h) * 0.068))
-        act_font_size = max(34, int(base_cap_size * (0.85 + 0.18 * pop_scale)))
-        act_font = get_arabic_font(act_font_size, bold=True)
-
-        cap_y = int(h * 0.72)
-        cw, ch = measure_arabic_text(draw, act_word_str, act_font)
-        pad_x = max(34, int(act_font_size * 0.58))
-        pad_y = max(18, int(act_font_size * 0.34))
-
-        wx1, wy1 = cx - cw // 2 - pad_x, cap_y - ch // 2 - pad_y
-        wx2, wy2 = cx + cw // 2 + pad_x, cap_y + ch // 2 + pad_y
-
-        draw.rounded_rectangle([(wx1 - 5, wy1 - 5), (wx2 + 5, wy2 + 5)], radius=24, fill=(*theme["primary"], 65))
-        draw.rounded_rectangle(
-            [(wx1, wy1), (wx2, wy2)],
-            radius=20,
-            fill=(10, 15, 30, 235),
-            outline=(*theme["primary"], 255),
-            width=4
-        )
-        draw_arabic_text(
-            draw,
-            (cx, cap_y),
-            act_word_str,
-            font=act_font,
-            fill=(*theme["primary"], 255),
-            stroke_width=2,
-            stroke_fill=(0, 0, 0, 240)
-        )
-
-        # ب) شريط العبارة الكاملة للمشهد أسفل الكلمة النشطة مباشرة لمنع أي تقطع في القراءة
-        phrase_str = sc.get("text", "")
-        if phrase_str and len(sc_words) > 1:
-            p_font = get_arabic_font(max(26, int(base_cap_size * 0.48)), bold=True)
-            pw, ph = measure_arabic_text(draw, phrase_str, p_font)
-            sub_y = wy2 + ph // 2 + 22
-            p_bar_w = min(int(w * 0.92), pw + 48)
-            draw.rounded_rectangle(
-                [(cx - p_bar_w // 2, sub_y - ph // 2 - 12), (cx + p_bar_w // 2, sub_y + ph // 2 + 12)],
-                radius=16,
-                fill=(8, 12, 24, 215),
-                outline=(*theme["secondary"], 180),
-                width=2
-            )
-            draw_arabic_text(
-                draw,
-                (cx, sub_y),
-                phrase_str,
-                font=p_font,
-                fill=(255, 255, 255, 250),
-                stroke_width=1,
-                stroke_fill=(0, 0, 0, 200)
-            )
-
-    # 4. وميض انتقالي سينمائي ناعم عند بداية كل مشهد جديد (Shot Transition Accent)
-    if active_sc_idx > 0 and 0.0 <= (t - sc["start"]) < 0.16:
-        flash_alpha = int(160 * (1.0 - (t - sc["start"]) / 0.16))
-        draw.rounded_rectangle([(8, 8), (w - 8, h - 8)], radius=24, outline=(*theme["primary"], flash_alpha), width=10)
-
-    return np.array(img.convert("RGB"))
-
-
-# ==============================================================================
-# 6. تصيير المشهد الكامل لوضع الموشن جرافيك الصافي (Full-Screen Motion Canvas)
+# 5. تصيير المشهد الكامل لوضع الموشن جرافيك الصافي (Full-Screen Motion Canvas)
 # ==============================================================================
 def render_single_scene_canvas(
     scene_meta: Dict[str, Any],
@@ -839,7 +682,6 @@ def render_single_scene_canvas(
     height: int,
     bg_cache: Dict[str, np.ndarray]
 ) -> Image.Image:
-    """رسم إطار كامل (1080x1920) لمشهد موشن جرافيك مستقل."""
     theme_name = scene_meta["theme_name"]
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
 
@@ -965,7 +807,7 @@ def apply_scene_transition(
     if transition_type == "whip_left":
         offset = int(w * (1.0 - p))
         out = Image.new("RGBA", (w, h), (0, 0, 0, 255))
-        out.paste(prev_img, (-int(w * p), 0))
+        out.paste(prev_img, (- int(w * p), 0))
         out.paste(curr_img, (offset, 0))
         draw = ImageDraw.Draw(out, "RGBA")
         draw.line([(offset, 0), (offset, h)], fill=(255, 230, 0, 220), width=8)
@@ -993,6 +835,177 @@ def apply_scene_transition(
 
     else:
         return Image.blend(prev_img, curr_img, p)
+
+
+# ==============================================================================
+# 6. تصيير إطار الفيديو متعدد الأنماط المكانية (Master Directed Multi-Layout Frame)
+# ==============================================================================
+def render_master_directed_video_frame(
+    base_frame_rgb: np.ndarray,
+    t: float,
+    total_duration: float,
+    master_plan: List[Dict[str, Any]],
+    words_data: List[Dict[str, Any]],
+    bg_cache: Dict[str, np.ndarray],
+    audio_level: float = 0.75
+) -> np.ndarray:
+    """
+    تصيير إطار الفيديو بتوزيع الأنماط المكانية وفق أوامر مخطط المخرج الشامل:
+    - full_screen: يقطع لشاشة موشن جرافيك كاملة ومتحركة (B-roll) مع انتقالات سينمائية.
+    - top_overlay: بطاقة موشن جرافيك ورسمة متحركة في النصف العلوي فوق المتحدث.
+    - lower_third: شارة أو لافتة موشن جرافيك في الثلث السفلي (توصيل، ضمان، ميزات، أسعار).
+    - speaker_clean: لقطة متحدث صافية مع زوم هادئ وكابشن كاريوكي فقط لراحة العين.
+    """
+    h, w, _ = base_frame_rgb.shape
+    if not master_plan:
+        return base_frame_rgb
+
+    # 1. تحديد الأمر الإخراجي للمشهد الحالي عند اللحظة t
+    active_idx = 0
+    for idx, sc in enumerate(master_plan):
+        if t >= sc["start"]:
+            active_idx = idx
+        else:
+            break
+
+    sc = master_plan[active_idx]
+    layout_mode = sc.get("layout_mode", "top_overlay")
+    theme_name = sc.get("theme_name", "cyber_gold")
+    theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
+    sc_dur = max(0.18, sc["end"] - sc["start"])
+    sc_prog = max(0.0, min(1.0, (t - sc["start"]) / sc_dur))
+
+    # تحديد الكلمة المنطوقة حالياً وسياقها
+    sc_words = sc.get("word_strings", [])
+    act_word = sc_words[0] if sc_words else sc.get("short_title", "")
+    w_prog = 0.5
+    for wi, w_obj in enumerate(sc.get("words", [])):
+        ws = float(w_obj.get("start", 0.0))
+        we = float(w_obj.get("end", ws + 0.3))
+        if t >= ws - 0.04:
+            act_word = w_obj.get("word", "")
+            wdur = max(0.10, we - ws)
+            w_prog = max(0.0, min(1.0, (t - ws) / wdur))
+
+    # -------------------------------------------------------------------------
+    # النمط 1: شاشة موشن جرافيك كاملة B-Roll (Full-Screen Animated Scene)
+    # -------------------------------------------------------------------------
+    if layout_mode == "full_screen":
+        curr_img = render_single_scene_canvas(
+            scene_meta=sc,
+            active_word=act_word,
+            scene_words=sc_words,
+            active_word_idx=0,
+            word_local_progress=w_prog,
+            scene_progress=sc_prog,
+            global_t=t,
+            total_duration=total_duration,
+            audio_level=audio_level,
+            width=w,
+            height=h,
+            bg_cache=bg_cache
+        )
+        # انتقال سلس عند الدخول في المشهد الكامل
+        time_into_scene = t - sc["start"]
+        if active_idx > 0 and 0.0 <= time_into_scene < 0.26:
+            prev_base = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
+            blended = apply_scene_transition(prev_base, curr_img, time_into_scene / 0.26, sc.get("transition", "zoom_portal"))
+            return np.array(blended.convert("RGB"))
+        return np.array(curr_img.convert("RGB"))
+
+    # -------------------------------------------------------------------------
+    # الأنماط التراكبية فوق فيديو المتحدث (Overlays on Speaker Video)
+    # -------------------------------------------------------------------------
+    img = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
+    draw = ImageDraw.Draw(img, "RGBA")
+    cx = w // 2
+
+    # أ) النمط 2: تراكب الجزء العلوي (Top Overlay HUD Card)
+    if layout_mode == "top_overlay":
+        slide_in = _ease_out_back(min(1.0, (t - sc["start"]) / 0.22)) if (t >= sc["start"]) else 1.0
+        y_slide_offset = int(-140 * (1.0 - slide_in))
+
+        icon_r = max(44, int(min(w, h) * 0.060))
+        title_font = get_arabic_font(max(26, int(min(w, h) * 0.038)), bold=True)
+        badge_title = sc.get("badge_label", sc.get("short_title", "ميزة حصرية"))
+
+        tw, th = measure_arabic_text(draw, badge_title, title_font)
+        card_w = min(int(w * 0.90), max(tw + icon_r * 2 + 75, int(w * 0.58)))
+        card_h = icon_r * 2 + 30
+
+        top_y = int(h * 0.055) + y_slide_offset
+        x1, y1 = cx - card_w // 2, top_y
+        x2, y2 = cx + card_w // 2, top_y + card_h
+
+        draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 60))
+        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=24, fill=(10, 16, 34, 232), outline=(*theme["primary"], 245), width=3)
+
+        prog_bar_w = int(max(10, card_w - 48) * min(1.0, max(0.05, sc_prog)))
+        draw.rounded_rectangle([(x1 + 24, y2 - 9), (x1 + 24 + prog_bar_w, y2 - 4)], radius=3, fill=(*theme["secondary"], 255))
+
+        illus_cx = x2 - icon_r - 18
+        illus_cy = y1 + card_h // 2
+        draw_animated_scene_illustration(
+            draw=draw,
+            scene_type=sc["scene_type"],
+            cx=illus_cx,
+            cy=illus_cy,
+            radius=int(icon_r * 0.86),
+            scene_progress=sc_prog,
+            global_t=t,
+            theme=theme,
+            target_number=sc.get("target_number", 58),
+            short_title=sc.get("short_title", "")
+        )
+
+        text_area_cx = x1 + (illus_cx - icon_r - x1) // 2
+        draw_arabic_text(draw, (text_area_cx, y1 + int(card_h * 0.50)), badge_title, font=title_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 220))
+
+    # ب) النمط 3: تراكب الثلث السفلي (Lower Third Infographic Banner)
+    elif layout_mode == "lower_third":
+        l3_font = get_arabic_font(max(26, int(min(w, h) * 0.038)), bold=True)
+        l3_txt = sc.get("badge_label", "ميزة حصرية")
+        tw, th = measure_arabic_text(draw, l3_txt, l3_font)
+        bar_w = min(int(w * 0.92), tw + 80)
+        bar_h = th + 36
+        by1 = int(h * 0.84)
+        by2 = by1 + bar_h
+        bx1 = cx - bar_w // 2
+        bx2 = cx + bar_w // 2
+
+        draw.rounded_rectangle([(bx1 - 4, by1 - 4), (bx2 + 4, by2 + 4)], radius=22, fill=(*theme["primary"], 80))
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=18, fill=(12, 18, 36, 238), outline=(*theme["primary"], 255), width=3)
+        draw_arabic_text(draw, (cx, by1 + bar_h // 2), l3_txt, font=l3_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 230))
+
+    # ج) في كل الأنماط التراكبية: كابشن كاريوكي تفاعلي أصفر متزامن مع الكلام
+    if act_word:
+        pop_scale = _ease_out_back(min(1.0, w_prog * 3.0))
+        base_cap_size = max(40, int(min(w, h) * 0.065))
+        act_font_size = max(32, int(base_cap_size * (0.85 + 0.18 * pop_scale)))
+        act_font = get_arabic_font(act_font_size, bold=True)
+
+        cap_y = int(h * 0.72) if layout_mode != "lower_third" else int(h * 0.68)
+        cw, ch = measure_arabic_text(draw, act_word, act_font)
+        pad_x = max(34, int(act_font_size * 0.58))
+        pad_y = max(18, int(act_font_size * 0.34))
+
+        wx1, wy1 = cx - cw // 2 - pad_x, cap_y - ch // 2 - pad_y
+        wx2, wy2 = cx + cw // 2 + pad_x, cap_y + ch // 2 + pad_y
+
+        draw.rounded_rectangle([(wx1 - 5, wy1 - 5), (wx2 + 5, wy2 + 5)], radius=24, fill=(*theme["primary"], 65))
+        draw.rounded_rectangle([(wx1, wy1), (wx2, wy2)], radius=20, fill=(10, 15, 30, 235), outline=(*theme["primary"], 255), width=4)
+        draw_arabic_text(draw, (cx, cap_y), act_word, font=act_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 240))
+
+        if sc_words:
+            sub_font = get_arabic_font(max(24, int(base_cap_size * 0.44)), bold=True)
+            p_text = " ".join(sc_words)
+            pw, ph = measure_arabic_text(draw, p_text, sub_font)
+            sub_y = wy2 + ph // 2 + 18
+            p_bar_w = min(int(w * 0.92), pw + 48)
+            draw.rounded_rectangle([(cx - p_bar_w // 2, sub_y - ph // 2 - 10), (cx + p_bar_w // 2, sub_y + ph // 2 + 10)], radius=16, fill=(8, 12, 24, 215), outline=(*theme["secondary"], 180), width=2)
+            draw_arabic_text(draw, (cx, sub_y), p_text, font=sub_font, fill=(255, 255, 255, 240))
+
+    return np.array(img.convert("RGB"))
 
 
 def create_studio_background(
@@ -1027,112 +1040,9 @@ def create_studio_background(
     return np.array(img)
 
 
-def draw_procedural_vector_icon(
-    icon_type: str,
-    size: int = 140,
-    accent_color: Tuple[int, int, int] = (255, 225, 0),
-    secondary_color: Tuple[int, int, int] = (0, 245, 212)
-) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img, "RGBA")
-    theme = {"primary": accent_color, "secondary": secondary_color, "accent": secondary_color, "glow": accent_color}
-    scene_map = {
-        "money": "growth_analytics",
-        "time": "time_warp_clock",
-        "idea": "ai_neural_brain",
-        "code": "platform_builder",
-        "question": "video_montage_studio",
-        "warning": "hook_energy_burst",
-        "success": "ecommerce_showcase"
-    }
-    draw_animated_scene_illustration(
-        draw=draw,
-        scene_type=scene_map.get(icon_type, "ai_neural_brain"),
-        cx=size // 2,
-        cy=size // 2,
-        radius=int(size * 0.44),
-        scene_progress=0.85,
-        global_t=1.2,
-        theme=theme
-    )
-    return img
-
-
-def analyze_sentence_visual_metadata(
-    sentence: str,
-    model_name: str = "llama3",
-    ollama_url: str = "http://localhost:11434",
-    groq_api_key: Optional[str] = None,
-    gemini_api_key: Optional[str] = None,
-    openai_api_key: Optional[str] = None
-) -> Dict[str, str]:
-    bp = classify_micro_scene_blueprint(sentence, 0, 10)
-    return {
-        "keyword": bp["short_title"],
-        "icon_type": "success",
-        "scene_type": bp["scene_type"]
-    }
-
-
-def render_video_motion_overlay_card(
-    keyword_title: str,
-    icon_type: str,
-    video_width: int,
-    video_height: int,
-    mode: str = "corner_card",
-    subtitle_line: str = "",
-    theme_name: str = "cyber_gold"
-) -> np.ndarray:
-    theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
-    canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas, "RGBA")
-
-    title_font_size = max(28, int(min(video_width, video_height) * 0.044))
-    title_font = get_arabic_font(title_font_size, bold=True)
-
-    icon_size = max(92, int(min(video_width, video_height) * 0.115))
-    icon_img = draw_procedural_vector_icon(icon_type=icon_type, size=icon_size, accent_color=theme["primary"], secondary_color=theme["secondary"])
-
-    tw, th = measure_arabic_text(draw, keyword_title, title_font)
-    card_w = min(int(video_width * 0.88), max(tw + icon_size + 85, int(video_width * 0.54)))
-    card_h = icon_size + 36
-    cx = video_width // 2
-    top_y = int(video_height * 0.075)
-
-    x1, y1 = cx - card_w // 2, top_y
-    x2, y2 = cx + card_w // 2, top_y + card_h
-
-    draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 55))
-    draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=24, fill=(11, 17, 34, 232), outline=(*theme["primary"], 245), width=3)
-
-    icon_x = x2 - icon_size - 18
-    icon_y = y1 + (card_h - icon_size) // 2
-    canvas.paste(icon_img, (icon_x, icon_y), icon_img)
-
-    text_center_x = x1 + (icon_x - x1) // 2
-    text_center_y = y1 + card_h // 2
-    draw_arabic_text(draw, (text_center_x, text_center_y), keyword_title, font=title_font, fill=(*theme["primary"], 255))
-
-    return np.array(canvas)
-
-
-def render_ecommerce_ad_overlay(
-    ad_role: str,
-    badge_title: str,
-    icon_cat: str,
-    video_width: int,
-    video_height: int,
-    theme_name: str = "cyber_gold"
-) -> np.ndarray:
-    return render_video_motion_overlay_card(
-        keyword_title=badge_title,
-        icon_type=icon_cat,
-        video_width=video_width,
-        video_height=video_height,
-        theme_name=theme_name
-    )
-
-
+# ==============================================================================
+# 7. المسار الرئيسي لتوليد فيديو الموشن جرافيك الكامل
+# ==============================================================================
 def create_kinetic_typography_video(
     input_path: str,
     output_path: str,
@@ -1145,7 +1055,6 @@ def create_kinetic_typography_video(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    """إنشاء فيديو موشن جرافيك كامل ومتحرك إطاراً بإطار."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف المدخل غير موجود: {input_path}")
 
@@ -1164,7 +1073,7 @@ def create_kinetic_typography_video(
     motion_clip = None
 
     try:
-        update_progress(0.10, "1/4: قراءة الصوت وتفريغ الدارجة الجزائرية والعربية بدقة...")
+        update_progress(0.10, "1/4: قراءة الصوت وتفريغ الكلمات بدقة الملي ثانية...")
         audio_clip = AudioFileClip(input_path)
         total_duration = float(audio_clip.duration)
 
@@ -1184,8 +1093,8 @@ def create_kinetic_typography_video(
         if not words_data:
             raise ValueError("لم يتم استخراج أي كلمات من الملف الصوتي.")
 
-        update_progress(0.28, "2/4: بناء القصة البصرية وتوليد مشهد موشن جرافيك جديد لكل 1.5 ثانية...")
-        micro_scenes = split_words_into_micro_scenes(words_data, max_words_per_scene=4, max_duration_per_scene=1.9)
+        update_progress(0.28, "2/4: بناء القصة البصرية وتوليد مشهد موشن جرافيك جديد لكل 1.5 - 2 ثانية...")
+        micro_scenes = split_words_into_micro_scenes(words_data, max_words_per_scene=4, max_duration_per_scene=2.0)
 
         storyboard: List[Dict[str, Any]] = []
         prev_s_type = None
@@ -1310,7 +1219,7 @@ def create_kinetic_typography_video(
 
             return np.array(curr_img.convert("RGB"))
 
-        update_progress(0.65, f"4/4: رندرة {len(storyboard)} مشهد موشن جرافيك متحرك مع الانتقالات البصرية...")
+        update_progress(0.65, f"4/4: رندرة {len(storyboard)} مشهد موشن جرافيك متحرك...")
         motion_clip = VideoClip(make_frame, duration=total_duration).set_audio(audio_clip)
 
         temp_audio_file = os.path.join(temp_dir, "temp_motion_audio.m4a")
