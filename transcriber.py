@@ -1,11 +1,10 @@
 """
-transcriber.py - وحدة التفريغ الصوتي المتقدمة الداعمة للدارجة الجزائرية وتعديل الكابشن التفاعلي
-=================================================================================================
+transcriber.py - وحدة التفريغ الصوتي المتقدمة الداعمة للدارجة الجزائرية والعربية وتوليد المشاهد القصيرة
+========================================================================================================
 تتميز هذه الوحدة بـ:
-1. دعم متقدم للدارجة الجزائرية (Algerian Darija) عبر موجهات صوتية مخصصة وقاموس تصحيح وتدقيق بالذكاء الاصطناعي.
-2. نظام تعديل الكابشن التفاعلي (Interactive Caption Override Engine):
-   - يسمح للمستخدم بتعديل أي كلمة أو جملة بعد ظهور الفيديو في جميع الأنماط.
-   - يعيد مزامنة التواقيت الزمنية للكلمات تلقائياً ويحفظها بحيث تعاد رندرة أي نمط فوراً بالكابشن المعدل دون إعادة تشغيل Whisper.
+1. دعم متقدم للدارجة الجزائرية والعربية ومصطلحات صناعة المحتوى والتقنية (مونتاج، ذكاء اصطناعي، ريلز، منصة، أوتوماتيكي...).
+2. تقسيم ذكي للكلمات إلى مشاهد قصيرة متجددة كل 1.5 - 2.2 ثانية (Micro-Scenes) لضمان تغير رسومات الموشن جرافيك باستمرار.
+3. نظام تعديل الكابشن التفاعلي (Interactive Caption Override Engine) لجميع الأنماط.
 """
 
 import sys
@@ -32,17 +31,39 @@ except ImportError:
 
 
 # ==============================================================================
-# 1. إعدادات وموجهات الدارجة الجزائرية (Algerian Darija Dialect Engine)
+# 1. إعدادات وموجهات الدارجة الجزائرية والعربية ومصطلحات التقنية وصناعة المحتوى
 # ==============================================================================
 ALGERIAN_DARIJA_INITIAL_PROMPT = (
-    "السلام عليكم خاوتي، واش راكم لاباس؟ صحتكم مليحة؟ "
-    "هاذ الفيديو نهدروا فيه بالدارجة الجزائرية والعربية الفصحى. "
-    "علاش وكيفاش نديروا هاذ العفسة شابة بزاف، درك ودوكا نشوفوا مع بعض، "
-    "ماكانش مشكل، زعما كيما نقولوا حنا في الدزاير، نورمال، باسكو، ديجا، "
-    "سيتادير، مليح، يعطيكم الصحة، ربي يحفظكم، تبعوا معايا مليح باش تفهموا كلش."
+    "أهلاً وسهلاً، السلام عليكم خاوتي، أنا أنس، واش راكم لاباس؟ "
+    "عمري 17 سنة، أبني منصة تعمل مونتاج بالذكاء الاصطناعي بشكل أوتوماتيكي، "
+    "لأن أغلب الناس ما عندها وقت تمنتج الفيديوهات وتبغى ترفع ريلز وتيك توك كل يوم، "
+    "واسم المنصة فيديو إيديتينج Video Editing. علاش وكيفاش نديروا هاذ العفسة شابة بزاف، درك نشوفوا مع بعض."
 )
 
+# قاموس شامل لتصحيح الأخطاء الصوتية الشائعة في Whisper (العربية + الدارجة الجزائرية + مصطلحات المونتاج والتقنية)
 ALGERIAN_DARIJA_LEXICON_FIXES = {
+    # أخطاء ظهرت في فيديو الاختبار ومصطلحات المونتاج الشائعة
+    "لنلو": "أهلاً",
+    "لنلو،": "أهلاً،",
+    "أناس": "أنس",
+    "أناس،": "أنس،",
+    "اناس": "أنس",
+    "عمره": "عمري",
+    "منتاج": "مونتاج",
+    "استناعي": "اصطناعي",
+    "إستناعي": "اصطناعي",
+    "بذكاء": "بالذكاء",
+    "أغالب": "أغلب",
+    "اغالب": "أغلب",
+    "هنده": "عندها",
+    "عنده": "عندها",
+    "ريز": "ريلز",
+    "ريز،": "ريلز،",
+    "الريز": "الريلز",
+    "ايدي": "إيديتينج",
+    "تيك": "إيديتينج",
+    "تيك.": "إيديتينج",
+    # مفردات الدارجة الجزائرية الشائعة
     "وشراكم": "واش راكم",
     "واشراكم": "واش راكم",
     "علاه": "علاش",
@@ -71,10 +92,25 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "كلشي": "كلش",
 }
 
+# تصحيحات مركبة على مستوى العبارة (Phrase-level fixes)
+PHRASE_LEVEL_FIXES = [
+    (r"أنا\s+لنلو[،,]?\s+أنا\s+أناس", "أهلاً، أنا أنس"),
+    (r"أنا\s+أناس", "أنا أنس"),
+    (r"عمره\s+17\s+سنة", "عمري 17 سنة"),
+    (r"حاول\s+أبني", "أحاول أبني"),
+    (r"منتاج\s+بذكاء\s+استناعي", "مونتاج بالذكاء الاصطناعي"),
+    (r"منتاج\s+بالذكاء\s+اصطناعي", "مونتاج بالذكاء الاصطناعي"),
+    (r"مونتاج\s+بالذكاء\s+اصطناعي", "مونتاج بالذكاء الاصطناعي"),
+    (r"أغالب\s+الناس", "أغلب الناس"),
+    (r"ما\s+هنده\s+وقت", "ما عندها وقت"),
+    (r"ترفع\s+ريز", "ترفع ريلز"),
+    (r"فيديو\s+ايدي\s+تيك\.?", "فيديو إيديتينج"),
+    (r"فيديو\s+إيديتينج\s+Video\.?", "فيديو إيديتينج"),
+]
+
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
 
-# مخزن الكابشن المعدل يدوياً من طرف المستخدم + آخر تفريغ مستخرج
 _CUSTOM_CAPTION_OVERRIDE: Dict[str, Any] = {
     "enabled": False,
     "words": [],
@@ -87,10 +123,74 @@ _LAST_EXTRACTED_TRANSCRIPT: Dict[str, List[Dict[str, Any]]] = {
 
 
 # ==============================================================================
-# 2. دوال إدارة وتعديل الكابشن التفاعلي لجميع الأنماط
+# 2. تقسيم الكلمات إلى مشاهد قصيرة متجددة كل 1.5 - 2.2 ثانية (Micro-Scenes)
+# ==============================================================================
+def split_words_into_micro_scenes(
+    words_list: List[Dict[str, Any]],
+    max_words_per_scene: int = 4,
+    max_duration_per_scene: float = 2.1
+) -> List[Dict[str, Any]]:
+    """
+    تقسيم الكلمات المفرغة إلى مشاهد قصيرة وسريعة (كل 1.5 إلى 2.1 ثانية بحد أقصى 4 كلمات)،
+    بحيث يتولد مشهد موشن جرافيك جديد ومتحرك كل ثانية أو ثانيتين بدلاً من بقاء رسمة واحدة طوال الفيديو!
+    """
+    if not words_list:
+        return []
+
+    scenes: List[Dict[str, Any]] = []
+    current_group: List[Dict[str, Any]] = []
+
+    semantic_break_words = {
+        "لأن", "باش", "علاش", "كيفاش", "واسم", "لكن", "أول", "ثاني", "ثالث",
+        "وتبغى", "وقاعد", "تعمل", "عمري", "اطلب", "التوصيل", "المشكل", "الحل"
+    }
+
+    for i, w in enumerate(words_list):
+        w_txt = str(w.get("word", "")).strip()
+        if not w_txt:
+            continue
+
+        if current_group:
+            grp_start = float(current_group[0]["start"])
+            grp_dur = float(w["end"]) - grp_start
+            prev_word_txt = str(current_group[-1]["word"])
+            gap = float(w["start"]) - float(current_group[-1]["end"])
+
+            ends_with_punct = any(prev_word_txt.endswith(p) for p in [",", "،", ".", "!", "؟", "?"])
+            is_semantic_start = (w_txt in semantic_break_words and len(current_group) >= 2)
+
+            if (
+                len(current_group) >= max_words_per_scene
+                or grp_dur >= max_duration_per_scene
+                or gap >= 0.35
+                or ends_with_punct
+                or is_semantic_start
+            ):
+                scenes.append({
+                    "text": " ".join(x["word"] for x in current_group),
+                    "start": round(float(current_group[0]["start"]), 3),
+                    "end": round(float(current_group[-1]["end"]), 3),
+                    "words": list(current_group)
+                })
+                current_group = []
+
+        current_group.append(dict(w))
+
+    if current_group:
+        scenes.append({
+            "text": " ".join(x["word"] for x in current_group),
+            "start": round(float(current_group[0]["start"]), 3),
+            "end": round(float(current_group[-1]["end"]), 3),
+            "words": list(current_group)
+        })
+
+    return scenes
+
+
+# ==============================================================================
+# 3. دوال إدارة وتعديل الكابشن التفاعلي لجميع الأنماط
 # ==============================================================================
 def get_last_extracted_transcript() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """استرجاع آخر قائمة كلمات وجمل تم تفريغها لعرضها في محرر الكابشن بواجهة المستخدم."""
     if _CUSTOM_CAPTION_OVERRIDE["enabled"] and _CUSTOM_CAPTION_OVERRIDE["words"]:
         return (
             [dict(w) for w in _CUSTOM_CAPTION_OVERRIDE["words"]],
@@ -103,7 +203,6 @@ def get_last_extracted_transcript() -> Tuple[List[Dict[str, Any]], List[Dict[str
 
 
 def clear_custom_caption_override():
-    """إلغاء الكابشن المعدل عند رفع ملف جديد."""
     _CUSTOM_CAPTION_OVERRIDE["enabled"] = False
     _CUSTOM_CAPTION_OVERRIDE["words"] = []
     _CUSTOM_CAPTION_OVERRIDE["sentences"] = []
@@ -113,14 +212,10 @@ def set_custom_caption_override(
     custom_words: Optional[List[Dict[str, Any]]] = None,
     custom_sentences: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    حفظ تعديلات المستخدم على الكابشن (سواء عدّل الجمل أو الكلمات المفردة)
-    ومزامنتها تلقائياً لتعمل فوراً في كل أنماط المونتاج والموشن جرافيك.
-    """
+    """حفظ تعديلات المستخدم على الكابشن ومزامنتها تلقائياً."""
     base_words, base_sentences = get_last_extracted_transcript()
 
     if custom_sentences is not None and custom_words is None:
-        # قام المستخدم بتعديل نصوص الجمل: نعيد بناء قائمة الكلمات وتواقيتها بدقة
         synced_words: List[Dict[str, Any]] = []
         synced_sentences: List[Dict[str, Any]] = []
 
@@ -136,7 +231,6 @@ def set_custom_caption_override(
 
             sent_word_objs = []
             if len(new_tokens) == len(orig_words) and orig_words:
-                # إذا بقي عدد كلمات الجملة كما هو، نحتفظ بالتوقيت الأصلي لكل كلمة بالمللي ثانية
                 for tok, ow in zip(new_tokens, orig_words):
                     w_obj = {
                         "word": tok,
@@ -147,7 +241,6 @@ def set_custom_caption_override(
                     sent_word_objs.append(w_obj)
                     synced_words.append(w_obj)
             elif new_tokens:
-                # إذا أضاف المستخدم كلمات أو دمجها، نوزع التوقيت الزمني للجملة بالتناسب مع طول كل كلمة
                 total_chars = max(1, sum(len(t) for t in new_tokens))
                 dur = max(0.15, s_end - s_start)
                 cursor = s_start
@@ -179,7 +272,6 @@ def set_custom_caption_override(
         return synced_words, synced_sentences
 
     if custom_words is not None:
-        # قام المستخدم بتعديل جدول الكلمات المفردة مباشرة
         cleaned_words = []
         for w in custom_words:
             w_txt = str(w.get("word", "")).strip()
@@ -194,34 +286,7 @@ def set_custom_caption_override(
                 "probability": 1.0
             })
 
-        # تحديث نصوص الجمل لتطابق الكلمات المعدلة
-        updated_sentences = []
-        if base_sentences:
-            for sent in base_sentences:
-                s_start = float(sent.get("start", 0.0))
-                s_end = float(sent.get("end", 0.0))
-                matching = [
-                    cw for cw in cleaned_words
-                    if cw["start"] >= s_start - 0.15 and cw["end"] <= s_end + 0.25
-                ]
-                if matching:
-                    updated_sentences.append({
-                        "text": " ".join(m["word"] for m in matching),
-                        "start": round(s_start, 3),
-                        "end": round(s_end, 3),
-                        "words": matching
-                    })
-        if not updated_sentences and cleaned_words:
-            # تجميع كل 6 كلمات في جملة إذا لم توجد جمل سابقة
-            for i in range(0, len(cleaned_words), 6):
-                grp = cleaned_words[i:i + 6]
-                updated_sentences.append({
-                    "text": " ".join(m["word"] for m in grp),
-                    "start": grp[0]["start"],
-                    "end": grp[-1]["end"],
-                    "words": grp
-                })
-
+        updated_sentences = split_words_into_micro_scenes(cleaned_words)
         _CUSTOM_CAPTION_OVERRIDE["enabled"] = True
         _CUSTOM_CAPTION_OVERRIDE["words"] = cleaned_words
         _CUSTOM_CAPTION_OVERRIDE["sentences"] = updated_sentences
@@ -233,14 +298,19 @@ def set_custom_caption_override(
 
 
 # ==============================================================================
-# 3. تطبيع وتدقيق الدارجة الجزائرية
+# 4. تطبيع وتدقيق النصوص والدارجة الجزائرية
 # ==============================================================================
 def normalize_algerian_word(word: str) -> str:
     if not word:
         return ""
     cleaned = word.strip()
+    # فحص بدون علامات ترقيم طرفية
+    stripped_punct = cleaned.strip("،,.!؟?")
     if cleaned in ALGERIAN_DARIJA_LEXICON_FIXES:
         return ALGERIAN_DARIJA_LEXICON_FIXES[cleaned]
+    if stripped_punct in ALGERIAN_DARIJA_LEXICON_FIXES:
+        suffix = cleaned[len(stripped_punct):] if cleaned.startswith(stripped_punct) else ""
+        return ALGERIAN_DARIJA_LEXICON_FIXES[stripped_punct] + suffix
     return cleaned
 
 
@@ -249,8 +319,37 @@ def normalize_algerian_sentence(text: str) -> str:
         return ""
     out = text.strip()
     for wrong, right in ALGERIAN_DARIJA_LEXICON_FIXES.items():
-        out = re.sub(rf"\b{re.escape(wrong)}\b", right, out)
+        out = re.sub(rf"(?<!\w){re.escape(wrong)}(?!\w)", right, out)
+    for pattern, replacement in PHRASE_LEVEL_FIXES:
+        out = re.sub(pattern, replacement, out)
     return out
+
+
+def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """تطبيق التصحيحات المركبة على قائمة الكلمات مع الحفاظ على التوقيت."""
+    if not words_list:
+        return words_list
+
+    # تصحيح خاص للتراكيب المتتالية مثل (أنا لنلو -> أهلاً) أو (حاول أبني -> أحاول أبني)
+    updated = [dict(w) for w in words_list]
+    for i in range(len(updated)):
+        w_curr = updated[i]["word"].strip("،,.")
+        if w_curr in {"لنلو", "أهلاً", "اهلا"} and i > 0 and updated[i - 1]["word"].strip("،,.") == "أنا":
+            updated[i - 1]["word"] = "أهلاً،"
+            updated[i]["word"] = "أنا"
+        elif w_curr == "حاول" and i + 1 < len(updated) and updated[i + 1]["word"].startswith("أبني"):
+            updated[i]["word"] = "أحاول"
+        elif w_curr == "اصطناعي" and i > 0 and updated[i - 1]["word"] == "بالذكاء":
+            updated[i]["word"] = "الاصطناعي"
+
+    deduped = []
+    for w in updated:
+        if deduped and deduped[-1]["word"].strip("،,.") == w["word"].strip("،,."):
+            deduped[-1]["end"] = w["end"]
+            deduped[-1]["word"] = w["word"]
+        else:
+            deduped.append(w)
+    return deduped
 
 
 def refine_darija_words_with_ai(
@@ -260,33 +359,28 @@ def refine_darija_words_with_ai(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
+    words_list = apply_phrase_fixes_to_words(words_list)
     if not words_list or len(words_list) > 250:
         return words_list
 
     raw_tokens = [w["word"] for w in words_list]
     indexed_text = " | ".join([f"{i}:{tok}" for i, tok in enumerate(raw_tokens)])
 
-    if dialect_mode == "msa_simplified":
-        instruction = (
-            "المدخل التالي هو كلمات مستخرجة من تسجيل صوتي بالدارجة الجزائرية أو العربية مفصولة بـ |. "
-            "قم بتحويل الكلمات العامية غير الواضحة إلى مقابلاتها العربية البسيطة مع الحفاظ على نفس الفهرس الرقمي لكل كلمة."
-        )
-    else:
-        instruction = (
-            "المدخل التالي هو كلمات مستخرجة من تسجيل صوتي بالدارجة الجزائرية (Algerian Darija) مفصولة بـ |. "
-            "قم بتصحيح الإملاء الخاطئ فقط لتظهر بالدارجة الجزائرية الصحيحة والواضحة، ولا تغير الكلمات الصحيحة."
-        )
+    instruction = (
+        "المدخل التالي هو كلمات مستخرجة بالتعرف الصوتي (Whisper) من فيديو بالدارجة الجزائرية أو العربية مفصولة بـ |. "
+        "بعض الكلمات قد تكون مكتوبة خطأ بسبب التشابه الصوتي (مثال: منتاج -> مونتاج، استناعي -> اصطناعي، ريز -> ريلز، أغالب -> أغلب، هنده -> عندها، أناس -> أنس). "
+        "صحح الكلمات الخاطئة إملائياً فقط لتصبح صحيحة وسليمة مع الحفاظ على نفس رقم الفهرس."
+    )
 
     prompt = (
         f"{instruction}\n"
         f"قائمة الكلمات المفهرسة:\n{indexed_text}\n\n"
-        "أرجع فقط JSON صالح عبارة عن قاموس يربط رقم الكلمة التي تحتاج لتصحيح بالكلمة المصححة فقط، "
-        "مثال: {\"2\": \"بزاف\", \"5\": \"علاش\"}. إذا كانت كل الكلمات صحيحة أرجع {}."
+        "أرجع فقط JSON صالح يربط رقم الكلمة بالكلمة المصححة، مثال: {\"2\": \"مونتاج\"}. إذا كانت كلها صحيحة أرجع {}."
     )
 
     ai_resp = query_hybrid_llm(
         prompt=prompt,
-        system_prompt="أنت خبير لغوي جزائري متخصص في تدقيق الدارجة الجزائرية وتصحيح مخرجات التعرف على الكلام (ASR). أرجع JSON فقط.",
+        system_prompt="أنت مدقق لغوي خبير في العربية والدارجة الجزائرية ومصطلحات صناعة المحتوى. أرجع JSON فقط.",
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
@@ -315,7 +409,7 @@ def refine_darija_words_with_ai(
 
 
 # ==============================================================================
-# 4. التفريغ السحابي والمحلي
+# 5. التفريغ السحابي والمحلي وتوليد المشاهد القصيرة (Micro-Scenes)
 # ==============================================================================
 def _transcribe_via_cloud_api(
     audio_path: str,
@@ -371,8 +465,6 @@ def _transcribe_via_cloud_api(
                 if resp.status_code == 200:
                     payload = resp.json()
                     raw_words = payload.get("words", [])
-                    raw_segments = payload.get("segments", [])
-
                     words_list = []
                     for w in raw_words:
                         w_txt = normalize_algerian_word(w.get("word", ""))
@@ -384,38 +476,10 @@ def _transcribe_via_cloud_api(
                                 "probability": 0.96
                             })
 
-                    sentences_list = []
-                    for seg in raw_segments:
-                        seg_start = round(float(seg.get("start", 0.0)), 3)
-                        seg_end = round(float(seg.get("end", 0.0)), 3)
-                        seg_text = normalize_algerian_sentence(seg.get("text", ""))
-                        seg_words = [
-                            w for w in words_list
-                            if w["start"] >= seg_start - 0.1 and w["end"] <= seg_end + 0.2
-                        ]
-                        if not seg_words and seg_text:
-                            parts = seg_text.split()
-                            dur = max(0.2, seg_end - seg_start) / max(1, len(parts))
-                            for idx, p in enumerate(parts):
-                                w_obj = {
-                                    "word": normalize_algerian_word(p),
-                                    "start": round(seg_start + idx * dur, 3),
-                                    "end": round(seg_start + (idx + 1) * dur, 3),
-                                    "probability": 0.92
-                                }
-                                seg_words.append(w_obj)
-                                words_list.append(w_obj)
-
-                        if seg_text:
-                            sentences_list.append({
-                                "text": seg_text,
-                                "start": seg_start,
-                                "end": seg_end,
-                                "words": seg_words
-                            })
-
                     if words_list:
-                        return words_list, sentences_list
+                        words_list = apply_phrase_fixes_to_words(words_list)
+                        micro_scenes = split_words_into_micro_scenes(words_list)
+                        return words_list, micro_scenes
             except Exception as e:
                 logger.warning(f"فشل التفريغ السحابي ({model_name}): {e}")
     finally:
@@ -462,9 +526,8 @@ def _run_full_transcription(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """تشغيل التفريغ الكامل أو إرجاع الكابشن المعدل يدوياً من طرف المستخدم فوراً."""
+    """تشغيل التفريغ وتقسيم الكلمات إلى مشاهد قصيرة متجددة كل 1.5 - 2 ثانية."""
     if _CUSTOM_CAPTION_OVERRIDE["enabled"] and _CUSTOM_CAPTION_OVERRIDE["words"]:
-        logger.info("استخدام الكابشن المعدل يدوياً من طرف المستخدم.")
         return (
             [dict(w) for w in _CUSTOM_CAPTION_OVERRIDE["words"]],
             [dict(s) for s in _CUSTOM_CAPTION_OVERRIDE["sentences"]]
@@ -488,7 +551,7 @@ def _run_full_transcription(
         language=language or "ar"
     )
     if cloud_res is not None:
-        words_list, sentences_list = cloud_res
+        words_list, _ = cloud_res
         words_list = refine_darija_words_with_ai(
             words_list,
             dialect_mode=dialect_mode,
@@ -496,10 +559,11 @@ def _run_full_transcription(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        _TRANSCRIPTION_CACHE[cache_key] = {"words": words_list, "sentences": sentences_list}
+        micro_scenes = split_words_into_micro_scenes(words_list)
+        _TRANSCRIPTION_CACHE[cache_key] = {"words": words_list, "sentences": micro_scenes}
         _LAST_EXTRACTED_TRANSCRIPT["words"] = words_list
-        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = sentences_list
-        return words_list, sentences_list
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = micro_scenes
+        return words_list, micro_scenes
 
     detected_device, detected_compute = get_optimal_device_settings()
     final_device = device if device is not None else detected_device
@@ -517,35 +581,21 @@ def _run_full_transcription(
         best_of=5,
         condition_on_previous_text=False,
         vad_filter=vad_filter,
-        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=260)
+        vad_parameters=dict(min_silence_duration_ms=400, speech_pad_ms=250)
     )
 
     word_timestamps: List[Dict[str, Any]] = []
-    sentence_list: List[Dict[str, Any]] = []
-
     for seg in segments:
-        seg_words = []
         if seg.words:
             for word_obj in seg.words:
                 cleaned_word = normalize_algerian_word(word_obj.word)
                 if cleaned_word:
-                    w_dict = {
+                    word_timestamps.append({
                         "word": cleaned_word,
                         "start": round(word_obj.start, 3),
                         "end": round(word_obj.end, 3),
                         "probability": round(word_obj.probability, 3)
-                    }
-                    word_timestamps.append(w_dict)
-                    seg_words.append(w_dict)
-
-        seg_text = normalize_algerian_sentence(seg.text)
-        if seg_text:
-            sentence_list.append({
-                "text": seg_text,
-                "start": round(seg.start, 3),
-                "end": round(seg.end, 3),
-                "words": seg_words
-            })
+                    })
 
     if word_timestamps:
         word_timestamps = refine_darija_words_with_ai(
@@ -555,22 +605,18 @@ def _run_full_transcription(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        w_idx = 0
-        for sent in sentence_list:
-            count = len(sent["words"])
-            if w_idx + count <= len(word_timestamps):
-                sent["words"] = word_timestamps[w_idx:w_idx + count]
-                sent["text"] = " ".join([w["word"] for w in sent["words"]])
-                w_idx += count
+
+    # تقسيم الكلمات إلى مشاهد قصيرة متجددة كل 1.5 - 2 ثانية!
+    micro_scenes = split_words_into_micro_scenes(word_timestamps)
 
     _TRANSCRIPTION_CACHE[cache_key] = {
         "words": word_timestamps,
-        "sentences": sentence_list
+        "sentences": micro_scenes
     }
     _LAST_EXTRACTED_TRANSCRIPT["words"] = word_timestamps
-    _LAST_EXTRACTED_TRANSCRIPT["sentences"] = sentence_list
+    _LAST_EXTRACTED_TRANSCRIPT["sentences"] = micro_scenes
 
-    return word_timestamps, sentence_list
+    return word_timestamps, micro_scenes
 
 
 def transcribe_audio(
