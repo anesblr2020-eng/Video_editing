@@ -164,6 +164,7 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
 
     candidate_fonts = [
         cairo_bold_path,
+        "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoKufiArabic-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf",
@@ -256,7 +257,8 @@ def classify_micro_scene_blueprint(
     scene_text: str,
     scene_index: int,
     total_scenes: int,
-    prev_scene_type: Optional[str] = None
+    prev_scene_type: Optional[str] = None,
+    **kwargs
 ) -> Dict[str, Any]:
     t = scene_text.strip()
     t_low = t.lower()
@@ -283,24 +285,36 @@ def classify_micro_scene_blueprint(
     elif any(w in t_low for w in ["أبني", "ابني", "منصة", "تعمل", "موقع", "تطبيق", "مشروع", "نظام", "برمجة"]):
         chosen_type = "platform_builder"
         badge_label = "بناء وتطوير المنصة"
-    elif extracted_number is not None or any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين", "مئة", "ألف", "مليون"]):
-        chosen_type = "age_number_counter"
-        badge_label = f"محطة الإنجاز - {extracted_number or 17}"
-    elif any(w in t_low for w in ["وقت", "ساعة", "ما عندها", "مشغولة", "تأخير", "سرعة", "ثواني"]):
-        chosen_type = "time_warp_clock"
-        badge_label = "توفير الوقت والسرعة"
-    elif any(w in t_low for w in ["أهلاً", "اهلا", "سلام", "أنا", "أنس", "اناس", "اسمي", "مرحبا", "خاوتي"]):
-        chosen_type = "creator_profile"
-        badge_label = "بطاقة تعريف المبدع"
-    elif any(w in t_low for w in ["توصيل", "ولاية", "58", "باب الدار", "شحن"]):
+    elif any(w in t_low for w in ["توصيل", "ولاية", "58", "باب الدار"]) or (any(w in t_low for w in ["شحن"]) and any(w in t_low for w in ["توصيل", "ولاية"])):
         chosen_type = "delivery_express"
         badge_label = "توصيل سريع 58 ولاية"
-    elif any(w in t_low for w in ["منتج", "سلعة", "جودة", "أصلي", "عفسة", "اطلب", "شراء"]):
+    elif any(w in t_low for w in ["شحن", "واط", "شارجي", "fast charge", "شحن فائق"]):
         chosen_type = "ecommerce_showcase"
-        badge_label = "استعراض المنتج الأصلي"
-    elif any(w in t_low for w in ["أغلب", "الناس", "مال", "ربح", "دراهم", "سعر", "سومة", "تخفيض", "نجاح", "كل يوم"]):
+        badge_label = "شحن فائق السرعة"
+    elif any(w in t_low for w in ["سيبور", "ستاند", "حامل", "تيليفون"]) and any(w in t_low for w in ["تتفرج", "مشاهدة", "راحة"]):
+        chosen_type = "reels_smartphone"
+        badge_label = "حامل هاتف مدمج ومشاهدة مريحة"
+    elif any(w in t_low for w in ["قماش", "يتقطع", "ضد القطع", "متانة", "جودة", "مضمونة"]):
+        chosen_type = "ecommerce_showcase"
+        badge_label = "متانة وجودة فائقة ضد القطع"
+    elif any(w in t_low for w in ["منتج", "سلعة", "أصلي", "اطلب", "كليكي", "بايو", "تعليق"]) and scene_index >= total_scenes - 2:
+        chosen_type = "ecommerce_showcase"
+        badge_label = "اطلب الآن - متوفر بكمية محدودة"
+    elif any(w in t_low for w in ["اصبر", "انتبه", "شوف"]) and scene_index == 0:
+        chosen_type = "ecommerce_showcase"
+        badge_label = "انتبه - منتج عملي واستثنائي"
+    elif any(w in t_low for w in ["وقت", "ساعة", "ما عندها", "مشغولة", "تأخير", "ثواني"]):
+        chosen_type = "time_warp_clock"
+        badge_label = "توفير الوقت والسرعة"
+    elif any(w in t_low for w in ["سعر", "سومة", "تخفيض", "عرض", "دراهم", "دينار", "بروموسيون"]):
         chosen_type = "growth_analytics"
-        badge_label = "مؤشر النمو والانتشار"
+        badge_label = "عرض وسعر استثنائي"
+    elif extracted_number is not None and any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين", "مئة", "ألف", "مليون"]):
+        chosen_type = "age_number_counter"
+        badge_label = f"محطة الإنجاز - {extracted_number}"
+    elif any(w in t_low for w in ["أهلاً", "اهلا", "سلام", "أنا", "أنس", "اسمي", "مرحبا"]):
+        chosen_type = "creator_profile"
+        badge_label = "بطاقة تعريف المبدع"
     elif scene_index == total_scenes - 1:
         chosen_type = "brand_finale"
         badge_label = "الإطلاق الرسمي للمنصة"
@@ -829,8 +843,6 @@ def apply_scene_transition(
         out = prev_img.copy()
         paste_x, paste_y = (w - zw) // 2, (h - zh) // 2
         out.paste(resized_curr, (paste_x, paste_y))
-        draw = ImageDraw.Draw(out, "RGBA")
-        draw.rounded_rectangle([(paste_x, paste_y), (paste_x + zw, paste_y + zh)], radius=24, outline=(255, 220, 0, int(255 * (1.0 - p))), width=6)
         return out
 
     else:
@@ -847,7 +859,9 @@ def render_master_directed_video_frame(
     master_plan: List[Dict[str, Any]],
     words_data: List[Dict[str, Any]],
     bg_cache: Dict[str, np.ndarray],
-    audio_level: float = 0.75
+    audio_level: float = 0.75,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> np.ndarray:
     """
     تصيير إطار الفيديو بتوزيع الأنماط المكانية وفق أوامر مخطط المخرج الشامل:
@@ -920,90 +934,126 @@ def render_master_directed_video_frame(
     draw = ImageDraw.Draw(img, "RGBA")
     cx = w // 2
 
-    # أ) النمط 2: تراكب الجزء العلوي (Top Overlay HUD Card)
+    # أ) النمط 2: شارة الميزة العلوية السينمائية الأنيقة (Sleek Glassmorphic Feature Pill)
     if layout_mode == "top_overlay":
         slide_in = _ease_out_back(min(1.0, (t - sc["start"]) / 0.22)) if (t >= sc["start"]) else 1.0
-        y_slide_offset = int(-140 * (1.0 - slide_in))
+        y_slide_offset = int(-90 * (1.0 - slide_in))
 
-        icon_r = max(44, int(min(w, h) * 0.060))
-        title_font = get_arabic_font(max(26, int(min(w, h) * 0.038)), bold=True)
         badge_title = sc.get("badge_label", sc.get("short_title", "ميزة حصرية"))
-
+        title_font = get_arabic_font(max(24, int(min(w, h) * 0.034)), bold=True)
         tw, th = measure_arabic_text(draw, badge_title, title_font)
-        card_w = min(int(w * 0.90), max(tw + icon_r * 2 + 75, int(w * 0.58)))
-        card_h = icon_r * 2 + 30
 
-        top_y = int(h * 0.055) + y_slide_offset
-        x1, y1 = cx - card_w // 2, top_y
-        x2, y2 = cx + card_w // 2, top_y + card_h
+        pill_h = max(48, th + 22)
+        pill_w = min(int(w * 0.84), max(tw + 78, int(w * 0.38)))
+        top_y = int(h * 0.045) + y_slide_offset
+        x1, y1 = cx - pill_w // 2, top_y
+        x2, y2 = cx + pill_w // 2, top_y + pill_h
 
-        draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 60))
-        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=24, fill=(10, 16, 34, 232), outline=(*theme["primary"], 245), width=3)
+        # كبسولة زجاجية سينمائية رفيعة وغير مزعجة
+        draw.rounded_rectangle([(x1 - 3, y1 - 3), (x2 + 3, y2 + 3)], radius=pill_h // 2, fill=(*theme["primary"], 45))
+        draw.rounded_rectangle([(x1, y1), (x2, y2)], radius=pill_h // 2, fill=(12, 18, 32, 215), outline=(*theme["primary"], 220), width=2)
 
-        prog_bar_w = int(max(10, card_w - 48) * min(1.0, max(0.05, sc_prog)))
-        draw.rounded_rectangle([(x1 + 24, y2 - 9), (x1 + 24 + prog_bar_w, y2 - 4)], radius=3, fill=(*theme["secondary"], 255))
+        # نقطة ضوئية نابضة أو أيقونة مصغرة
+        dot_x = x2 - 24
+        dot_y = y1 + pill_h // 2
+        draw.ellipse([(dot_x - 6, dot_y - 6), (dot_x + 6, dot_y + 6)], fill=(*theme["primary"], 255))
 
-        illus_cx = x2 - icon_r - 18
-        illus_cy = y1 + card_h // 2
-        draw_animated_scene_illustration(
-            draw=draw,
-            scene_type=sc["scene_type"],
-            cx=illus_cx,
-            cy=illus_cy,
-            radius=int(icon_r * 0.86),
-            scene_progress=sc_prog,
-            global_t=t,
-            theme=theme,
-            target_number=sc.get("target_number", 58),
-            short_title=sc.get("short_title", "")
-        )
+        # النص بوضوح وأناقة
+        text_cx = cx - 8
+        draw_arabic_text(draw, (text_cx, y1 + pill_h // 2), badge_title, font=title_font, fill=(255, 255, 255, 245), stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
-        text_area_cx = x1 + (illus_cx - icon_r - x1) // 2
-        draw_arabic_text(draw, (text_area_cx, y1 + int(card_h * 0.50)), badge_title, font=title_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 220))
-
-    # ب) النمط 3: تراكب الثلث السفلي (Lower Third Infographic Banner)
+    # ب) النمط 3: تراكب الثلث السفلي الأنيق (Sleek Lower Third Pill)
     elif layout_mode == "lower_third":
-        l3_font = get_arabic_font(max(26, int(min(w, h) * 0.038)), bold=True)
+        l3_font = get_arabic_font(max(24, int(min(w, h) * 0.034)), bold=True)
         l3_txt = sc.get("badge_label", "ميزة حصرية")
         tw, th = measure_arabic_text(draw, l3_txt, l3_font)
-        bar_w = min(int(w * 0.92), tw + 80)
-        bar_h = th + 36
-        by1 = int(h * 0.84)
+        bar_w = min(int(w * 0.88), tw + 64)
+        bar_h = th + 24
+        by1 = int(h * 0.86)
         by2 = by1 + bar_h
         bx1 = cx - bar_w // 2
         bx2 = cx + bar_w // 2
 
-        draw.rounded_rectangle([(bx1 - 4, by1 - 4), (bx2 + 4, by2 + 4)], radius=22, fill=(*theme["primary"], 80))
-        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=18, fill=(12, 18, 36, 238), outline=(*theme["primary"], 255), width=3)
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=bar_h // 2, fill=(10, 16, 28, 225), outline=(*theme["primary"], 240), width=2)
         draw_arabic_text(draw, (cx, by1 + bar_h // 2), l3_txt, font=l3_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 230))
 
-    # ج) في كل الأنماط التراكبية: كابشن كاريوكي تفاعلي أصفر متزامن مع الكلام
-    if act_word:
-        pop_scale = _ease_out_back(min(1.0, w_prog * 3.0))
-        base_cap_size = max(40, int(min(w, h) * 0.065))
-        act_font_size = max(32, int(base_cap_size * (0.85 + 0.18 * pop_scale)))
-        act_font = get_arabic_font(act_font_size, bold=True)
+    # -------------------------------------------------------------------------
+    # ج) الكابشن الاحترافي الحديث (Modern Social-Media 1-Line Karaoke Subtitles)
+    # -------------------------------------------------------------------------
+    if caption_mode != "none" and (act_word or sc_words):
+        # موضع الأمان للكابشن: أسفل الشاشة (Lower-Third Safe Zone) بعيداً تماماً عن المنتجات والأيدي في المركز
+        if caption_mode == "top_compact":
+            cap_y = int(h * 0.14)
+        elif layout_mode == "lower_third":
+            cap_y = int(h * 0.77)
+        else:
+            cap_y = int(h * 0.84)
 
-        cap_y = int(h * 0.72) if layout_mode != "lower_third" else int(h * 0.68)
-        cw, ch = measure_arabic_text(draw, act_word, act_font)
-        pad_x = max(34, int(act_font_size * 0.58))
-        pad_y = max(18, int(act_font_size * 0.34))
+        # تنظيف الكلمات من الفواصل وعلامات الترقيم المعكوسة
+        clean_sc_words = [re.sub(r'^[،,.\s!؟:؛-]+|[،,.\s!؟:؛-]+$', '', w).strip() for w in sc_words if w.strip()]
+        clean_act_word = re.sub(r'^[،,.\s!؟:؛-]+|[،,.\s!؟:؛-]+$', '', act_word).strip() if act_word else (clean_sc_words[0] if clean_sc_words else "")
 
-        wx1, wy1 = cx - cw // 2 - pad_x, cap_y - ch // 2 - pad_y
-        wx2, wy2 = cx + cw // 2 + pad_x, cap_y + ch // 2 + pad_y
+        font_size = max(34, int(min(w, h) * 0.048))
+        cap_font = get_arabic_font(font_size, bold=True)
+        glow_font = get_arabic_font(font_size + 2, bold=True)
 
-        draw.rounded_rectangle([(wx1 - 5, wy1 - 5), (wx2 + 5, wy2 + 5)], radius=24, fill=(*theme["primary"], 65))
-        draw.rounded_rectangle([(wx1, wy1), (wx2, wy2)], radius=20, fill=(10, 15, 30, 235), outline=(*theme["primary"], 255), width=4)
-        draw_arabic_text(draw, (cx, cap_y), act_word, font=act_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 240))
+        # تحديد نافذة من 3-4 كلمات كحد أقصى للعرض
+        active_word_clean = clean_act_word.lower()
+        target_idx = 0
+        for wi, cw in enumerate(clean_sc_words):
+            if cw.lower() == active_word_clean or active_word_clean in cw.lower():
+                target_idx = wi
+                break
 
-        if sc_words:
-            sub_font = get_arabic_font(max(24, int(base_cap_size * 0.44)), bold=True)
-            p_text = " ".join(sc_words)
-            pw, ph = measure_arabic_text(draw, p_text, sub_font)
-            sub_y = wy2 + ph // 2 + 18
-            p_bar_w = min(int(w * 0.92), pw + 48)
-            draw.rounded_rectangle([(cx - p_bar_w // 2, sub_y - ph // 2 - 10), (cx + p_bar_w // 2, sub_y + ph // 2 + 10)], radius=16, fill=(8, 12, 24, 215), outline=(*theme["secondary"], 180), width=2)
-            draw_arabic_text(draw, (cx, sub_y), p_text, font=sub_font, fill=(255, 255, 255, 240))
+        win_size = min(4, len(clean_sc_words))
+        if len(clean_sc_words) <= 4:
+            display_words = clean_sc_words
+            disp_active_idx = target_idx
+        else:
+            start_w = max(0, min(target_idx - 1, len(clean_sc_words) - win_size))
+            display_words = clean_sc_words[start_w:start_w + win_size]
+            disp_active_idx = max(0, min(target_idx - start_w, len(display_words) - 1))
+
+        if not display_words:
+            display_words = [clean_act_word]
+            disp_active_idx = 0
+
+        # قياس الكلمات وتجميعها
+        word_widths = []
+        word_spaces = int(font_size * 0.35)
+        for dw in display_words:
+            ww, wh = measure_arabic_text(draw, dw, cap_font)
+            word_widths.append((ww, wh))
+
+        total_line_w = sum(ww for ww, _ in word_widths) + (len(display_words) - 1) * word_spaces
+        max_line_h = max(wh for _, wh in word_widths) if word_widths else font_size
+
+        # كبسولة زجاجية أنيقة وموحدة تحمي القراءة
+        box_pad_x = int(font_size * 0.60)
+        box_pad_y = int(font_size * 0.30)
+        bar_x1 = max(int(w * 0.04), cx - total_line_w // 2 - box_pad_x)
+        bar_x2 = min(int(w * 0.96), cx + total_line_w // 2 + box_pad_x)
+        bar_y1 = cap_y - max_line_h // 2 - box_pad_y
+        bar_y2 = cap_y + max_line_h // 2 + box_pad_y
+
+        draw.rounded_rectangle([(bar_x1, bar_y1), (bar_x2, bar_y2)], radius=20, fill=(8, 12, 22, 195), outline=(255, 255, 255, 35), width=1)
+
+        # رسم الكلمات بالترتيب من اليمين إلى اليسار (RTL)
+        cur_right_x = bar_x2 - box_pad_x
+        for wi, dw in enumerate(display_words):
+            ww, wh = word_widths[wi]
+            is_active = (wi == disp_active_idx)
+            word_cx = cur_right_x - ww // 2
+
+            if is_active:
+                # الكلمة الحالية: لون أصفر ذهبي ناصع وتوهج فخم
+                draw_arabic_text(draw, (word_cx, cap_y), dw, font=glow_font, fill=(255, 225, 0, 90), stroke_width=4, stroke_fill=(0, 0, 0, 180))
+                draw_arabic_text(draw, (word_cx, cap_y), dw, font=cap_font, fill=(255, 230, 0, 255), stroke_width=3, stroke_fill=(0, 0, 0, 245))
+            else:
+                # الكلمات المحيطة: أبيض ناصع مع تظليل أسود
+                draw_arabic_text(draw, (word_cx, cap_y), dw, font=cap_font, fill=(245, 245, 245, 235), stroke_width=2, stroke_fill=(0, 0, 0, 230))
+
+            cur_right_x -= (ww + word_spaces)
 
     return np.array(img.convert("RGB"))
 
@@ -1053,7 +1103,8 @@ def create_kinetic_typography_video(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    **kwargs
 ) -> str:
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف المدخل غير موجود: {input_path}")

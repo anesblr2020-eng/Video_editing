@@ -68,7 +68,32 @@ except ImportError:
         map_scene_to_stock_category = getattr(_mod, "map_scene_to_stock_category")
     else:
         def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
-            return "video_editor"
+            type_map = {
+                'time_warp_clock': 'busy_no_time',
+                'ai_neural_brain': 'ai_technology',
+                'cloud_database': 'ai_technology',
+                'reels_smartphone': 'smartphone_reels',
+                'platform_builder': 'developer_coding',
+                'creator_profile': 'creator_studio',
+                'brand_finale': 'creator_studio',
+                'video_montage_studio': 'video_editor',
+                'audio_waveform': 'video_editor',
+                'growth_analytics': 'developer_coding'
+            }
+            if scene_type in type_map:
+                return type_map[scene_type]
+            t = scene_text.lower()
+            if any(w in t for w in ('ذكاء', 'اصطناعي', 'خوارزمية', 'أوتوماتيكي', 'ai')):
+                return 'ai_technology'
+            if any(w in t for w in ('وقت', 'ساعة', 'مشغول', 'سرعة', 'تأخير')):
+                return 'busy_no_time'
+            if any(w in t for w in ('ريلز', 'تيك توك', 'شورتس', 'سوشيال', 'هاتف', 'تيليفون', 'سيبور')):
+                return 'smartphone_reels'
+            if any(w in t for w in ('كود', 'برمجة', 'تطبيق', 'موقع', 'منصة')):
+                return 'developer_coding'
+            if any(w in t for w in ('استوديو', 'صانع محتوى', 'مبدع', 'كاميرا')):
+                return 'creator_studio'
+            return 'video_editor'
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -437,7 +462,8 @@ def generate_master_director_plan(
     cta_override: Optional[str] = None,
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    **kwargs
 ) -> List[Dict[str, Any]]:
     """
     توليد مخطط المخرج الشامل:
@@ -482,6 +508,7 @@ def generate_master_director_plan(
         "اطلب", "الرابط", "البايو", "كليكي", "للطلب"
     }
 
+    last_badge_idx = -99
     for idx, sc in enumerate(sentences_or_micro_scenes):
         s_text = str(sc.get("text", "")).strip()
         t_low = s_text.lower()
@@ -513,24 +540,27 @@ def generate_master_director_plan(
             is_finale = (idx == num_scenes - 1 or s_end >= total_duration - 2.8)
             has_lower_trigger = any(trig in t_low for trig in lower_third_triggers)
 
+            can_show_overlay = (idx - last_badge_idx) >= 2
+
             if is_hook:
                 layout_mode = "top_overlay"
-                zoom_factor = 1.18
+                zoom_factor = 1.08
+                last_badge_idx = idx
             elif is_finale:
-                layout_mode = "lower_third" if any(w in t_low for w in ["اطلب", "رابط", "بايو"]) else "full_screen"
-                zoom_factor = 1.12
-            elif has_lower_trigger:
                 layout_mode = "lower_third"
-                zoom_factor = 1.06
-            elif idx % 3 == 0:
-                layout_mode = "full_screen"
                 zoom_factor = 1.0
-            elif idx % 2 == 1:
+                last_badge_idx = idx
+            elif has_lower_trigger and can_show_overlay:
+                layout_mode = "lower_third"
+                zoom_factor = 1.0
+                last_badge_idx = idx
+            elif can_show_overlay and any(w in t_low for w in ["ميزة", "شحن", "سيبور", "جودة", "قوة", "ضمان", "توصيل", "سرعة", "مهم", "خاصية"]):
                 layout_mode = "top_overlay"
-                zoom_factor = 1.14
+                zoom_factor = 1.08
+                last_badge_idx = idx
             else:
                 layout_mode = "speaker_clean"
-                zoom_factor = 1.0
+                zoom_factor = 1.08 if (idx % 3 == 1) else 1.0
 
         theme_name = theme_keys[idx % len(theme_keys)]
         transition = transitions[idx % len(transitions)]
@@ -577,7 +607,8 @@ def plan_product_ad_segments(
     cta_override: Optional[str] = None,
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    **kwargs
 ) -> List[Dict[str, Any]]:
     return generate_master_director_plan(
         sentences_or_micro_scenes=sentences,
@@ -596,7 +627,8 @@ def plan_product_ad_segments(
 def plan_smart_director_segments(
     sentences: List[Dict[str, Any]],
     has_video: bool,
-    visual_motion_score: float = 8.0
+    visual_motion_score: float = 8.0,
+    **kwargs
 ) -> List[Dict[str, Any]]:
     return generate_master_director_plan(
         sentences_or_micro_scenes=sentences,

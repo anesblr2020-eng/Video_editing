@@ -58,6 +58,21 @@ from motion_text import (
     create_kinetic_typography_video,
     MOTION_THEMES
 )
+import inspect
+import hashlib
+import requests
+
+def _safe_call(func, **kwargs):
+    try:
+        sig = inspect.signature(func)
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if has_var_kw:
+            return func(**kwargs)
+        filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return func(**filtered)
+    except Exception:
+        return func(**kwargs)
+
 try:
     from stock_video_finder import get_stock_broll_clip, process_broll_clip_for_timeline
 except ImportError:
@@ -74,8 +89,46 @@ except ImportError:
         get_stock_broll_clip = getattr(_mod, "get_stock_broll_clip")
         process_broll_clip_for_timeline = getattr(_mod, "process_broll_clip_for_timeline")
     else:
-        get_stock_broll_clip = None
-        process_broll_clip_for_timeline = None
+        _DIRECT_VIDEOS = {
+            'video_editor': ['https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-working-on-a-computer-43407-large.mp4'],
+            'ai_technology': ['https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-with-data-41526-large.mp4'],
+            'busy_no_time': ['https://assets.mixkit.co/videos/preview/mixkit-sand-flowing-through-an-hourglass-42861-large.mp4'],
+            'smartphone_reels': ['https://assets.mixkit.co/videos/preview/mixkit-young-man-using-a-smartphone-in-the-city-43180-large.mp4'],
+            'developer_coding': ['https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-typing-on-a-laptop-keyboard-41315-large.mp4'],
+            'creator_studio': ['https://assets.mixkit.co/videos/preview/mixkit-man-working-with-headphones-on-in-an-office-43411-large.mp4']
+        }
+        def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 1080, height: int = 1920, pexels_api_key: Optional[str] = None, **kw) -> Optional[str]:
+            os.makedirs(cache_dir, exist_ok=True)
+            urls = _DIRECT_VIDEOS.get(category.lower(), _DIRECT_VIDEOS['video_editor'])
+            for u in urls:
+                uh = hashlib.md5(u.encode()).hexdigest()[:10]
+                dest = os.path.join(cache_dir, f"stock_{category}_{uh}.mp4")
+                if os.path.exists(dest) and os.path.getsize(dest) > 50000:
+                    return dest
+                try:
+                    r = requests.get(u, headers={'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=12)
+                    if r.status_code == 200:
+                        with open(dest, 'wb') as f:
+                            for ch in r.iter_content(131072):
+                                if ch:
+                                    f.write(ch)
+                        if os.path.exists(dest) and os.path.getsize(dest) > 50000:
+                            return dest
+                except Exception:
+                    pass
+            return None
+
+        def process_broll_clip_for_timeline(raw_video_path: str, target_duration: float, width: int, height: int, **kw):
+            from moviepy.editor import VideoFileClip, vfx
+            clip = VideoFileClip(raw_video_path).without_audio()
+            ow, oh = clip.size
+            sc = max(width / float(ow), height / float(oh))
+            nw, nh = int(ow * sc), int(oh * sc)
+            res = clip.resize((nw, nh))
+            cropped = res.crop(x1=max(0, (nw - width) // 2), y1=max(0, (nh - height) // 2), width=width, height=height)
+            if cropped.duration < target_duration:
+                return cropped.fx(vfx.loop, duration=target_duration)
+            return cropped.subclip(0, target_duration)
 
 try:
     from smart_analyzer import (
@@ -198,7 +251,9 @@ def _execute_master_director_pipeline(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> Tuple[str, Dict[str, Any]]:
     """
     تنفيذ أوامر مخطط المخرج الشامل الصادرة من المحلل الذكي:
@@ -267,7 +322,8 @@ def _execute_master_director_pipeline(
         video_w, video_h = base_clip.size
 
         if generate_master_director_plan is not None:
-            master_plan = generate_master_director_plan(
+            master_plan = _safe_call(
+                generate_master_director_plan,
                 sentences_or_micro_scenes=micro_scenes,
                 total_duration=video_duration,
                 has_video=True,
@@ -299,27 +355,36 @@ def _execute_master_director_pipeline(
                 sentence_clips.append(base_clip.subclip(current_time, s_start))
 
             if s_end > s_start + 0.04:
-                if layout_mode == "stock_broll" and enable_stock_broll:
-                    # جلب وتجهيز مقطع B-Roll حقيقي خالي من حقوق الملكية
-                    cat = sc.get("stock_category", "video_editor")
-                    raw_broll = get_stock_broll_clip(
-                        category=cat,
-                        target_duration=dur,
-                        cache_dir=stock_dir,
-                        width=video_w,
-                        height=video_h,
-                        pexels_api_key=pexels_api_key
-                    )
-                    broll_processed = process_broll_clip_for_timeline(
-                        raw_video_path=raw_broll,
-                        target_duration=dur,
-                        width=video_w,
-                        height=video_h
-                    )
-                    broll_clips_to_close.append(broll_processed)
-                    sentence_clips.append(broll_processed)
-                else:
-                    chunk = base_clip.subclip(s_start, s_end)
+                orig_sub = base_clip.subclip(s_start, s_end)
+                used_broll = False
+                if layout_mode == "stock_broll" and enable_stock_broll and callable(get_stock_broll_clip) and callable(process_broll_clip_for_timeline):
+                    try:
+                        cat = sc.get("stock_category", "video_editor")
+                        raw_broll = get_stock_broll_clip(
+                            category=cat,
+                            target_duration=dur,
+                            cache_dir=stock_dir,
+                            width=video_w,
+                            height=video_h,
+                            pexels_api_key=pexels_api_key
+                        )
+                        if raw_broll and os.path.exists(raw_broll):
+                            broll_processed = process_broll_clip_for_timeline(
+                                raw_video_path=raw_broll,
+                                target_duration=dur,
+                                width=video_w,
+                                height=video_h
+                            )
+                            if orig_sub.audio is not None:
+                                broll_processed = broll_processed.set_audio(orig_sub.audio)
+                            broll_clips_to_close.append(broll_processed)
+                            sentence_clips.append(broll_processed)
+                            used_broll = True
+                    except Exception as b_err:
+                        logger.warning(f"تعذر إدراج مشهد B-Roll، سيتم استخدام الكاميرا الأصلية: {b_err}")
+
+                if not used_broll:
+                    chunk = orig_sub
                     if z_factor > 1.01:
                         chunk = apply_zoom_in_crop(chunk, zoom_factor=z_factor)
                     sentence_clips.append(chunk)
@@ -330,6 +395,11 @@ def _execute_master_director_pipeline(
             sentence_clips.append(base_clip.subclip(current_time, video_duration))
 
         zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
+        if base_clip.audio is not None and zoomed_base is not base_clip:
+            try:
+                zoomed_base = zoomed_base.set_audio(base_clip.audio.subclip(0, min(base_clip.audio.duration, zoomed_base.duration)))
+            except Exception:
+                pass
 
         bg_cache = {
             t_name: create_studio_background(video_w, video_h, theme_name=t_name)
@@ -340,14 +410,16 @@ def _execute_master_director_pipeline(
 
         def _master_frame_filter(get_frame, t: float) -> np.ndarray:
             raw_frame = get_frame(t)
-            return render_master_directed_video_frame(
+            return _safe_call(
+                render_master_directed_video_frame,
                 base_frame_rgb=raw_frame,
                 t=t,
                 total_duration=video_duration,
                 master_plan=master_plan,
                 words_data=word_data,
                 bg_cache=bg_cache,
-                audio_level=0.75
+                audio_level=0.75,
+                caption_mode=caption_mode
             )
 
         final_video = zoomed_base.fl(_master_frame_filter)
@@ -416,7 +488,9 @@ def apply_product_ad_mode(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> Tuple[str, Dict[str, Any]]:
     return _execute_master_director_pipeline(
         input_path=input_path,
@@ -432,7 +506,8 @@ def apply_product_ad_mode(
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        caption_mode=caption_mode
     )
 
 
@@ -449,7 +524,9 @@ def apply_motion_overlay_on_video(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> str:
     out, _ = _execute_master_director_pipeline(
         input_path=input_path,
@@ -464,7 +541,8 @@ def apply_motion_overlay_on_video(
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        caption_mode=caption_mode
     )
     return out
 
@@ -480,7 +558,9 @@ def apply_smart_director_all_in_one(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> Tuple[str, Dict[str, Any]]:
     return _execute_master_director_pipeline(
         input_path=input_path,
@@ -494,7 +574,8 @@ def apply_smart_director_all_in_one(
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        caption_mode=caption_mode
     )
 
 
@@ -511,7 +592,9 @@ def apply_dynamic_edit(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    caption_mode: str = "bottom_modern",
+    **kwargs
 ) -> str:
     out, _ = _execute_master_director_pipeline(
         input_path=input_path,
@@ -526,6 +609,7 @@ def apply_dynamic_edit(
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
-        progress_callback=progress_callback
+        progress_callback=progress_callback,
+        caption_mode=caption_mode
     )
     return out

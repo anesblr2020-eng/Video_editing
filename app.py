@@ -23,6 +23,14 @@ import time
 import hashlib
 import streamlit as st
 
+import importlib
+for _m in ["auto_cut", "transcriber", "stock_video_finder", "motion_text", "smart_analyzer", "dynamic_edit", "manim_generator"]:
+    if _m in sys.modules:
+        try:
+            importlib.reload(sys.modules[_m])
+        except Exception:
+            pass
+
 from auto_cut import remove_silence, is_video_file, ensure_playable_audio_or_video
 from smart_analyzer import (
     ALL_SUPPORTED_EXTENSIONS,
@@ -181,6 +189,25 @@ with st.sidebar:
     )
     manim_flag = manim_quality_choice.split()[0]
 
+    st.markdown("---")
+    st.subheader("💬 تحكم الكابشن وشارات الفيديو")
+    cap_choice = st.selectbox(
+        "شكل وموضع الكابشن في الفيديو:",
+        options=[
+            "✨ كابشن ريلز عصري متفاعل (أسفل الشاشة - سطر واحد تفاعلي Karaoke)",
+            "🚫 بدون كابشن إضافي (فقط مونتاج ذكي وبادجات - مثالي إذا كان الفيديو مصوراً بنصوص)",
+            "🔝 كابشن أعلى الشاشة (Top Safe Zone)"
+        ],
+        index=0,
+        help="اختر 'بدون كابشن إضافي' لمنع تكرار أو تداخل النصوص إذا كان الفيديو المسجل يحتوي نصوصاً مسبقاً."
+    )
+    if "بدون كابشن" in cap_choice:
+        eff_caption_mode = "none"
+    elif "أعلى" in cap_choice:
+        eff_caption_mode = "top_compact"
+    else:
+        eff_caption_mode = "bottom_modern"
+
 
 # ==============================================================================
 # 4. دالة تشغيل المسارات الموحدة
@@ -194,6 +221,45 @@ STYLE_OPTIONS = [
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
     "✂️ قص الصمت الطبيعي وتنظيف الصوت فقط (Natural Jump-cuts)"
 ]
+
+
+import importlib
+import inspect
+
+
+def _reload_studio_modules():
+    """إعادة تحميل وحدات الاستوديو من القرص لضمان عدم استخدام نسخ قديمة مخبأة في ذاكرة Streamlit Cloud."""
+    for mod_name in [
+        "auto_cut",
+        "transcriber",
+        "stock_video_finder",
+        "motion_text",
+        "smart_analyzer",
+        "dynamic_edit",
+        "manim_generator"
+    ]:
+        if mod_name in sys.modules:
+            try:
+                importlib.reload(sys.modules[mod_name])
+            except Exception:
+                pass
+
+
+def _safe_call(func, **kwargs):
+    """استدعاء آمن للدوال يفحص المعاملات المدعومة تلقائياً لمنع خطأ unexpected keyword argument."""
+    try:
+        sig = inspect.signature(func)
+        has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+        if has_var_kw:
+            return func(**kwargs)
+        filtered = {k: v for k, v in kwargs.items() if k in sig.parameters}
+        return func(**filtered)
+    except Exception:
+        return func(**kwargs)
+
+
+def _unwrap_path(res) -> str:
+    return res[0] if isinstance(res, tuple) else res
 
 
 def run_selected_pipeline(
@@ -215,11 +281,15 @@ def run_selected_pipeline(
     product_hook: str,
     product_cta: str,
     progress_cb,
-    force_caption_overlay_on_cut_mode: bool = False
+    force_caption_overlay_on_cut_mode: bool = False,
+    caption_mode: str = "bottom_modern"
 ) -> str:
+    _reload_studio_modules()
+
     if style_name == STYLE_OPTIONS[0]:
         from dynamic_edit import apply_smart_director_all_in_one
-        out, _ = apply_smart_director_all_in_one(
+        res = _safe_call(
+            apply_smart_director_all_in_one,
             input_path=input_path,
             output_path=output_path,
             media_analysis=media_analysis,
@@ -230,13 +300,15 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            caption_mode=caption_mode
         )
-        return out
+        return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[1]:
         from dynamic_edit import apply_product_ad_mode
-        out, _ = apply_product_ad_mode(
+        res = _safe_call(
+            apply_product_ad_mode,
             input_path=input_path,
             output_path=output_path,
             product_name_override=product_hook,
@@ -249,13 +321,15 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            caption_mode=caption_mode
         )
-        return out
+        return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[2]:
         from dynamic_edit import apply_motion_overlay_on_video
-        return apply_motion_overlay_on_video(
+        res = _safe_call(
+            apply_motion_overlay_on_video,
             input_path=input_path,
             output_path=output_path,
             silence_threshold=eff_silence_thresh,
@@ -268,12 +342,15 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            caption_mode=caption_mode
         )
+        return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[3]:
         from motion_text import create_kinetic_typography_video
-        return create_kinetic_typography_video(
+        res = _safe_call(
+            create_kinetic_typography_video,
             input_path=input_path,
             output_path=output_path,
             whisper_model=eff_whisper_model,
@@ -284,10 +361,12 @@ def run_selected_pipeline(
             openai_api_key=openai_key,
             progress_callback=progress_cb
         )
+        return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[4]:
         from manim_generator import generate_manim_motion_graphics
-        return generate_manim_motion_graphics(
+        res = _safe_call(
+            generate_manim_motion_graphics,
             input_path=input_path,
             output_path=output_path,
             whisper_model=eff_whisper_model,
@@ -299,10 +378,12 @@ def run_selected_pipeline(
             openai_api_key=openai_key,
             progress_callback=progress_cb
         )
+        return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[5] or force_caption_overlay_on_cut_mode:
         from dynamic_edit import apply_dynamic_edit
-        return apply_dynamic_edit(
+        res = _safe_call(
+            apply_dynamic_edit,
             input_path=input_path,
             output_path=output_path,
             silence_threshold=eff_silence_thresh,
@@ -315,8 +396,10 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            caption_mode=caption_mode
         )
+        return _unwrap_path(res)
 
     else:
         out = remove_silence(
@@ -522,7 +605,8 @@ if start_btn:
                     openai_key=openai_api_key,
                     product_hook=product_custom_hook,
                     product_cta=product_custom_cta,
-                    progress_cb=update_ui_progress
+                    progress_cb=update_ui_progress,
+                    caption_mode=eff_caption_mode
                 )
 
                 words_extracted, sentences_extracted = get_last_extracted_transcript()
@@ -643,7 +727,8 @@ if result_path and os.path.exists(result_path):
                                 product_hook=product_custom_hook,
                                 product_cta=product_custom_cta,
                                 progress_cb=_edit_cb,
-                                force_caption_overlay_on_cut_mode=force_cap
+                                force_caption_overlay_on_cut_mode=force_cap,
+                                caption_mode=eff_caption_mode
                             )
                             st.session_state["processed_result_path"] = updated_video_path
                             st.rerun()
@@ -712,7 +797,8 @@ if result_path and os.path.exists(result_path):
                                 product_hook=product_custom_hook,
                                 product_cta=product_custom_cta,
                                 progress_cb=_edit_cb2,
-                                force_caption_overlay_on_cut_mode=force_cap
+                                force_caption_overlay_on_cut_mode=force_cap,
+                                caption_mode=eff_caption_mode
                             )
                             st.session_state["processed_result_path"] = updated_video_path
                             st.rerun()
