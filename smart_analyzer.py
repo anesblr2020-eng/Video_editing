@@ -1,13 +1,19 @@
 """
-smart_analyzer.py - المحلل الذكي للوسائط، محرك الذكاء الاصطناعي الهجين (سحابي/محلي)، والمخرج التلقائي
-====================================================================================================
-يوفر هذا الملف:
-1. الاتصال الذكي بالإنترنت والنماذج السحابية (Groq, Gemini, OpenAI, Pollinations Free Cloud AI) مع التراجع السلس لـ Ollama المحلي أو القواعد الذكية.
-2. التحليل الهندسي للصوت والفيديو (مستوى الضجيج، ديسيبل الصوت، نسبة الصمت، حركة الكاميرا، سرعة الكلام) لضبط أفضل الإعدادات والموديلات تلقائياً.
-3. اختيار أفضل نمط مونتاج بناءً على معايير علمية واضحة، أو توزيع الأدوار (المخرج الذكي الشامل All-in-One) على جمل الفيديو.
+smart_analyzer.py - المحلل الذكي للوسائط، محرك الذكاء الاصطناعي الهجين، ومخرج الإعلانات التجارية المتقدم
+========================================================================================================
 """
 
+import sys
 import os
+
+_CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _CURRENT_DIR not in sys.path:
+    sys.path.insert(0, _CURRENT_DIR)
+
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+
 import re
 import json
 import math
@@ -20,7 +26,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 # ==============================================================================
-# 1. إعدادات الصيغ المدعومة (شاملة لكل صيغ الصوت والتسجيلات الصوتية والفيديو)
+# 1. إعدادات الصيغ المدعومة
 # ==============================================================================
 SUPPORTED_VIDEO_EXTENSIONS = {
     ".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v", ".3gp", ".ts", ".wmv", ".flv"
@@ -37,7 +43,7 @@ ALL_SUPPORTED_EXTENSIONS = [
 
 
 # ==============================================================================
-# 2. فحص الاتصال بالإنترنت وتحديد أفضل مزود ذكاء اصطناعي (Cloud + Local)
+# 2. فحص الاتصال بالإنترنت ومزودي الذكاء الاصطناعي
 # ==============================================================================
 def check_internet_connection(timeout: float = 3.0) -> bool:
     """التحقق السريع من توفر اتصال بالإنترنت."""
@@ -71,10 +77,7 @@ def detect_best_ai_provider(
     openai_api_key: Optional[str] = None,
     prefer_internet: bool = True
 ) -> Dict[str, Any]:
-    """
-    تحديد أفضل مزود ذكاء اصطناعي (للنص والصوت) بناءً على حالة الإنترنت والمفاتيح المتاحة.
-    يعطي الأولوية للإنترنت للحصول على أعلى جودة كما طلب المستخدم، مع دعم العمل المجاني السحابي بدون مفتاح.
-    """
+    """تحديد أفضل مزود ذكاء اصطناعي."""
     groq_key = (groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
     gemini_key = (gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     openai_key = (openai_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
@@ -110,7 +113,6 @@ def detect_best_ai_provider(
                 "online": True,
                 "label": "سحابي احترافي (OpenAI GPT-4o-mini + Whisper)"
             }
-        # اتصال مجاني بالإنترنت بدون الحاجة لأي مفتاح API
         return {
             "provider": "cloud_free",
             "llm_model": "openai-large",
@@ -142,7 +144,7 @@ def detect_best_ai_provider(
 
 def query_hybrid_llm(
     prompt: str,
-    system_prompt: str = "أنت خبير في تحرير الفيديو، الموشن جرافيك، والدارجة الجزائرية والعربية.",
+    system_prompt: str = "أنت خبير في تحرير الفيديو، إعلانات التجارة الإلكترونية، والدارجة الجزائرية والعربية.",
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
@@ -151,31 +153,19 @@ def query_hybrid_llm(
     temperature: float = 0.25,
     max_tokens: int = 800
 ) -> Optional[str]:
-    """
-    استدعاء الذكاء الاصطناعي الهجين:
-    1. يجرب Groq أو Gemini أو OpenAI إذا توفرت مفاتيحها.
-    2. يجرب الذكاء السحابي المجاني عبر الإنترنت (Pollinations AI OpenAI-compatible API) بدون مفتاح.
-    3. يجرب خادم Ollama المحلي إذا كان متاحاً.
-    """
+    """استدعاء الذكاء الاصطناعي الهجين."""
     groq_key = (groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
     gemini_key = (gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     openai_key = (openai_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
 
-    # 1. Groq Cloud API
     if groq_key:
         try:
             resp = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {groq_key}",
-                    "Content-Type": "application/json"
-                },
+                headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
                 json={
                     "model": "llama-3.3-70b-versatile",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
                     "temperature": temperature,
                     "max_tokens": max_tokens
                 },
@@ -185,10 +175,9 @@ def query_hybrid_llm(
                 content = resp.json()["choices"][0]["message"]["content"].strip()
                 if content:
                     return content
-        except Exception as e:
-            logger.warning(f"Groq API warning: {e}")
+        except Exception:
+            pass
 
-    # 2. Google Gemini API
     if gemini_key:
         for gem_model in ["gemini-2.5-flash", "gemini-1.5-flash"]:
             try:
@@ -207,24 +196,17 @@ def query_hybrid_llm(
                         parts = candidates[0].get("content", {}).get("parts", [])
                         if parts and "text" in parts[0]:
                             return parts[0]["text"].strip()
-            except Exception as e:
-                logger.warning(f"Gemini API warning ({gem_model}): {e}")
+            except Exception:
+                pass
 
-    # 3. OpenAI API
     if openai_key:
         try:
             resp = requests.post(
                 "https://api.openai.com/v1/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {openai_key}",
-                    "Content-Type": "application/json"
-                },
+                headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
                 json={
                     "model": "gpt-4o-mini",
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": prompt}
-                    ],
+                    "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
                     "temperature": temperature,
                     "max_tokens": max_tokens
                 },
@@ -234,20 +216,16 @@ def query_hybrid_llm(
                 content = resp.json()["choices"][0]["message"]["content"].strip()
                 if content:
                     return content
-        except Exception as e:
-            logger.warning(f"OpenAI API warning: {e}")
+        except Exception:
+            pass
 
-    # 4. Free Cloud AI (Pollinations OpenAI-compatible Endpoint - Works with Internet without any API key)
     try:
         resp = requests.post(
             "https://text.pollinations.ai/openai",
             headers={"Content-Type": "application/json"},
             json={
                 "model": "openai",
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}],
                 "temperature": temperature,
                 "seed": 42
             },
@@ -259,10 +237,9 @@ def query_hybrid_llm(
                 content = data["choices"][0].get("message", {}).get("content", "").strip()
                 if content:
                     return content
-    except Exception as e:
-        logger.debug(f"Free Cloud AI endpoint not reachable: {e}")
+    except Exception:
+        pass
 
-    # 5. Local Ollama Fallback
     try:
         resp = requests.post(
             f"{ollama_url}/api/generate",
@@ -285,7 +262,7 @@ def query_hybrid_llm(
 
 
 # ==============================================================================
-# 3. التحليل الهندسي الذكي للصوت والفيديو واختيار أفضل الإعدادات تلقائياً
+# 3. التحليل الهندسي الذكي للصوت والفيديو (مع حماية الكلام البشري الطبيعي)
 # ==============================================================================
 def analyze_media_file(
     file_path: str,
@@ -293,21 +270,13 @@ def analyze_media_file(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Dict[str, Any]:
-    """
-    تحليل شامل للملف المرفوع (صوت أو فيديو) لاستخلاص:
-    - هل يحتوي على مسار فيديو فعلي أم صوت فقط؟
-    - شدة الصوت (dBFS)، أرضية الضوضاء (Noise Floor)، ونسبة الصمت.
-    - أفضل عتبة صمت تلقائية (Auto Silence Threshold) وهامش أمان (Padding).
-    - أفضل حجم لنموذج Whisper بناءً على العتاد والمدة والاتصال.
-    - درجة الحركة البصرية في الفيديو (Visual Motion Score) لتحديد مدى الحاجة للزوم والموشن جرافيك.
-    """
+    """تحليل شامل للملف المرفوع مع ضبط عتبة صمت تحافظ على مخارج الحروف والتنفس الطبيعي."""
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"الملف غير موجود: {file_path}")
 
     _, ext = os.path.splitext(file_path.lower())
     file_size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
 
-    # 1. التحقق من وجود مسار فيديو فعلي وحساب الحركة البصرية
     has_video_stream = False
     width, height, fps = 1080, 1920, 24
     visual_motion_score = 0.0
@@ -318,7 +287,6 @@ def analyze_media_file(
             from moviepy.editor import VideoFileClip
             clip = VideoFileClip(file_path)
             if clip.w and clip.h and clip.duration and clip.duration > 0.1:
-                # فحص إطار للتأكد من أنه ليس ملف صوت بامتداد mp4/webm
                 frame0 = clip.get_frame(0)
                 if frame0 is not None and frame0.size > 0:
                     has_video_stream = True
@@ -326,13 +294,11 @@ def analyze_media_file(
                     fps = int(clip.fps) if clip.fps and clip.fps > 1 else 24
                     video_duration = float(clip.duration)
 
-                    # حساب درجة التغير البصري بين عدة إطارات (Visual Activity)
                     sample_times = np.linspace(0.1, max(0.2, video_duration - 0.1), min(8, max(2, int(video_duration))))
                     prev_small = None
                     diffs = []
                     for t in sample_times:
                         frm = clip.get_frame(t)
-                        # تصغير الإطار بالخطوة لتسريع الحساب
                         small = frm[::8, ::8].astype(np.float32)
                         if prev_small is not None and small.shape == prev_small.shape:
                             diffs.append(float(np.mean(np.abs(small - prev_small))))
@@ -340,29 +306,26 @@ def analyze_media_file(
                     if diffs:
                         visual_motion_score = round(float(np.mean(diffs)), 2)
             clip.close()
-        except Exception as e:
-            logger.warning(f"ملاحظة أثناء فحص مسار الفيديو (سيتم التعامل معه كملف صوتي): {e}")
+        except Exception:
             has_video_stream = False
 
-    # 2. تحليل الإشارة الصوتية عبر Pydub
     duration_sec = video_duration
     mean_dbfs = -28.0
     max_dbfs = -6.0
     noise_floor_dbfs = -48.0
-    optimal_silence_thresh = -38.0
-    silence_ratio = 0.20
-    optimal_padding_ms = 120
+    optimal_silence_thresh = -42.0
+    silence_ratio = 0.18
+    optimal_padding_ms = 250  # هامش أمان بشري طبيعي يمنع بتر الحروف أو التصاق الكلمات
     optimal_chunk_size = 10
 
     try:
         from pydub import AudioSegment
         audio = AudioSegment.from_file(file_path)
         duration_sec = round(len(audio) / 1000.0, 2)
-        if duration_sec > 0 and audio.dBFS != - float("inf"):
+        if duration_sec > 0 and audio.dBFS != -float("inf"):
             mean_dbfs = round(float(audio.dBFS), 1)
             max_dbfs = round(float(audio.max_dBFS), 1)
 
-            # تقسيم الصوت إلى نوافذ 100ms لحساب توزيع الطاقة الصوتية وأرضية الضجيج
             step_ms = 100
             chunk_levels = [
                 c.dBFS for c in audio[::step_ms]
@@ -370,29 +333,18 @@ def analyze_media_file(
             ]
             if chunk_levels:
                 p15 = float(np.percentile(chunk_levels, 15))
-                p50 = float(np.percentile(chunk_levels, 50))
                 p85 = float(np.percentile(chunk_levels, 85))
                 noise_floor_dbfs = round(p15, 1)
 
-                # معادلة ذكية لضبط عتبة الصمت بين أرضية الضجيج ومتوسط الكلام
-                raw_thresh = p15 + 0.32 * (p85 - p15)
-                # ضمان وقوع العتبة في نطاق آمن يحمي الكلام الهامس ويعزل الضوضاء
-                optimal_silence_thresh = round(max(-50.0, min(-25.0, raw_thresh, mean_dbfs - 5.5)), 1)
-
+                # وضع العتبة قريباً من أرضية الضجيج (18% فقط من المدى) لحماية كل همس أو نهاية كلمة
+                raw_thresh = p15 + 0.18 * (p85 - p15)
+                optimal_silence_thresh = round(max(-54.0, min(-32.0, raw_thresh, mean_dbfs - 11.0)), 1)
                 silent_chunks = sum(1 for lvl in chunk_levels if lvl < optimal_silence_thresh)
                 silence_ratio = round(silent_chunks / max(1, len(chunk_levels)), 2)
+                optimal_padding_ms = 260 if silence_ratio > 0.25 else 240
+    except Exception:
+        pass
 
-                # ضبط هامش الأمان (Padding) بناءً على نسبة الصمت
-                if silence_ratio > 0.35:
-                    optimal_padding_ms = 130
-                elif silence_ratio < 0.12:
-                    optimal_padding_ms = 90
-                else:
-                    optimal_padding_ms = 110
-    except Exception as e:
-        logger.warning(f"تعذر تحليل تفاصيل dBFS الدقيقة، سيتم استخدام القيم القياسية الذكية: {e}")
-
-    # 3. اختيار أفضل نموذج تفريغ (Whisper) ومزود الذكاء الاصطناعي
     ai_info = detect_best_ai_provider(
         groq_api_key=groq_api_key,
         gemini_api_key=gemini_api_key,
@@ -407,22 +359,7 @@ def analyze_media_file(
     except Exception:
         pass
 
-    if has_cuda:
-        optimal_whisper_model = "medium"
-    elif duration_sec <= 120:
-        # للمقاطع القصيرة والمتوسطة نستخدم small لأنه سريع ودقيق مع موجه الدارجة الجزائرية
-        optimal_whisper_model = "small"
-    else:
-        optimal_whisper_model = "small"
-
-    # 4. تحديد النمط الأنسب مبدئياً بناءً على المعايير الفيزيائية
-    recommendation = recommend_editing_style(
-        has_video=has_video_stream,
-        duration_sec=duration_sec,
-        silence_ratio=silence_ratio,
-        visual_motion_score=visual_motion_score,
-        aspect_ratio="vertical" if height >= width else "horizontal"
-    )
+    optimal_whisper_model = "medium" if has_cuda else "small"
 
     return {
         "file_path": file_path,
@@ -445,74 +382,100 @@ def analyze_media_file(
         "optimal_chunk_size": optimal_chunk_size,
         "optimal_whisper_model": optimal_whisper_model,
         "ai_provider_info": ai_info,
-        "recommended_style": recommendation["style_key"],
-        "recommended_style_name": recommendation["style_name"],
-        "criteria_reasons": recommendation["reasons"]
+        "recommended_style": "product_ad",
+        "recommended_style_name": "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce Ad)",
+        "criteria_reasons": [
+            f"ضبط عتبة الصمت عند ({optimal_silence_thresh} dBFS) وهامش أمان بشري ({optimal_padding_ms}ms) لحماية مخارج الحروف والتنفس الطبيعي ومنع التصاق الكلمات.",
+            "توزيع بصري احترافي لهيكل الإعلان (خطاف Hook، إبراز المشكلة، كشف مميزات المنتج، شارات الثقة، ونداء الشراء CTA)."
+        ]
     }
 
 
-def recommend_editing_style(
-    has_video: bool,
-    duration_sec: float,
-    silence_ratio: float,
-    visual_motion_score: float,
-    aspect_ratio: str,
-    transcript_text: str = ""
-) -> Dict[str, Any]:
-    """
-    اختيار أفضل نمط مونتاج بناءً على معايير علمية واضحة (وليس عشوائياً):
-    1. نوع الوسائط (صوت فقط أم فيديو).
-    2. درجة ثبات الكاميرا والحركة البصرية (Visual Motion Score).
-    3. نسبة الصمت والتوقفات (Silence Ratio).
-    4. طبيعة المحتوى النصي (تعليمي/هندسي، شرح ومعلومات، أم حديث مباشر).
-    """
-    reasons = []
+# ==============================================================================
+# 4. محرك تحليل وهيكلة إعلانات المنتجات التجارية (E-Commerce Ad Intelligence)
+# ==============================================================================
+def plan_product_ad_segments(
+    sentences: List[Dict[str, Any]],
+    total_duration: float,
+    product_title_override: Optional[str] = None,
+    cta_override: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """تخطيط ومونتاج فيديو إعلان المنتج وفق معايير تسويقية صارمة."""
+    if not sentences:
+        return []
 
-    # فحص الكلمات الدلالية في النص إن وجد
-    math_tech_keywords = {"معادلة", "هندسة", "خوارزمية", "حساب", "رياضيات", "دالة", "بيانات", "احصائيات", "نسبة", "برمجة", "فيزياء"}
-    has_math_tech = any(kw in transcript_text for kw in math_tech_keywords) if transcript_text else False
+    problem_keywords = [
+        "مشكل", "تعبت", "ديما", "يخسر", "بطيء", "يتكسر", "غالي", "حرت", "صعيب", "ضياع",
+        "تضييع", "تلف", "قلق", "يفسد", "معاناة", "رديء", "فاشل", "مقلد", "مغشوش"
+    ]
+    trust_keywords = [
+        "توصيل", "ولاية", "58", "باب الدار", "ضمان", "كوندوسيو", "أصلية", "استرجاع",
+        "مجاني", "الدفع عند الاستلام", "دفع", "كاش", "سريع", "لباب", "مضمون", "ثقة"
+    ]
+    cta_keywords = [
+        "اطلب", "الرابط", "البايو", "السعر", "سومة", "تخفيض", "كمية محدودة", "كليكي",
+        "برومو", "عرض", "تواصل", "رقم", "سارع", "احجز", "موقع", "صفحة", "للطلب"
+    ]
 
-    if not has_video:
-        reasons.append("الملف المرفوع عبارة عن تسجيل صوتي فقط بدون مسار فيديو، لذا يحتاج إلى توليد بصري كامل.")
-        if has_math_tech:
-            reasons.append("المحتوى يحتوي على مفاهيم تقنية/تحليلية تناسب الرسوم الهندسية والمخططات المتحركة.")
-            return {
-                "style_key": "all_in_one",
-                "style_name": "النمط التلقائي الذكي - دمج كل الأدوار (Smart Director All-in-One)",
-                "sub_mode_for_audio": "kinetic_plus_manim",
-                "reasons": reasons
-            }
+    planned = []
+    num_sentences = len(sentences)
+
+    for idx, sent in enumerate(sentences):
+        text = sent.get("text", "")
+        t_start = float(sent.get("start", 0.0))
+        t_end = float(sent.get("end", 0.0))
+
+        is_hook = (idx == 0 or t_start < 3.2)
+        is_cta = (idx == num_sentences - 1 or t_end >= total_duration - 4.5 or any(k in text for k in cta_keywords))
+        is_trust = any(k in text for k in trust_keywords)
+        is_problem = any(k in text for k in problem_keywords) and not is_hook and not is_cta
+
+        if is_hook:
+            ad_role = "ad_hook"
+            zoom = 1.18
+            badge_title = product_title_override or "🔥 عفسة هبال لازم تشوفها!"
+            icon_cat = "warning"
+        elif is_cta:
+            ad_role = "ad_cta"
+            zoom = 1.14
+            badge_title = cta_override or "🛒 اطلب الآن والدفع عند الاستلام!"
+            icon_cat = "money"
+        elif is_trust:
+            ad_role = "ad_trust"
+            zoom = 1.08
+            if any(w in text for w in ["توصيل", "ولاية", "58", "باب"]):
+                badge_title = "🚚 توصيل سريع متوفر لـ 58 ولاية"
+                icon_cat = "time"
+            elif any(w in text for w in ["دفع", "استلام", "كاش"]):
+                badge_title = "💵 الدفع عند الاستلام بعد المعاينة"
+                icon_cat = "money"
+            else:
+                badge_title = "🛡️ ضمان الجودة والاستبدال 100%"
+                icon_cat = "success"
+        elif is_problem:
+            ad_role = "ad_problem"
+            zoom = 1.06
+            badge_title = "❌ المشكلة الشائعة"
+            icon_cat = "warning"
         else:
-            reasons.append("تم تفعيل الموشن جرافيك النصي الاحترافي مع الأيقونات الديناميكية والخلفيات المتحركة المتفاعلة مع الصوت.")
-            return {
-                "style_key": "motion_text",
-                "style_name": "موشن جرافيك نصي احترافي (Kinetic Typography & Icons)",
-                "sub_mode_for_audio": "motion_text",
-                "reasons": reasons
-            }
+            ad_role = "ad_feature"
+            zoom = 1.13 if (idx % 2 == 1) else 1.05
+            words = text.split()
+            clean_feat = " ".join(words[:3]) if len(words) >= 3 else text
+            badge_title = f"✨ {clean_feat}"
+            icon_cat = "idea" if any(w in text for w in ["ذكاء", "فكرة", "حل"]) else "success"
 
-    # في حال كان الملف فيديو:
-    if silence_ratio >= 0.25:
-        reasons.append(f"نسبة التوقفات والصمت في التسجيل تبلغ {int(silence_ratio*100)}%، مما يستدعي تفعيل القص الذكي (Jump-cuts) لرفع الإيقاع.")
-    else:
-        reasons.append(f"تدفق الكلام متواصل بنسبة صمت منخفضة ({int(silence_ratio*100)}%)، مما يسمح بانتقالات سلسة.")
+        enriched = dict(sent)
+        enriched["ad_role"] = ad_role
+        enriched["zoom_factor"] = zoom
+        enriched["badge_title"] = badge_title
+        enriched["icon_cat"] = icon_cat
+        planned.append(enriched)
 
-    if visual_motion_score < 12.0:
-        reasons.append(
-            f"مؤشر الحركة البصرية في الفيديو منخفض ({visual_motion_score}) أي أن الكاميرا شبه ثابتة (Talking Head)، "
-            "لذلك تم دمج الزوم السينمائي مع بطاقات الموشن جرافيك والانفوجرافيك لكسر الجمود البصري."
-        )
-    else:
-        reasons.append(
-            f"الفيديو يحتوي على حركة بصرية نشطة ({visual_motion_score})، "
-            "لذلك سيتم تراكب الموشن جرافيك والكابشن التفاعلي في الثلث السفلي والزوايا دون التشويش على المشهد."
-        )
-
-    return {
-        "style_key": "all_in_one",
-        "style_name": "النمط التلقائي الذكي - دمج كل الأدوار (Smart Director All-in-One)",
-        "reasons": reasons
-    }
+    return planned
 
 
 def plan_smart_director_segments(
@@ -520,12 +483,7 @@ def plan_smart_director_segments(
     has_video: bool,
     visual_motion_score: float = 8.0
 ) -> List[Dict[str, Any]]:
-    """
-    توزيع الأدوار السينمائية (Role Assignment) على كل جملة في نمط "دمج كل الأدوار"
-    بناءً على معايير محددة:
-    - الجملة الافتتاحية (Hook) أو الجمل التي تحتوي على أرقام/مفاهيم قوية -> تأخذ بطاقة موشن جرافيك بارزة (Infographic Callout) أو فاصل بصري (Visual Burst).
-    - الجمل الحوارية المتتالية -> تتناوب بين التكبير الديناميكي (Zoom + Karaoke) واللقطة العادية مع كابشن احترافي.
-    """
+    """توزيع الأدوار للمخرج الذكي العام."""
     planned = []
     emphasis_markers = {
         "مهم", "سر", "أول", "ثاني", "ثالث", "لازم", "ضروري", "بزاف", "خطير", "نتيجة",
@@ -536,39 +494,28 @@ def plan_smart_director_segments(
     for idx, sent in enumerate(sentences):
         text = sent.get("text", "")
         duration = max(0.2, sent.get("end", 0.0) - sent.get("start", 0.0))
-        words_count = len(sent.get("words", [])) or len(text.split())
-        wps = words_count / duration  # سرعة الكلمات في الثانية
-
         has_emphasis = any(m in text for m in emphasis_markers) or ("؟" in text) or ("!" in text)
 
         if not has_video:
-            # إذا كان الملف صوتياً فقط: ندمج بين الموشن جرافيك النصي واللوحات البيانية الهندسية
             role = "kinetic_infographic" if (idx == 0 or has_emphasis or idx % 2 == 0) else "kinetic_minimal"
             zoom = 1.12 if idx % 2 == 1 else 1.0
         else:
-            # إذا كان الملف فيديو: ندمج كل الأدوار بذكاء
             if idx == 0 and duration >= 1.2:
-                # الجملة الافتتاحية (Hook): زوم + بطاقة عنوان موشن جرافيك علوية + كابشن تفاعلي
                 role = "hook_motion_overlay"
                 zoom = 1.14
             elif has_emphasis and duration >= 1.8 and idx % 3 == 1:
-                # جملة محورية: فاصل موشن جرافيك مدمج (Picture-in-Picture / Split Graphic Burst)
                 role = "graphic_burst_overlay"
                 zoom = 1.16 if visual_motion_score < 14.0 else 1.06
             elif has_emphasis or idx % 2 == 1:
-                # جملة مهمة: تراكب بطاقة موشن جرافيك وأيقونة ديناميكية فوق الفيديو الأصلي + زوم
                 role = "motion_card_overlay"
                 zoom = 1.14 if visual_motion_score < 14.0 else 1.05
             else:
-                # جملة انتقالية هادئة لراحة العين: لقطة أصلية صافية مع كابشن كاريوكي أنيق
                 role = "clean_karaoke"
                 zoom = 1.0
 
         enriched = dict(sent)
         enriched["director_role"] = role
         enriched["zoom_factor"] = zoom
-        enriched["speech_rate_wps"] = round(wps, 2)
-        enriched["is_emphasis"] = has_emphasis
         planned.append(enriched)
 
     return planned

@@ -1,10 +1,13 @@
 """
-auto_cut.py - وحدة قص الصمت الذكي وتحضير الملفات الصوتية والفيديوهات
-=====================================================================
+auto_cut.py - وحدة قص الصمت الذكي الطبيعي (Natural Human Speech Cadence) وتحضير الوسائط
+======================================================================================
 تتميز هذه الوحدة بـ:
-1. دعم كامل لجميع صيغ الصوت والتسجيلات الصوتية من الهواتف والمتصفحات (mp3, wav, m4a, ogg, opus, aac, amr, webm, 3gp, flac, wma) مع التحويل التلقائي الذكي.
-2. فحص فعلي لمسار الفيديو (وليس بالامتداد فقط) لمنع انهيار MoviePy إذا كان الملف صوتياً بامتداد mp4 أو webm.
-3. معايرة تلقائية ذكية لعتبة الصمت (Auto Adaptive Silence Threshold) إذا كانت العتبة اليدوية لا تناسب مستوى تسجيل المايكروفون.
+1. قص الصمت بأسلوب بشري طبيعي 100% (Natural Human Speech Cadence):
+   - حماية مخارج الحروف الضعيفة والهمس وأواخر الكلمات عبر هوامش غير متماثلة (Pre-padding 220ms + Post-padding 280ms).
+   - عدم قص التوقفات التنفسية الطبيعية القصيرة (فقط الصمت الفعلي الأطول من 700 ملي ثانية).
+   - دمج الفجوات القصيرة (Gap Bridging < 420ms) لمنع التقطيع المزعج أو ظهور الكلام وكأنه "ملصق في بعضه".
+2. معايرة ذكية لعتبة الصوت تقترب من أرضية الضجيج (Noise Floor) ولا تقترب أبداً من الكلام المنخفض.
+3. دعم كامل لجميع صيغ الصوت والتسجيلات الصوتية والفيديو.
 """
 
 import sys
@@ -14,10 +17,15 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
 
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
+
 import shutil
 import subprocess
 import logging
 from typing import List, Tuple, Callable, Optional
+import numpy as np
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
@@ -26,10 +34,7 @@ logger = logging.getLogger(__name__)
 
 
 def is_video_file(file_path: str) -> bool:
-    """
-    التحقق مما إذا كان الملف يحتوي فعلياً على مسار فيديو صالح للعرض،
-    وليس مجرد التحقق من الامتداد فقط (لأن بعض التسجيلات الصوتية تكون بامتداد webm أو mp4 أو 3gp).
-    """
+    """التحقق مما إذا كان الملف يحتوي فعلياً على مسار فيديو صالح للعرض."""
     if not file_path or not os.path.exists(file_path):
         return False
 
@@ -52,18 +57,12 @@ def is_video_file(file_path: str) -> bool:
 
 
 def ensure_playable_audio_or_video(input_path: str, working_dir: str) -> Tuple[str, bool]:
-    """
-    تحضير وتطبيع الملف المرفوع (خاصة التسجيلات الصوتية بصيغ الهواتف مثل ogg, opus, m4a, aac, amr, webm, 3gp):
-    - إذا كان فيديو صالحاً: يرجع مساره و True.
-    - إذا كان ملفاً صوتياً (أو تسجيل صوتي من الهاتف/المتصفح): يحوله تلقائياً عبر ffmpeg/pydub
-      إلى ملف WAV/MP3 قياسي نظيف لضمان عمل المعاينة والتفريغ والموشن جرافيك بنسبة 100% دون أي فشل.
-    """
+    """تحضير وتطبيع الملف المرفوع لضمان عمل المعاينة والمعالجة بنسبة 100%."""
     os.makedirs(working_dir, exist_ok=True)
     has_video = is_video_file(input_path)
     if has_video:
         return input_path, True
 
-    # الملف صوتي: نقوم بتطبيعه إلى ملف WAV أو MP3 قياسي متوافق مع كل المتصفحات والمكتبات
     base_name = os.path.splitext(os.path.basename(input_path))[0]
     normalized_wav = os.path.join(working_dir, f"normalized_{base_name}.wav")
 
@@ -71,7 +70,6 @@ def ensure_playable_audio_or_video(input_path: str, working_dir: str) -> Tuple[s
         return normalized_wav, False
 
     try:
-        # المحاولة الأولى عبر FFmpeg مباشرة لدعم كافة حاويات التسجيلات الصوتية في الهواتف
         cmd = [
             "ffmpeg", "-y", "-i", input_path,
             "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "2",
@@ -79,42 +77,48 @@ def ensure_playable_audio_or_video(input_path: str, working_dir: str) -> Tuple[s
         ]
         res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if res.returncode == 0 and os.path.exists(normalized_wav) and os.path.getsize(normalized_wav) > 512:
-            logger.info(f"تم تحويل وتطبيع الملف الصوتي بنجاح إلى: {normalized_wav}")
             return normalized_wav, False
-    except Exception as e:
-        logger.warning(f"تحويل FFmpeg المباشر تعذر ({e})، جاري الاستخدام عبر Pydub...")
+    except Exception:
+        pass
 
     try:
         audio = AudioSegment.from_file(input_path)
         audio.export(normalized_wav, format="wav")
         return normalized_wav, False
-    except Exception as e:
-        logger.warning(f"تعذر تطبيع الملف الصوتي، سيتم استخدام المسار الأصلي: {e}")
+    except Exception:
         return input_path, False
 
 
 def apply_padding_and_merge(
     chunks: List[List[int]],
     total_duration_ms: int,
-    padding_ms: int = 100
+    padding_ms: int = 250,
+    min_bridge_gap_ms: int = 420
 ) -> List[Tuple[int, int]]:
     """
-    إضافة هوامش أمان (Padding) قبل وبعد كل مقطع صوتي لمنع بتر بدايات ونهايات الكلمات،
-    مع دمج الفترات المتداخلة بعد إضافة الهوامش.
+    حماية طبيعية الكلام البشري (Natural Breath & Syllable Protection):
+    1. إضافة هامش حماية قبل بداية الكلمة (Pre-padding) وهامش أطول قليلاً بعد نهايتها (Post-padding)
+       لحماية مخارج الحروف الضعيفة والمدود في آخر الجمل حتى لا يُبتر أي حرف منطوق.
+    2. دمج المقاطع المتقاربة التي تقل الفجوة بينها عن min_bridge_gap_ms (420 ملي ثانية)
+       بحيث تبقى وقفات التنفس الطبيعية بين الكلمات سليمة ولا يبدو الكلام "ملصقاً في بعضه".
     """
     if not chunks:
         return []
 
+    pre_pad = max(180, int(padding_ms * 0.90))
+    post_pad = max(240, int(padding_ms * 1.15))
+
     merged = []
     for start, end in chunks:
-        start_padded = max(0, start - padding_ms)
-        end_padded = min(total_duration_ms, end + padding_ms)
+        start_padded = max(0, start - pre_pad)
+        end_padded = min(total_duration_ms, end + post_pad)
 
         if not merged:
             merged.append([start_padded, end_padded])
         else:
             last_start, last_end = merged[-1]
-            if start_padded <= last_end:
+            # إذا كانت الفجوة بين المقطع السابق والحالي أقل من 420ms ندمجهما معاً ليبقى الكلام متصلاً بطبيعية
+            if start_padded - last_end <= min_bridge_gap_ms:
                 merged[-1][1] = max(last_end, end_padded)
             else:
                 merged.append([start_padded, end_padded])
@@ -124,32 +128,48 @@ def apply_padding_and_merge(
 
 def compute_adaptive_threshold(audio: AudioSegment, requested_threshold: float) -> float:
     """
-    حساب عتبة صمت ذكية في حال كان الصوت منخفضاً جداً أو كانت العتبة اليدوية تحذف الكلام.
+    معايرة عتبة الصمت بذكاء لتكون قريبة من أرضية الضجيج (Noise Floor) وبعيدة عن الكلام المنخفض،
+    مما يضمن عدم قص أي لحظة يتحدث فيها الإنسان بصوت هادئ.
     """
     if len(audio) == 0 or audio.dBFS == -float("inf"):
         return requested_threshold
 
     mean_db = float(audio.dBFS)
-    # إذا كانت العتبة المطلوبة أعلى من متوسط الصوت، نخفضها تلقائياً لحماية الكلام
-    if requested_threshold >= mean_db - 2.0:
-        adapted = max(-55.0, round(mean_db - 7.5, 1))
-        logger.info(f"تم تعديل عتبة الصمت تلقائياً من {requested_threshold} إلى {adapted} dBFS لتناسب مستوى التسجيل.")
-        return adapted
+    try:
+        chunk_levels = [
+            c.dBFS for c in audio[::100]
+            if c.dBFS != -float("inf") and c.dBFS > -85.0
+        ]
+        if chunk_levels:
+            p15 = float(np.percentile(chunk_levels, 15))
+            p85 = float(np.percentile(chunk_levels, 85))
+            # نضع العتبة فوق أرضية الضجيج بقليل (18% فقط من المدى الديناميكي) لحماية كل الحروف المنطوقة
+            safe_speech_thresh = p15 + 0.18 * (p85 - p15)
+            max_allowed = min(-32.0, mean_db - 10.5)
+            optimal = max(-55.0, min(max_allowed, safe_speech_thresh))
+            # إذا كانت العتبة المطلوبة أعلى من الحد الآمن للكلام الهامس، نخفضها تلقائياً
+            if requested_threshold > optimal + 2.0:
+                logger.info(f"معايرة عتبة الصمت لحماية الكلام الطبيعي: {optimal:.1f} dBFS بدلاً من {requested_threshold} dBFS")
+                return round(optimal, 1)
+    except Exception:
+        pass
+
+    if requested_threshold >= mean_db - 8.0:
+        return max(-55.0, round(mean_db - 11.0, 1))
     return requested_threshold
 
 
 def remove_silence(
     input_path: str,
     output_path: str,
-    silence_threshold: float = -40.0,
+    silence_threshold: float = -42.0,
     chunk_size: int = 10,
-    min_silence_len: int = 450,
-    padding_ms: int = 110,
+    min_silence_len: int = 700,
+    padding_ms: int = 250,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
     """
-    قص فترات الصمت من ملف الفيديو أو الصوت وإنتاج مقطع سريع ونظيف (Jump-cuts).
-    يدعم المعايرة التلقائية الذكية في حال كان التسجيل الصوتي منخفضاً.
+    قص فترات السكوت الطويلة فقط مع الحفاظ التام على طبيعية الكلام البشري ونفَس المتحدث.
     """
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف المدخل غير موجود: {input_path}")
@@ -168,7 +188,7 @@ def remove_silence(
     subclips = []
 
     try:
-        update_progress(0.1, "جاري قراءة وتحليل الإشارة الصوتية...")
+        update_progress(0.1, "جاري تحليل الإشارة الصوتية وتحديد وقفات الكلام الطبيعية...")
 
         audio = AudioSegment.from_file(input_path)
         total_duration_ms = len(audio)
@@ -177,44 +197,45 @@ def remove_silence(
             raise ValueError("الملف المدخل فارغ أو لا يحتوي على مدة زمنية صالحة.")
 
         effective_threshold = compute_adaptive_threshold(audio, silence_threshold)
-        update_progress(0.3, f"جاري فحص فترات الكلام فوق عتبة {effective_threshold} dBFS...")
+        effective_min_silence = max(600, int(min_silence_len))
+        effective_padding = max(220, int(padding_ms))
+
+        update_progress(0.3, f"فحص فترات السكوت الطويلة (> {effective_min_silence}ms) تحت عتبة {effective_threshold} dBFS...")
 
         raw_nonsilent = detect_nonsilent(
             audio,
-            min_silence_len=min_silence_len,
+            min_silence_len=effective_min_silence,
             silence_thresh=effective_threshold,
             seek_step=chunk_size
         )
 
-        # إذا لم يكتشف كلاماً، نخفض العتبة تدريجياً بدلاً من إيقاف العملية بخطأ
         if not raw_nonsilent:
-            fallback_thresh = max(-60.0, float(audio.dBFS) - 10.0) if audio.dBFS != -float("inf") else -52.0
-            logger.warning(f"إعادة الفحص بعتبة تكيّفية منخفضة ({fallback_thresh:.1f} dBFS)...")
+            fallback_thresh = max(-60.0, float(audio.dBFS) - 14.0) if audio.dBFS != -float("inf") else -54.0
             raw_nonsilent = detect_nonsilent(
                 audio,
-                min_silence_len=min_silence_len,
+                min_silence_len=effective_min_silence,
                 silence_thresh=fallback_thresh,
                 seek_step=chunk_size
             )
 
-        # إذا بقي فارغاً، نحتفظ بكامل المقطع لضمان عدم فشل المعالجة أبداً
         if not raw_nonsilent:
             raw_nonsilent = [[0, total_duration_ms]]
 
         speech_intervals = apply_padding_and_merge(
             raw_nonsilent,
             total_duration_ms=total_duration_ms,
-            padding_ms=padding_ms
+            padding_ms=effective_padding,
+            min_bridge_gap_ms=420
         )
 
         total_kept_duration_ms = sum(end - start for start, end in speech_intervals)
         cut_duration_sec = max(0.0, (total_duration_ms - total_kept_duration_ms) / 1000.0)
         logger.info(
-            f"تم تحديد {len(speech_intervals)} مقطع كلام. "
-            f"تم اختصار {cut_duration_sec:.2f} ثانية من الصمت."
+            f"تم تحديد {len(speech_intervals)} مقطع متصل بطبيعية. "
+            f"تم إزالة {cut_duration_sec:.2f} ثانية من السكوت الطويل فقط."
         )
 
-        update_progress(0.5, "جاري قص المقاطع وإعادة تجميعها بسلاسة...")
+        update_progress(0.5, "جاري تجميع المقاطع بانسيابية طبيعية...")
 
         if is_video_file(input_path):
             from moviepy.editor import VideoFileClip, concatenate_videoclips
@@ -225,7 +246,7 @@ def remove_silence(
             for start_ms, end_ms in speech_intervals:
                 start_sec = max(0.0, start_ms / 1000.0)
                 end_sec = min(video_duration_sec, end_ms / 1000.0)
-                if end_sec > start_sec + 0.05:
+                if end_sec > start_sec + 0.08:
                     subclips.append(video_clip.subclip(start_sec, end_sec))
 
             if not subclips:
@@ -233,7 +254,7 @@ def remove_silence(
 
             final_clip = concatenate_videoclips(subclips, method="compose")
 
-            update_progress(0.75, "جاري رندرة وتصدير الفيديو النهائي...")
+            update_progress(0.75, "جاري رندرة وتصدير الفيديو...")
             temp_audio_path = os.path.join(temp_dir, "temp_render_audio.m4a")
             final_clip.write_videofile(
                 output_path,
@@ -246,12 +267,16 @@ def remove_silence(
                 logger=None
             )
         else:
-            update_progress(0.75, "جاري تجميع وتنقية الملف الصوتي النهائي...")
+            update_progress(0.75, "جاري دمج وتنقية الملف الصوتي بنعومة (Crossfade)...")
             combined_audio = AudioSegment.empty()
-            for start_ms, end_ms in speech_intervals:
-                combined_audio += audio[start_ms:end_ms]
+            for idx, (start_ms, end_ms) in enumerate(speech_intervals):
+                segment_chunk = audio[start_ms:end_ms]
+                if idx == 0 or len(combined_audio) < 30 or len(segment_chunk) < 30:
+                    combined_audio += segment_chunk
+                else:
+                    # دمج متدرج ناعم (15ms Crossfade) لمنع أي طقة أو التصاق حاد بين الجمل
+                    combined_audio = combined_audio.append(segment_chunk, crossfade=15)
 
-            # تحسين توازن الصوت (Normalize) ليكون واضحاً ونقياً
             try:
                 from pydub.effects import normalize
                 combined_audio = normalize(combined_audio)
@@ -265,7 +290,7 @@ def remove_silence(
                 output_path = os.path.splitext(output_path)[0] + ".mp3"
             combined_audio.export(output_path, format=export_format)
 
-        update_progress(1.0, f"اكتملت المعالجة بنجاح! (تم اختصار {cut_duration_sec:.1f} ثانية من الصمت)")
+        update_progress(1.0, f"اكتملت المعالجة بنجاح! (تم إزالة {cut_duration_sec:.1f} ثانية من السكوت الطويل)")
         return output_path
 
     except Exception as e:
@@ -292,21 +317,21 @@ def remove_silence(
 
 def get_speech_timestamps(
     input_path: str,
-    silence_threshold: float = -40.0,
+    silence_threshold: float = -42.0,
     chunk_size: int = 10,
-    min_silence_len: int = 450,
-    padding_ms: int = 110
+    min_silence_len: int = 700,
+    padding_ms: int = 250
 ) -> List[Tuple[float, float]]:
     """إرجاع التواقيت الزمنية لفترات الكلام بوحدة الثواني."""
     audio = AudioSegment.from_file(input_path)
     effective_threshold = compute_adaptive_threshold(audio, silence_threshold)
     raw_nonsilent = detect_nonsilent(
         audio,
-        min_silence_len=min_silence_len,
+        min_silence_len=max(600, min_silence_len),
         silence_thresh=effective_threshold,
         seek_step=chunk_size
     )
     if not raw_nonsilent:
         return [(0.0, len(audio) / 1000.0)]
-    merged = apply_padding_and_merge(raw_nonsilent, len(audio), padding_ms=padding_ms)
+    merged = apply_padding_and_merge(raw_nonsilent, len(audio), padding_ms=max(220, padding_ms))
     return [(s / 1000.0, e / 1000.0) for s, e in merged]

@@ -1,11 +1,6 @@
 """
-motion_text.py - محرك الموشن جرافيك الاحترافي والأنفوجرافيك المتحرك (Studio Kinetic Typography & Overlays)
-========================================================================================================
-يوفر هذا الملف:
-1. معالجة متقدمة للخطوط العربية والدارجة الجزائرية (تحميل تلقائي لخط Cairo العريض عند توفر الإنترنت + تشكيل الحروف عبر arabic_reshaper و python-bidi عند الحاجة).
-2. رسام أيقونات فيكتور ديناميكي مدمج (Procedural Vector Icon Renderer) يرسم أيقونات عالية الدقة لكل جملة تلقائياً حتى لو كان مجلد assets/icons فارغاً.
-3. استخراج الكلمات المفتاحية ونوع الأيقونة والثيم اللوني عبر الذكاء الاصطناعي الهجين (سحابي مجاني / Groq / Gemini / Ollama).
-4. إنتاج فيديوهات موشن جرافيك كاملة أو طبقات موشن جرافيك شفافة (Overlays) لدمجها مع الفيديو الأصلي للمستخدم.
+motion_text.py - محرك الموشن جرافيك الاحترافي والأنفوجرافيك المتحرك وعناصر إعلانات المنتجات
+==========================================================================================
 """
 
 import sys
@@ -14,6 +9,11 @@ import os
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
     sys.path.insert(0, _CURRENT_DIR)
+
+# معالجة فورية لتوافق Pillow 10+ مع MoviePy لمنع خطأ 'PIL.Image' has no attribute 'ANTIALIAS'
+import PIL.Image
+if not hasattr(PIL.Image, "ANTIALIAS"):
+    PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import re
 import math
@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 1. إعداد الخطوط العربية وتشكيل الحروف السليم (Arabic Text Shaping & Fonts)
+# 1. إعداد الخطوط العربية وتشكيل الحروف السليم
 # ==============================================================================
 _FONT_DOWNLOAD_ATTEMPTED = False
 _HAS_RAQM = False
@@ -48,10 +48,7 @@ except Exception:
 
 
 def shape_arabic_text(text: str) -> str:
-    """
-    ضمان ظهور الحروف العربية متصلة وبالاتجاه الصحيح من اليمين لليسار
-    في جميع البيئات (سواء كانت مكتبة libraqm متوفرة أم لا).
-    """
+    """ضمان ظهور الحروف العربية متصلة وبالاتجاه الصحيح."""
     if not text:
         return ""
     if _HAS_RAQM:
@@ -75,7 +72,7 @@ def draw_arabic_text(
     stroke_width: int = 0,
     stroke_fill: Optional[Tuple[int, int, int, int]] = None
 ):
-    """رسم نص عربي أو دارجة جزائرية بدقة عالية مع دعم الحواف (Stroke)."""
+    """رسم نص عربي بدقة عالية."""
     prepared = shape_arabic_text(text)
     kwargs = {"font": font, "fill": fill, "anchor": anchor}
     if stroke_width > 0 and stroke_fill is not None:
@@ -92,7 +89,6 @@ def draw_arabic_text(
     try:
         draw.text(xy, prepared, **kwargs)
     except Exception:
-        # في حال عدم دعم anchor في الخط الافتراضي
         kwargs.pop("anchor", None)
         draw.text(xy, prepared, **kwargs)
 
@@ -102,7 +98,7 @@ def measure_arabic_text(
     text: str,
     font: ImageFont.FreeTypeFont
 ) -> Tuple[int, int]:
-    """قياس عرض وارتفاع النص العربي بدقة."""
+    """قياس عرض وارتفاع النص العربي."""
     prepared = shape_arabic_text(text)
     try:
         if _HAS_RAQM:
@@ -115,10 +111,7 @@ def measure_arabic_text(
 
 
 def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
-    """
-    جلب أفضل خط عربي متوفر، مع تحميل تلقائي لخط Cairo-Bold الحديث عند توفر الإنترنت
-    للحصول على مظهر موشن جرافيك سينمائي فخم.
-    """
+    """جلب أفضل خط عربي متوفر مع تحميل تلقائي لـ Cairo-Bold عند توفر الإنترنت."""
     global _FONT_DOWNLOAD_ATTEMPTED
     fonts_dir = os.path.join(_CURRENT_DIR, "assets", "fonts")
     os.makedirs(fonts_dir, exist_ok=True)
@@ -136,7 +129,6 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
                 if resp.status_code == 200 and len(resp.content) > 20000:
                     with open(cairo_bold_path, "wb") as f:
                         f.write(resp.content)
-                    logger.info("تم تحميل خط الموشن جرافيك العربي الحديث (Cairo-Bold) بنجاح.")
                     break
             except Exception:
                 continue
@@ -164,7 +156,7 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
 
 
 # ==============================================================================
-# 2. الثيمات اللونية ورسام الأيقونات الفيكتور المدمج (Vector Motion Icons)
+# 2. الثيمات اللونية ورسام الأيقونات الفيكتور
 # ==============================================================================
 MOTION_THEMES = {
     "cyber_gold": {
@@ -208,18 +200,14 @@ def draw_procedural_vector_icon(
     accent_color: Tuple[int, int, int] = (255, 225, 0),
     secondary_color: Tuple[int, int, int] = (0, 245, 212)
 ) -> Image.Image:
-    """
-    رسم أيقونة فيكتور عالية الدقة (Supersampled 2x) داخل درع زجاجي مضيء
-    لضمان وجود رسومات موشن جرافيك جميلة دائماً حتى بدون ملفات خارجية.
-    """
-    ss = 2  # Supersampling للتنعيم الفائق
+    """رسم أيقونة فيكتور عالية الدقة داخل درع زجاجي مضيء."""
+    ss = 2
     dim = size * ss
     img = Image.new("RGBA", (dim, dim), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     cx, cy = dim // 2, dim // 2
     r_outer = int(dim * 0.44)
 
-    # هالة مضيئة ودرع دائري زجاجي
     draw.ellipse(
         [(cx - r_outer - 6, cy - r_outer - 6), (cx + r_outer + 6, cy + r_outer + 6)],
         fill=(accent_color[0], accent_color[1], accent_color[2], 45)
@@ -230,7 +218,6 @@ def draw_procedural_vector_icon(
         outline=(*accent_color, 240),
         width=6
     )
-    # قوس داخلي ثانوي
     r_inner = int(r_outer * 0.84)
     draw.arc(
         [(cx - r_inner, cy - r_inner), (cx + r_inner, cy + r_inner)],
@@ -244,7 +231,6 @@ def draw_procedural_vector_icon(
     white = (255, 255, 255, 255)
 
     if icon_type in {"money", "finance", "growth", "chart"}:
-        # أعمدة بيانية صاعدة مع سهم نمو
         bar_w = int(dim * 0.08)
         base_y = cy + int(dim * 0.18)
         heights = [int(dim * 0.14), int(dim * 0.24), int(dim * 0.35)]
@@ -255,12 +241,10 @@ def draw_procedural_vector_icon(
                 radius=6,
                 fill=fg2 if bh < heights[-1] else fg
             )
-        # سهم صاعد
         pts = [(xs[0], base_y - heights[0] - 12), (xs[1], base_y - heights[1] - 16), (xs[2], base_y - heights[2] - 20)]
         draw.line(pts, fill=white, width=7)
 
     elif icon_type in {"time", "clock", "speed"}:
-        # ساعة كرونومتر
         cr = int(dim * 0.22)
         draw.ellipse([(cx - cr, cy - cr), (cx + cr, cy + cr)], outline=white, width=6)
         draw.line([(cx, cy), (cx, cy - int(cr * 0.65))], fill=fg, width=7)
@@ -268,7 +252,6 @@ def draw_procedural_vector_icon(
         draw.ellipse([(cx - 7, cy - 7), (cx + 7, cy + 7)], fill=fg)
 
     elif icon_type in {"idea", "brain", "ai", "light"}:
-        # مصباح فكرة ذكي مع إشعاعات
         br = int(dim * 0.16)
         by = cy - int(dim * 0.04)
         draw.ellipse([(cx - br, by - br), (cx + br, by + br)], fill=fg, outline=white, width=5)
@@ -286,7 +269,6 @@ def draw_procedural_vector_icon(
             draw.line([(x1, y1), (x2, y2)], fill=white, width=5)
 
     elif icon_type in {"question", "search", "why", "how"}:
-        # عدسة بحث وتحليل ذكية
         lr = int(dim * 0.16)
         lx, ly = cx - int(dim * 0.05), cy - int(dim * 0.05)
         draw.ellipse([(lx - lr, ly - lr), (lx + lr, ly + lr)], outline=fg, width=8)
@@ -297,7 +279,6 @@ def draw_procedural_vector_icon(
         )
 
     elif icon_type in {"code", "tech", "system"}:
-        # رمز برمجة وتقنية < / >
         offset = int(dim * 0.16)
         h_off = int(dim * 0.12)
         draw.line([(cx - offset // 2, cy - h_off), (cx - offset, cy), (cx - offset // 2, cy + h_off)], fill=fg2, width=7)
@@ -305,7 +286,6 @@ def draw_procedural_vector_icon(
         draw.line([(cx + 12, cy - h_off - 6), (cx - 12, cy + h_off + 6)], fill=fg, width=7)
 
     elif icon_type in {"warning", "alert", "fire", "important"}:
-        # صاعقة طاقة / تنبيه مهم
         bolt = [
             (cx + 10, cy - int(dim * 0.24)),
             (cx - int(dim * 0.14), cy + 4),
@@ -317,7 +297,6 @@ def draw_procedural_vector_icon(
         draw.polygon(bolt, fill=fg, outline=white)
 
     else:
-        # نجمة/هدف النجاح (Success / Star / Target)
         points = []
         outer_r = int(dim * 0.22)
         inner_r = int(dim * 0.10)
@@ -331,7 +310,7 @@ def draw_procedural_vector_icon(
 
 
 # ==============================================================================
-# 3. تحليل الجمل واستخراج الكلمة المفتاحية ونوع الأيقونة (AI + Algerian Darija Rules)
+# 3. تحليل الجمل واستخراج الكلمة المفتاحية
 # ==============================================================================
 def analyze_sentence_visual_metadata(
     sentence: str,
@@ -341,16 +320,10 @@ def analyze_sentence_visual_metadata(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Dict[str, str]:
-    """
-    استخراج:
-    - keyword: كلمة أو عنوان مختصر (1 إلى 3 كلمات) يلخص الفكرة لعرضه في بطاقة الموشن جرافيك.
-    - icon_type: فئة الأيقونة المناسبة (idea, money, time, question, code, warning, success).
-    يدعم الدارجة الجزائرية والعربية الفصحى عبر السحابة أو محلياً.
-    """
+    """استخراج الكلمة المفتاحية وفئة الأيقونة."""
     if not sentence or not sentence.strip():
         return {"keyword": "نقطة مهمة", "icon_type": "success"}
 
-    # تصنيف سريع للكلمات المفتاحية الجزائرية والعربية كقاعدة مضمونة
     s_lower = sentence.strip()
     heuristic_icon = "success"
     if any(w in s_lower for w in ["دراهم", "مال", "ربح", "سومة", "سعر", "مشروع", "بيع", "شراء", "تجارة", "دولار", "دينار", "ثروة"]):
@@ -369,7 +342,7 @@ def analyze_sentence_visual_metadata(
     prompt = (
         f"الجملة التالية بالدارجة الجزائرية أو العربية: \"{sentence}\"\n"
         "استخرج منها:\n"
-        "1. keyword: عنوان جذاب مختصر جداً (كلمة أو كلمتين فقط بالعربية الفصحى أو الدارجة الواضحة) يمثل الفكرة الرئيسية.\n"
+        "1. keyword: عنوان جذاب مختصر جداً (كلمة أو كلمتين فقط) يمثل الفكرة الرئيسية.\n"
         "2. icon_type: اختر قيمة واحدة فقط من القائمة: [idea, money, time, question, code, warning, success].\n"
         "أرجع JSON فقط بهذا الشكل: {\"keyword\": \"...\", \"icon_type\": \"...\"}"
     )
@@ -400,7 +373,6 @@ def analyze_sentence_visual_metadata(
         except Exception:
             pass
 
-    # استخراج ذكي محلي في حال عدم توفر استجابة JSON
     stop_words = {
         "في", "من", "على", "إلى", "عن", "مع", "هذا", "هذه", "هاذ", "هذيك", "اللي", "التي",
         "الذي", "أن", "إن", "ما", "لا", "كان", "هو", "هي", "راكم", "راني", "باش", "كيما"
@@ -417,13 +389,11 @@ def extract_keyword_ollama(
     model_name: str = "llama3",
     ollama_url: str = "http://localhost:11434"
 ) -> str:
-    """دالة متوافقة مع الإصدارات السابقة لاستخراج الكلمة المفتاحية."""
     meta = analyze_sentence_visual_metadata(sentence, model_name=model_name, ollama_url=ollama_url)
     return meta["keyword"]
 
 
 def find_matching_icon(keyword: str, icons_dir: str = "assets/icons") -> Optional[str]:
-    """البحث عن أيقونة تطابق الكلمة المفتاحية في مجلد assets/icons/ إن وجدت."""
     if not keyword or not os.path.exists(icons_dir):
         return None
     kw = keyword.strip().lower()
@@ -436,19 +406,14 @@ def find_matching_icon(keyword: str, icons_dir: str = "assets/icons") -> Optiona
 
 
 # ==============================================================================
-# 4. توليد الخلفية السينمائية وطبقات الموشن جرافيك (Studio Canvas & Overlays)
+# 4. توليد الخلفية السينمائية وبطاقات الموشن جرافيك
 # ==============================================================================
 def create_studio_background(
     width: int,
     height: int,
     theme_name: str = "cyber_gold"
 ) -> np.ndarray:
-    """
-    إنشاء خلفية موشن جرافيك سينمائية تحتوي على:
-    - تدرج لوني عميق (Vertical Gradient).
-    - إضاءة محيطية في المنتصف (Radial Spotlight Glow).
-    - شبكة هندسية خفيفة جداً وعناصر HUD جمالية في الزوايا.
-    """
+    """إنشاء خلفية موشن جرافيك سينمائية."""
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     top_c = np.array(theme["top_bg"], dtype=np.float32)
     bot_c = np.array(theme["bottom_bg"], dtype=np.float32)
@@ -458,7 +423,6 @@ def create_studio_background(
     grad = top_c * (1.0 - y_idx) + bot_c * y_idx
     canvas_np = np.broadcast_to(grad, (height, width, 3)).copy()
 
-    # إضافة إضاءة دائرية ناعمة في المركز (Radial Glow)
     yy, xx = np.ogrid[:height, :width]
     cx, cy = width * 0.5, height * 0.45
     dist_sq = ((xx - cx) / (width * 0.55)) ** 2 + ((yy - cy) / (height * 0.42)) ** 2
@@ -468,27 +432,21 @@ def create_studio_background(
     img = Image.fromarray(canvas_np, mode="RGB")
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # رسم شبكة هندسية ناعمة وزخارف زوايا
     step = max(60, min(width, height) // 12)
     for x in range(0, width, step):
         draw.line([(x, 0), (x, height)], fill=(255, 255, 255, 10), width=1)
     for y in range(0, height, step):
         draw.line([(0, y), (width, y)], fill=(255, 255, 255, 10), width=1)
 
-    # أقواس زخرفية في الزوايا
     pad = 36
     corner_len = 55
     acc = (*theme["secondary"], 110)
-    # أعلى اليسار
     draw.line([(pad, pad), (pad + corner_len, pad)], fill=acc, width=3)
     draw.line([(pad, pad), (pad, pad + corner_len)], fill=acc, width=3)
-    # أعلى اليمين
     draw.line([(width - pad - corner_len, pad), (width - pad, pad)], fill=acc, width=3)
     draw.line([(width - pad, pad), (width - pad, pad + corner_len)], fill=acc, width=3)
-    # أسفل اليسار
     draw.line([(pad, height - pad), (pad + corner_len, height - pad)], fill=acc, width=3)
     draw.line([(pad, height - pad - corner_len), (pad, height - pad)], fill=acc, width=3)
-    # أسفل اليمين
     draw.line([(width - pad - corner_len, height - pad), (width - pad, height - pad)], fill=acc, width=3)
     draw.line([(width - pad, height - pad - corner_len), (width - pad, height - pad)], fill=acc, width=3)
 
@@ -508,13 +466,7 @@ def render_kinetic_frame(
     progress_ratio: float = 0.0,
     theme_name: str = "cyber_gold"
 ) -> np.ndarray:
-    """
-    تصيير إطار موشن جرافيك احترافي شفاف (RGBA) يضم:
-    1. شارة علوية زجاجية (Topic Header Badge) مع أيقونة فيكتور مرسومة بدقة.
-    2. الكلمة/العبارة السابقة في الأعلى بشفافية ناعمة.
-    3. بطاقة الكلمة النشطة في المنتصف مع إبراز مضيء وعرض سياق الجملة (Karaoke Context).
-    4. شريط تقدم سفلي متفاعل مع الصوت.
-    """
+    """تصيير إطار موشن جرافيك شفاف (RGBA)."""
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
@@ -530,7 +482,6 @@ def render_kinetic_frame(
     phrase_font = get_arabic_font(phrase_font_size, bold=True)
     badge_font = get_arabic_font(badge_font_size, bold=False)
 
-    # 1. رسم الأيقونة (إما من ملف أو مرسومة برمجياً كفيكتور) + شارة العنوان المفتاحي
     icon_size = max(110, int(min(video_width, video_height) * 0.14))
     icon_y = center_y - int(main_font_size * 2.55)
 
@@ -553,7 +504,6 @@ def render_kinetic_frame(
     if icon_y > 20:
         canvas.paste(icon_img, (icon_x, icon_y), icon_img)
 
-    # شارة الكلمة المفتاحية أسفل الأيقونة مباشرة
     if keyword_title:
         kw_y = icon_y + icon_size + int(badge_font_size * 0.85)
         kw_w, kw_h = measure_arabic_text(draw, keyword_title, badge_font)
@@ -575,7 +525,6 @@ def render_kinetic_frame(
             fill=(*theme["secondary"], 255)
         )
 
-    # 2. رسم الكلمة السابقة (ترتفع للأعلى وتصغر بنعومة)
     if prev_word and prev_word != current_word:
         prev_y = center_y - int(main_font_size * 0.95)
         pw, ph = measure_arabic_text(draw, prev_word, badge_font)
@@ -593,7 +542,6 @@ def render_kinetic_frame(
             fill=(190, 205, 220, 195)
         )
 
-    # 3. رسم البطاقة الرئيسية للكلمة الحالية بالمنتصف (Pop-up Main Kinetic Card)
     curr_y = center_y + int(main_font_size * 0.20)
     cw, ch = measure_arabic_text(draw, current_word, main_font)
     pad_x = max(42, int(main_font_size * 0.65))
@@ -604,13 +552,11 @@ def render_kinetic_frame(
     box_x2 = center_x + cw // 2 + pad_x
     box_y2 = curr_y + ch // 2 + pad_y
 
-    # ظل خلفي مضيء للبطاقة
     draw.rounded_rectangle(
         [(box_x1 - 6, box_y1 - 6), (box_x2 + 6, box_y2 + 6)],
         radius=28,
         fill=(*theme["primary"], 45)
     )
-    # جسم البطاقة الزجاجية الداكنة
     draw.rounded_rectangle(
         [(box_x1, box_y1), (box_x2, box_y2)],
         radius=24,
@@ -618,7 +564,6 @@ def render_kinetic_frame(
         outline=(*theme["primary"], 230),
         width=4
     )
-    # شريط زخرفي جانبي داخل البطاقة
     draw.rounded_rectangle(
         [(box_x2 - 12, box_y1 + 14), (box_x2 - 6, box_y2 - 14)],
         radius=3,
@@ -635,7 +580,6 @@ def render_kinetic_frame(
         stroke_fill=(0, 0, 0, 220)
     )
 
-    # 4. شريط سياق العبارة أسفل الكلمة الرئيسية (يعرض 3-4 كلمات من الجملة لسهولة المتابعة)
     if phrase_words and len(phrase_words) > 1:
         phrase_text = " ".join(phrase_words)
         sub_y = box_y2 + int(phrase_font_size * 1.45)
@@ -658,7 +602,6 @@ def render_kinetic_frame(
             fill=(245, 247, 250, 240)
         )
 
-    # 5. شريط التقدم السفلي الأنيق
     if progress_ratio > 0:
         bar_margin = int(video_width * 0.12)
         bar_y = video_height - 56
@@ -687,19 +630,13 @@ def render_video_motion_overlay_card(
     subtitle_line: str = "",
     theme_name: str = "cyber_gold"
 ) -> np.ndarray:
-    """
-    توليد طبقة موشن جرافيك شفافة (Overlay) مخصصة للدمج فوق الفيديو الأصلي للمستخدم:
-    - mode == "corner_card": بطاقة أنفوجرافيك زجاجية علوية (Upper-Right / Upper-Center Glass Card) مع أيقونة فيكتور وعنوان الفكرة.
-    - mode == "graphic_burst": لوحة موشن جرافيك سينمائية بارزة (Split / Floating Callout Panel) للجمل المحورية.
-    """
+    """توليد طبقة موشن جرافيك شفافة للدمج فوق الفيديو الأصلي."""
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(canvas)
 
     title_font_size = max(28, int(min(video_width, video_height) * 0.042))
-    sub_font_size = max(22, int(title_font_size * 0.78))
     title_font = get_arabic_font(title_font_size, bold=True)
-    sub_font = get_arabic_font(sub_font_size, bold=False)
 
     icon_size = max(68, int(min(video_width, video_height) * 0.085))
     icon_img = draw_procedural_vector_icon(
@@ -710,7 +647,6 @@ def render_video_motion_overlay_card(
     )
 
     if mode == "graphic_burst":
-        # بطاقة موشن جرافيك عريضة بارزة في الثلث العلوي من الفيديو مع هالة ضوئية
         tw, th = measure_arabic_text(draw, keyword_title, title_font)
         card_w = min(int(video_width * 0.86), max(tw + icon_size + 90, int(video_width * 0.55)))
         card_h = icon_size + 44
@@ -720,7 +656,6 @@ def render_video_motion_overlay_card(
         x1, y1 = cx - card_w // 2, top_y
         x2, y2 = cx + card_w // 2, top_y + card_h
 
-        # هالة وخلفية زجاجية مزدوجة
         draw.rounded_rectangle([(x1 - 5, y1 - 5), (x2 + 5, y2 + 5)], radius=28, fill=(*theme["primary"], 55))
         draw.rounded_rectangle(
             [(x1, y1), (x2, y2)],
@@ -729,14 +664,12 @@ def render_video_motion_overlay_card(
             outline=(*theme["primary"], 240),
             width=3
         )
-        # شريط نيون سفلي داخل البطاقة
         draw.rounded_rectangle(
             [(x1 + 24, y2 - 8), (x2 - 24, y2 - 3)],
             radius=3,
             fill=(*theme["secondary"], 255)
         )
 
-        # وضع الأيقونة على يمين البطاقة والنص بجانبها
         icon_x = x2 - icon_size - 22
         icon_y = y1 + (card_h - icon_size) // 2
         canvas.paste(icon_img, (icon_x, icon_y), icon_img)
@@ -751,7 +684,6 @@ def render_video_motion_overlay_card(
             fill=(*theme["primary"], 255)
         )
     else:
-        # بطاقة زاوية علوية أنيقة (Upper-Right Infographic Badge) لا تغطي وجه المتحدث
         tw, th = measure_arabic_text(draw, keyword_title, title_font)
         card_w = min(int(video_width * 0.82), tw + icon_size + 68)
         card_h = icon_size + 24
@@ -788,7 +720,167 @@ def render_video_motion_overlay_card(
 
 
 # ==============================================================================
-# 5. مسار التوليد والتصدير الرئيسي لفيديو الموشن جرافيك النصي
+# 5. عناصر الموشن جرافيك المخصصة لإعلانات المنتجات (E-Commerce Ad Elements)
+# ==============================================================================
+def render_ecommerce_ad_overlay(
+    ad_role: str,
+    badge_title: str,
+    icon_cat: str,
+    video_width: int,
+    video_height: int,
+    theme_name: str = "cyber_gold"
+) -> np.ndarray:
+    """
+    رسم عناصر الموشن جرافيك الخاصة بإعلانات المنتجات التجارية:
+    - ad_hook: لافتة خطاف نارية / مضيئة في أعلى الشاشة (Stop the Scroll).
+    - ad_problem: بطاقة تنبيه حمراء لتحذير العميل من المشكلة وتوضيح الحاجة للمنتج.
+    - ad_feature: بطاقة زجاجية فاخرة في الزاوية تبرز ميزات المنتج التقنية والعملية.
+    - ad_trust: شارة ثقة وتوصيل (🚚 توصيل 58 ولاية / 💵 الدفع عند الاستلام / 🛡️ ضمان).
+    - ad_cta: لافتة تسوق وحث على الطلب والشراء في أسفل الشاشة.
+    """
+    canvas = Image.new("RGBA", (video_width, video_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+
+    title_size = max(26, int(min(video_width, video_height) * 0.044))
+    font_bold = get_arabic_font(title_size, bold=True)
+    font_badge = get_arabic_font(max(20, int(title_size * 0.75)), bold=False)
+
+    icon_size = max(64, int(min(video_width, video_height) * 0.082))
+
+    if ad_role == "ad_hook":
+        # لافتة الخطاف العلوي النارية لإيقاف التمرير
+        cx = video_width // 2
+        top_y = int(video_height * 0.075)
+        tw, th = measure_arabic_text(draw, badge_title, font_bold)
+        banner_w = min(int(video_width * 0.92), tw + 80)
+        banner_h = th + 36
+
+        bx1 = cx - banner_w // 2
+        by1 = top_y
+        bx2 = cx + banner_w // 2
+        by2 = top_y + banner_h
+
+        # إطار نيون برتقالي/أصفر ساطع
+        draw.rounded_rectangle([(bx1 - 4, by1 - 4), (bx2 + 4, by2 + 4)], radius=22, fill=(245, 158, 11, 80))
+        draw.rounded_rectangle(
+            [(bx1, by1), (bx2, by2)],
+            radius=18,
+            fill=(20, 10, 10, 235),
+            outline=(255, 215, 0, 255),
+            width=3
+        )
+        draw_arabic_text(
+            draw,
+            (cx, by1 + banner_h // 2),
+            badge_title,
+            font=font_bold,
+            fill=(255, 230, 0, 255),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0, 240)
+        )
+
+    elif ad_role == "ad_cta":
+        # لافتة الحث على الشراء والطلب أسفل الفيديو (Pulsing Bottom CTA Banner)
+        cx = video_width // 2
+        bot_y = int(video_height * 0.84)
+        tw, th = measure_arabic_text(draw, badge_title, font_bold)
+        banner_w = min(int(video_width * 0.94), tw + 90)
+        banner_h = th + 40
+
+        bx1 = cx - banner_w // 2
+        by1 = bot_y
+        bx2 = cx + banner_w // 2
+        by2 = bot_y + banner_h
+
+        # هالة خضراء/ذهبية مشعة للطلب الفوري
+        draw.rounded_rectangle([(bx1 - 5, by1 - 5), (bx2 + 5, by2 + 5)], radius=24, fill=(16, 185, 129, 90))
+        draw.rounded_rectangle(
+            [(bx1, by1), (bx2, by2)],
+            radius=20,
+            fill=(6, 26, 20, 240),
+            outline=(52, 211, 153, 255),
+            width=4
+        )
+        draw_arabic_text(
+            draw,
+            (cx, by1 + banner_h // 2),
+            badge_title,
+            font=font_bold,
+            fill=(255, 255, 255, 255),
+            stroke_width=2,
+            stroke_fill=(0, 0, 0, 220)
+        )
+
+    elif ad_role == "ad_problem":
+        # بطاقة المشكلة والمعاناة
+        tw, th = measure_arabic_text(draw, badge_title, font_bold)
+        margin_x = int(video_width * 0.05)
+        top_y = int(video_height * 0.08)
+        card_w = min(int(video_width * 0.85), tw + 60)
+        card_h = th + 28
+        cx = video_width // 2
+
+        draw.rounded_rectangle(
+            [(cx - card_w // 2, top_y), (cx + card_w // 2, top_y + card_h)],
+            radius=16,
+            fill=(45, 12, 16, 225),
+            outline=(239, 68, 68, 220),
+            width=2
+        )
+        draw_arabic_text(
+            draw,
+            (cx, top_y + card_h // 2),
+            badge_title,
+            font=font_bold,
+            fill=(254, 202, 202, 255)
+        )
+
+    else:
+        # بطاقات ميزات المنتج وشارات الثقة والتوصيل في الزاوية العلوية
+        icon_img = draw_procedural_vector_icon(
+            icon_type=icon_cat,
+            size=icon_size,
+            accent_color=(0, 245, 212) if ad_role == "ad_trust" else (255, 225, 0),
+            secondary_color=(255, 225, 0) if ad_role == "ad_trust" else (56, 189, 248)
+        )
+        tw, th = measure_arabic_text(draw, badge_title, font_bold)
+        card_w = min(int(video_width * 0.86), tw + icon_size + 65)
+        card_h = icon_size + 24
+        margin_x = int(video_width * 0.045)
+        margin_y = int(video_height * 0.075)
+
+        x2 = video_width - margin_x
+        x1 = max(margin_x, x2 - card_w)
+        y1 = margin_y
+        y2 = y1 + card_h
+
+        border_c = (0, 245, 212, 230) if ad_role == "ad_trust" else (255, 215, 0, 230)
+        draw.rounded_rectangle(
+            [(x1, y1), (x2, y2)],
+            radius=20,
+            fill=(11, 18, 36, 225),
+            outline=border_c,
+            width=3
+        )
+        icon_x = x2 - icon_size - 12
+        icon_y = y1 + (card_h - icon_size) // 2
+        canvas.paste(icon_img, (icon_x, icon_y), icon_img)
+
+        text_cx = x1 + (icon_x - x1) // 2
+        text_cy = y1 + card_h // 2
+        draw_arabic_text(
+            draw,
+            (text_cx, text_cy),
+            badge_title,
+            font=font_bold,
+            fill=(255, 255, 255, 255)
+        )
+
+    return np.array(canvas)
+
+
+# ==============================================================================
+# 6. مسار التوليد والتصدير لموشن جرافيك النصوص
 # ==============================================================================
 def create_kinetic_typography_video(
     input_path: str,
@@ -802,12 +894,7 @@ def create_kinetic_typography_video(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    """
-    إنشاء فيديو موشن جرافيك نصي وأنفوجرافيك متكامل:
-    1. تفريغ الصوت بدقة الكلمة مع دعم كامل للدارجة الجزائرية والعربية.
-    2. استخراج الأفكار الرئيسية ونوع الأيقونة لكل جملة عبر الذكاء الاصطناعي الهجين.
-    3. رسم خلفية أستوديو سينمائية مع أيقونات فيكتور ديناميكية وبطاقات كاريوكي مضيئة.
-    """
+    """إنشاء فيديو موشن جرافيك نصي وأنفوجرافيك متكامل."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف المدخل غير موجود: {input_path}")
 
@@ -904,7 +991,6 @@ def create_kinetic_typography_video(
             else:
                 duration = max(0.15, min(w_end - w_start, total_duration - w_start))
 
-            # تحديد الجملة الحالية لعرض أيقونتها وعنوانها وسياقها
             active_meta = sentence_meta_list[0] if sentence_meta_list else {
                 "keyword": "موشن جرافيك",
                 "icon_type": "success",
@@ -916,7 +1002,6 @@ def create_kinetic_typography_video(
                 if w_start >= sm["start"] - 0.05:
                     active_meta = sm
 
-            # نافذة قصيرة من الكلمات المحيطة (4 كلمات)
             window_start = (i // 4) * 4
             phrase_window = [w_obj["word"] for w_obj in words_data[window_start:window_start + 4]]
 

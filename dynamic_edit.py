@@ -1,6 +1,6 @@
 """
-dynamic_edit.py - وحدة المونتاج الديناميكي، دمج الموشن جرافيك بالفيديو الأصلي، والمخرج الذكي الشامل (All-in-One)
-=================================================================================================================
+dynamic_edit.py - وحدة المونتاج الديناميكي، دمج الموشن جرافيك، المخرج الذكي، ومخرج إعلانات المنتجات التجارية
+=============================================================================================================
 """
 
 import sys
@@ -29,15 +29,21 @@ from motion_text import (
     analyze_sentence_visual_metadata,
     create_studio_background,
     render_video_motion_overlay_card,
+    render_ecommerce_ad_overlay,
     create_kinetic_typography_video,
     MOTION_THEMES
 )
 
 try:
-    from smart_analyzer import analyze_media_file, plan_smart_director_segments
+    from smart_analyzer import (
+        analyze_media_file,
+        plan_smart_director_segments,
+        plan_product_ad_segments
+    )
 except ImportError:
     analyze_media_file = None
     plan_smart_director_segments = None
+    plan_product_ad_segments = None
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -56,10 +62,7 @@ def generate_caption_image(
     highlight_color: Tuple[int, int, int] = (255, 230, 0),
     phrase_context: Optional[str] = None
 ) -> np.ndarray:
-    """
-    إنشاء صورة RGBA شفافة للكلمة المنطوقة (مع سياق اختياري) بأسلوب تيك توك وريلز الاحترافي،
-    مع ضمان اتصال الحروف العربية والدارجة الجزائرية بشكل سليم.
-    """
+    """إنشاء صورة RGBA لكابشن التيك توك وريلز الاحترافي."""
     if font_size is None:
         font_size = max(38, int(min(video_width, video_height) * 0.062))
 
@@ -109,7 +112,7 @@ def generate_caption_image(
 
 
 def apply_zoom_in_crop(clip, zoom_factor: float = 1.15):
-    """اقتصاص وتكبير المقطع من المنتصف (Center Crop & Resize) بسلاسة."""
+    """اقتصاص وتكبير المقطع من المنتصف بسلاسة."""
     if zoom_factor <= 1.01:
         return clip
     w, h = clip.size
@@ -127,9 +130,7 @@ def _build_base_video_from_audio_or_video(
     chunk_size: int,
     padding_ms: int
 ) -> Tuple[Any, bool]:
-    """
-    تجهيز مقطع الفيديو الأساسي بعد قص الصمت.
-    """
+    """تجهيز مقطع الفيديو الأساسي بعد قص الصمت بشكل طبيعي يحافظ على الكلام البشري."""
     from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip
 
     has_vid = is_video_file(media_path)
@@ -140,7 +141,7 @@ def _build_base_video_from_audio_or_video(
             output_path=jumpcut_temp_video,
             silence_threshold=silence_threshold,
             chunk_size=chunk_size,
-            padding_ms=padding_ms
+            padding_ms=max(220, padding_ms)
         )
         return VideoFileClip(jumpcut_temp_video), True
     else:
@@ -150,24 +151,219 @@ def _build_base_video_from_audio_or_video(
             output_path=jumpcut_temp_audio,
             silence_threshold=silence_threshold,
             chunk_size=chunk_size,
-            padding_ms=padding_ms
+            padding_ms=max(220, padding_ms)
         )
         aud_clip = AudioFileClip(jumpcut_temp_audio)
-        bg_arr = create_studio_background(1080, 1920, theme_name="cyber_gold")
+        bg_arr = create_studio_background(1080, 1920, theme_name="crimson_energy")
         vid_clip = ImageClip(bg_arr).set_duration(aud_clip.duration).set_audio(aud_clip)
         vid_clip.filename = jumpcut_temp_audio
         return vid_clip, False
 
 
 # ==============================================================================
-# 1. النمط الثاني: المونتاج الديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)
+# 1. النمط المخصص: إعلانات المنتجات والتجارة الإلكترونية (E-Commerce Ads Mode)
+# ==============================================================================
+def apply_product_ad_mode(
+    input_path: str,
+    output_path: str,
+    product_name_override: Optional[str] = None,
+    cta_override: Optional[str] = None,
+    silence_threshold: float = -42.0,
+    padding_ms: int = 240,
+    whisper_model: str = "small",
+    dialect_mode: str = "algerian_darija",
+    groq_api_key: Optional[str] = None,
+    gemini_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
+    progress_callback: Optional[Callable[[float, str], None]] = None
+) -> Tuple[str, Dict[str, Any]]:
+    """
+    نمط إعلانات المنتجات والتجارة الإلكترونية مع قص صمت طبيعي وتوزيع تسويقي 100%.
+    """
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"الملف غير موجود: {input_path}")
+
+    def update_progress(val: float, msg: str):
+        if progress_callback:
+            progress_callback(val, msg)
+        logger.info(f"Progress: {val*100:.1f}% - {msg}")
+
+    base_dir = os.path.dirname(os.path.abspath(output_path))
+    temp_dir = os.path.join(base_dir, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    from moviepy.editor import ImageClip, CompositeVideoClip, concatenate_videoclips
+
+    base_clip = None
+    final_video = None
+    sentence_clips = []
+    overlay_clips = []
+
+    try:
+        update_progress(0.1, "1/5: إزالة السكوت الطويل بانسيابية طبيعية وتجهيز الإعلان...")
+        base_clip, has_vid = _build_base_video_from_audio_or_video(
+            media_path=input_path,
+            temp_dir=temp_dir,
+            silence_threshold=silence_threshold,
+            chunk_size=10,
+            padding_ms=padding_ms
+        )
+        transcribe_source = getattr(base_clip, "filename", input_path) or input_path
+
+        update_progress(0.3, "2/5: تحليل النص وتفريغ الدارجة الجزائرية والمصطلحات التسويقية...")
+        sentence_data = transcribe_sentences(
+            audio_path=transcribe_source,
+            model_size=whisper_model,
+            language="ar",
+            dialect_mode=dialect_mode,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key
+        )
+        word_data = transcribe_audio(
+            audio_path=transcribe_source,
+            model_size=whisper_model,
+            language="ar",
+            dialect_mode=dialect_mode,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key
+        )
+
+        update_progress(0.5, "3/5: تخطيط هيكل الإعلان (Hook -> مشكلة -> مميزات -> ثقة -> طلب CTA)...")
+        video_w, video_h = base_clip.size
+        video_duration = base_clip.duration
+
+        if plan_product_ad_segments is not None:
+            ad_segments = plan_product_ad_segments(
+                sentences=sentence_data,
+                total_duration=video_duration,
+                product_title_override=product_name_override,
+                cta_override=cta_override,
+                groq_api_key=groq_api_key,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key
+            )
+        else:
+            ad_segments = sentence_data
+
+        update_progress(0.68, "4/5: تراكب بطاقات مميزات المنتج وشارات التوصيل والخطاف الإعلاني...")
+        current_time = 0.0
+        for idx, seg in enumerate(ad_segments):
+            s_start = max(0.0, float(seg.get("start", 0.0)))
+            s_end = min(video_duration, float(seg.get("end", 0.0)))
+            ad_role = seg.get("ad_role", "ad_feature")
+            z_factor = float(seg.get("zoom_factor", 1.12))
+            badge_title = seg.get("badge_title", "✨ ميزة حصرية")
+            icon_cat = seg.get("icon_cat", "success")
+
+            if s_start > current_time + 0.04:
+                sentence_clips.append(base_clip.subclip(current_time, s_start))
+
+            if s_end > s_start + 0.04:
+                chunk = base_clip.subclip(s_start, s_end)
+                if z_factor > 1.01:
+                    chunk = apply_zoom_in_crop(chunk, zoom_factor=z_factor)
+                sentence_clips.append(chunk)
+                current_time = s_end
+
+                ad_overlay_arr = render_ecommerce_ad_overlay(
+                    ad_role=ad_role,
+                    badge_title=badge_title,
+                    icon_cat=icon_cat,
+                    video_width=video_w,
+                    video_height=video_h
+                )
+                ov_clip = (
+                    ImageClip(ad_overlay_arr, ismask=False, transparent=True)
+                    .set_start(s_start)
+                    .set_duration(max(0.2, s_end - s_start))
+                    .set_position(("center", "center"))
+                )
+                overlay_clips.append(ov_clip)
+
+        if current_time < video_duration - 0.04:
+            sentence_clips.append(base_clip.subclip(current_time, video_duration))
+
+        zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
+
+        lower_third_y = int(video_h * 0.74)
+        for i, item in enumerate(word_data):
+            w_txt = item["word"]
+            w_start = item["start"]
+            w_end = min(item["end"], zoomed_base.duration)
+            if w_end <= w_start or w_start >= zoomed_base.duration:
+                continue
+            dur = max(0.13, w_end - w_start)
+            hl_color = (255, 230, 0) if (i % 2 == 0) else (0, 245, 212)
+            cap_arr = generate_caption_image(
+                word_text=w_txt,
+                video_width=video_w,
+                video_height=video_h,
+                highlight_color=hl_color
+            )
+            w_clip = (
+                ImageClip(cap_arr, ismask=False, transparent=True)
+                .set_start(w_start)
+                .set_duration(dur)
+                .set_position(("center", lower_third_y))
+            )
+            overlay_clips.append(w_clip)
+
+        final_video = CompositeVideoClip([zoomed_base, *overlay_clips], size=zoomed_base.size)
+
+        update_progress(0.88, "5/5: رندرة وتصدير إعلان المنتج النهائي بأعلى جودة...")
+        temp_audio = os.path.join(temp_dir, "temp_product_ad_audio.m4a")
+        final_video.write_videofile(
+            output_path,
+            codec="libx264",
+            audio_codec="aac",
+            temp_audiofile=temp_audio,
+            remove_temp=True,
+            preset="medium",
+            threads=4,
+            logger=None
+        )
+
+        update_progress(1.0, "تم إنتاج فيديو إعلان المنتج التجاري بنجاح 100%!")
+        return output_path, {"ad_segments": len(ad_segments), "duration": video_duration}
+
+    except Exception as err:
+        logger.error(f"خطأ أثناء تصدير إعلان المنتج: {str(err)}", exc_info=True)
+        raise err
+
+    finally:
+        for c in sentence_clips:
+            try:
+                c.close()
+            except Exception:
+                pass
+        for ov in overlay_clips:
+            try:
+                ov.close()
+            except Exception:
+                pass
+        if base_clip is not None:
+            try:
+                base_clip.close()
+            except Exception:
+                pass
+        if final_video is not None:
+            try:
+                final_video.close()
+            except Exception:
+                pass
+
+
+# ==============================================================================
+# 2. النمط الديناميكي العام (Auto-Zoom + Jump-cuts + TikTok Captions)
 # ==============================================================================
 def apply_dynamic_edit(
     input_path: str,
     output_path: str,
-    silence_threshold: float = -40.0,
+    silence_threshold: float = -42.0,
     chunk_size: int = 10,
-    padding_ms: int = 100,
+    padding_ms: int = 250,
     zoom_factor: float = 1.15,
     whisper_model: str = "small",
     dialect_mode: str = "algerian_darija",
@@ -176,9 +372,7 @@ def apply_dynamic_edit(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    """
-    تنفيذ مسار المونتاج الديناميكي (يدعم كلاً من ملفات الفيديو والملفات الصوتية).
-    """
+    """المونتاج الديناميكي العام (مع دعم تعديل الكابشن وقص الصمت الطبيعي)."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف غير موجود: {input_path}")
 
@@ -199,7 +393,7 @@ def apply_dynamic_edit(
     caption_clips = []
 
     try:
-        update_progress(0.1, "1/4: تنفيذ قص الصمت التلقائي وتجهيز المسار...")
+        update_progress(0.1, "1/4: إزالة السكوت الطويل بانسيابية طبيعية وتجهيز المسار...")
         base_clip, has_vid = _build_base_video_from_audio_or_video(
             media_path=input_path,
             temp_dir=temp_dir,
@@ -229,7 +423,7 @@ def apply_dynamic_edit(
             openai_api_key=openai_api_key
         )
 
-        update_progress(0.5, "3/4: تطبيق التكبير السينمائي (Auto-Zoom 15%) بالتناوب بين الجمل...")
+        update_progress(0.5, "3/4: تطبيق التكبير السينمائي بالتناوب بين الجمل...")
         video_w, video_h = base_clip.size
         video_duration = base_clip.duration
 
@@ -243,7 +437,7 @@ def apply_dynamic_edit(
 
             if sent_end > sent_start + 0.05:
                 chunk = base_clip.subclip(sent_start, sent_end)
-                if i % 2 == 1:
+                if i % 2 == 1 and zoom_factor > 1.01:
                     sentence_clips.append(apply_zoom_in_crop(chunk, zoom_factor=zoom_factor))
                 else:
                     sentence_clips.append(chunk)
@@ -254,7 +448,7 @@ def apply_dynamic_edit(
 
         zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
 
-        update_progress(0.7, "4/4: إنشاء كابشن التيك توك التفاعلي وتراكب الطبقات...")
+        update_progress(0.7, "4/4: إنشاء الكابشن التفاعلي وتراكب الطبقات...")
         caption_pos = ("center", int(video_h * 0.74)) if has_vid else ("center", "center")
 
         for item in word_data:
@@ -281,7 +475,7 @@ def apply_dynamic_edit(
 
         final_video = CompositeVideoClip([zoomed_base, *caption_clips], size=zoomed_base.size)
 
-        update_progress(0.85, "جاري الرندرة النهائية وتصدير الفيديو الديناميكي...")
+        update_progress(0.85, "جاري الرندرة النهائية وتصدير الفيديو...")
         temp_audio = os.path.join(temp_dir, "temp_dyn_audio.m4a")
 
         final_video.write_videofile(
@@ -296,7 +490,7 @@ def apply_dynamic_edit(
             logger=None
         )
 
-        update_progress(1.0, "تم إنجاز المونتاج الديناميكي وتصدير الفيديو بنجاح!")
+        update_progress(1.0, "تم إنجاز المونتاج وتصدير الفيديو بنجاح!")
         return output_path
 
     except Exception as err:
@@ -327,14 +521,14 @@ def apply_dynamic_edit(
 
 
 # ==============================================================================
-# 2. النمط الخامس: دمج الموشن جرافيك بالفيديو الأصلي
+# 3. النمط الخامس: دمج الموشن جرافيك بالفيديو الأصلي
 # ==============================================================================
 def apply_motion_overlay_on_video(
     input_path: str,
     output_path: str,
-    silence_threshold: float = -40.0,
+    silence_threshold: float = -42.0,
     chunk_size: int = 10,
-    padding_ms: int = 100,
+    padding_ms: int = 250,
     whisper_model: str = "small",
     ollama_model: str = "llama3",
     dialect_mode: str = "algerian_darija",
@@ -343,9 +537,7 @@ def apply_motion_overlay_on_video(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> str:
-    """
-    نمط دمج الموشن جرافيك بالفيديو الأصلي.
-    """
+    """نمط دمج الموشن جرافيك بالفيديو الأصلي."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف غير موجود: {input_path}")
 
@@ -366,7 +558,7 @@ def apply_motion_overlay_on_video(
     overlay_clips = []
 
     try:
-        update_progress(0.1, "1/5: تنظيف الصمت وتجهيز الفيديو الأصلي...")
+        update_progress(0.1, "1/5: إزالة السكوت الطويل بانسيابية طبيعية وتجهيز الفيديو...")
         base_clip, has_vid = _build_base_video_from_audio_or_video(
             media_path=input_path,
             temp_dir=temp_dir,
@@ -516,7 +708,7 @@ def apply_motion_overlay_on_video(
 
 
 # ==============================================================================
-# 3. النمط السادس: المخرج الذكي الشامل (Smart Auto All-in-One)
+# 4. النمط السادس: المخرج الذكي الشامل (Smart Auto All-in-One)
 # ==============================================================================
 def apply_smart_director_all_in_one(
     input_path: str,
@@ -530,9 +722,7 @@ def apply_smart_director_all_in_one(
     openai_api_key: Optional[str] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None
 ) -> Tuple[str, Dict[str, Any]]:
-    """
-    المخرج التلقائي الذكي (Smart Auto Director & All-in-One).
-    """
+    """المخرج التلقائي الذكي."""
     if not os.path.exists(input_path):
         raise FileNotFoundError(f"الملف غير موجود: {input_path}")
 
@@ -541,7 +731,7 @@ def apply_smart_director_all_in_one(
             progress_callback(val, msg)
         logger.info(f"Progress: {val*100:.1f}% - {msg}")
 
-    update_progress(0.05, "1/5: تشغيل المحلل الذكي لفحص الصوت والفيديو واختيار أفضل الإعدادات والموديلات...")
+    update_progress(0.05, "1/5: تشغيل المحلل الذكي لفحص الصوت والفيديو...")
     if media_analysis is None and analyze_media_file is not None:
         media_analysis = analyze_media_file(
             input_path,
@@ -552,16 +742,16 @@ def apply_smart_director_all_in_one(
     elif media_analysis is None:
         media_analysis = {
             "has_video": is_video_file(input_path),
-            "optimal_silence_threshold": -38.0,
-            "optimal_padding_ms": 110,
+            "optimal_silence_threshold": -42.0,
+            "optimal_padding_ms": 250,
             "optimal_chunk_size": 10,
             "optimal_whisper_model": whisper_model or "small",
             "visual_motion_score": 8.0,
             "criteria_reasons": ["تم ضبط الإعدادات التلقائية الذكية."],
         }
 
-    chosen_silence_thresh = float(media_analysis.get("optimal_silence_threshold", -38.0))
-    chosen_padding_ms = int(media_analysis.get("optimal_padding_ms", 110))
+    chosen_silence_thresh = float(media_analysis.get("optimal_silence_threshold", -42.0))
+    chosen_padding_ms = int(media_analysis.get("optimal_padding_ms", 250))
     chosen_chunk_size = int(media_analysis.get("optimal_chunk_size", 10))
     chosen_whisper = whisper_model or str(media_analysis.get("optimal_whisper_model", "small"))
     has_vid = bool(media_analysis.get("has_video", is_video_file(input_path)))
@@ -572,7 +762,7 @@ def apply_smart_director_all_in_one(
     os.makedirs(temp_dir, exist_ok=True)
 
     if not has_vid:
-        update_progress(0.18, f"2/5: تنظيف الصمت تلقائياً بعتبة ذكية ({chosen_silence_thresh} dBFS)...")
+        update_progress(0.18, f"2/5: إزالة السكوت الطويل بانسيابية طبيعية ({chosen_silence_thresh} dBFS)...")
         clean_audio_path = os.path.join(temp_dir, "temp_smart_clean_audio.mp3")
         remove_silence(
             input_path=input_path,
@@ -602,7 +792,7 @@ def apply_smart_director_all_in_one(
     overlay_clips = []
 
     try:
-        update_progress(0.18, f"2/5: قص الصمت الذكي بعتبة مُعايرة تلقائياً ({chosen_silence_thresh} dBFS)...")
+        update_progress(0.18, f"2/5: إزالة السكوت الطويل بانسيابية طبيعية ({chosen_silence_thresh} dBFS)...")
         base_clip, _ = _build_base_video_from_audio_or_video(
             media_path=input_path,
             temp_dir=temp_dir,

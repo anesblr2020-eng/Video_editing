@@ -1,14 +1,11 @@
 """
-transcriber.py - وحدة التفريغ الصوتي المتقدمة الداعمة للدارجة الجزائرية والعربية (سحابي + محلي)
+transcriber.py - وحدة التفريغ الصوتي المتقدمة الداعمة للدارجة الجزائرية وتعديل الكابشن التفاعلي
 =================================================================================================
 تتميز هذه الوحدة بـ:
-1. دعم متقدم للدارجة الجزائرية (Algerian Darija) عبر:
-   - موجه صوتي مخصص (Custom Algerian Initial Prompt) يهيئ Whisper لفهم المفردات والصوتيات الجزائرية.
-   - قاموس تصحيح صوتي ومفرداتي للدارجة الجزائرية (واش، بزاف، علاش، كيفاش، عفسة، درك، باسكو، ديجا، ماكانش...).
-   - مصحح سياقي بالذكاء الاصطناعي (Cloud AI / Ollama) يصحح الأخطاء الإملائية للدارجة مع الحفاظ التام على التوقيت الزمني لكل كلمة.
-2. دعم التفريغ السحابي الفائق (Groq Whisper Large-v3 / OpenAI Whisper) عند توفر الإنترنت والمفتاح،
-   مع التراجع التلقائي السلس لنموذج faster-whisper المحلي المحسن.
-3. نظام تخزين مؤقت ذكي (In-Memory Cache) يمنع إعادة تفريغ نفس الملف مرتين ويوفر 50% من وقت المعالجة.
+1. دعم متقدم للدارجة الجزائرية (Algerian Darija) عبر موجهات صوتية مخصصة وقاموس تصحيح وتدقيق بالذكاء الاصطناعي.
+2. نظام تعديل الكابشن التفاعلي (Interactive Caption Override Engine):
+   - يسمح للمستخدم بتعديل أي كلمة أو جملة بعد ظهور الفيديو في جميع الأنماط.
+   - يعيد مزامنة التواقيت الزمنية للكلمات تلقائياً ويحفظها بحيث تعاد رندرة أي نمط فوراً بالكابشن المعدل دون إعادة تشغيل Whisper.
 """
 
 import sys
@@ -27,7 +24,6 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# استيراد آمن لمحرك الذكاء الاصطناعي الهجين
 try:
     from smart_analyzer import query_hybrid_llm
 except ImportError:
@@ -46,7 +42,6 @@ ALGERIAN_DARIJA_INITIAL_PROMPT = (
     "سيتادير، مليح، يعطيكم الصحة، ربي يحفظكم، تبعوا معايا مليح باش تفهموا كلش."
 )
 
-# قاموس تصحيح الأخطاء الشائعة التي يقع فيها Whisper عند سماع الدارجة الجزائرية
 ALGERIAN_DARIJA_LEXICON_FIXES = {
     "وشراكم": "واش راكم",
     "واشراكم": "واش راكم",
@@ -76,24 +71,180 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "كلشي": "كلش",
 }
 
-# ذاكرة تخزين مؤقت لتفادي تشغيل Whisper مرتين على نفس الملف
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
 
+# مخزن الكابشن المعدل يدوياً من طرف المستخدم + آخر تفريغ مستخرج
+_CUSTOM_CAPTION_OVERRIDE: Dict[str, Any] = {
+    "enabled": False,
+    "words": [],
+    "sentences": []
+}
+_LAST_EXTRACTED_TRANSCRIPT: Dict[str, List[Dict[str, Any]]] = {
+    "words": [],
+    "sentences": []
+}
 
+
+# ==============================================================================
+# 2. دوال إدارة وتعديل الكابشن التفاعلي لجميع الأنماط
+# ==============================================================================
+def get_last_extracted_transcript() -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """استرجاع آخر قائمة كلمات وجمل تم تفريغها لعرضها في محرر الكابشن بواجهة المستخدم."""
+    if _CUSTOM_CAPTION_OVERRIDE["enabled"] and _CUSTOM_CAPTION_OVERRIDE["words"]:
+        return (
+            [dict(w) for w in _CUSTOM_CAPTION_OVERRIDE["words"]],
+            [dict(s) for s in _CUSTOM_CAPTION_OVERRIDE["sentences"]]
+        )
+    return (
+        [dict(w) for w in _LAST_EXTRACTED_TRANSCRIPT["words"]],
+        [dict(s) for s in _LAST_EXTRACTED_TRANSCRIPT["sentences"]]
+    )
+
+
+def clear_custom_caption_override():
+    """إلغاء الكابشن المعدل عند رفع ملف جديد."""
+    _CUSTOM_CAPTION_OVERRIDE["enabled"] = False
+    _CUSTOM_CAPTION_OVERRIDE["words"] = []
+    _CUSTOM_CAPTION_OVERRIDE["sentences"] = []
+
+
+def set_custom_caption_override(
+    custom_words: Optional[List[Dict[str, Any]]] = None,
+    custom_sentences: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    حفظ تعديلات المستخدم على الكابشن (سواء عدّل الجمل أو الكلمات المفردة)
+    ومزامنتها تلقائياً لتعمل فوراً في كل أنماط المونتاج والموشن جرافيك.
+    """
+    base_words, base_sentences = get_last_extracted_transcript()
+
+    if custom_sentences is not None and custom_words is None:
+        # قام المستخدم بتعديل نصوص الجمل: نعيد بناء قائمة الكلمات وتواقيتها بدقة
+        synced_words: List[Dict[str, Any]] = []
+        synced_sentences: List[Dict[str, Any]] = []
+
+        for sent in custom_sentences:
+            s_text = str(sent.get("text", "")).strip()
+            s_start = round(float(sent.get("start", 0.0)), 3)
+            s_end = round(float(sent.get("end", s_start + 1.0)), 3)
+            if not s_text:
+                continue
+
+            new_tokens = [t.strip() for t in s_text.split() if t.strip()]
+            orig_words = sent.get("words", [])
+
+            sent_word_objs = []
+            if len(new_tokens) == len(orig_words) and orig_words:
+                # إذا بقي عدد كلمات الجملة كما هو، نحتفظ بالتوقيت الأصلي لكل كلمة بالمللي ثانية
+                for tok, ow in zip(new_tokens, orig_words):
+                    w_obj = {
+                        "word": tok,
+                        "start": round(float(ow.get("start", s_start)), 3),
+                        "end": round(float(ow.get("end", s_end)), 3),
+                        "probability": 1.0
+                    }
+                    sent_word_objs.append(w_obj)
+                    synced_words.append(w_obj)
+            elif new_tokens:
+                # إذا أضاف المستخدم كلمات أو دمجها، نوزع التوقيت الزمني للجملة بالتناسب مع طول كل كلمة
+                total_chars = max(1, sum(len(t) for t in new_tokens))
+                dur = max(0.15, s_end - s_start)
+                cursor = s_start
+                for idx, tok in enumerate(new_tokens):
+                    w_dur = dur * (len(tok) / total_chars)
+                    w_end_t = s_end if idx == len(new_tokens) - 1 else round(cursor + w_dur, 3)
+                    w_obj = {
+                        "word": tok,
+                        "start": round(cursor, 3),
+                        "end": max(round(cursor + 0.08, 3), w_end_t),
+                        "probability": 1.0
+                    }
+                    cursor = w_end_t
+                    sent_word_objs.append(w_obj)
+                    synced_words.append(w_obj)
+
+            synced_sentences.append({
+                "text": " ".join(new_tokens),
+                "start": s_start,
+                "end": s_end,
+                "words": sent_word_objs
+            })
+
+        _CUSTOM_CAPTION_OVERRIDE["enabled"] = True
+        _CUSTOM_CAPTION_OVERRIDE["words"] = synced_words
+        _CUSTOM_CAPTION_OVERRIDE["sentences"] = synced_sentences
+        _LAST_EXTRACTED_TRANSCRIPT["words"] = synced_words
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = synced_sentences
+        return synced_words, synced_sentences
+
+    if custom_words is not None:
+        # قام المستخدم بتعديل جدول الكلمات المفردة مباشرة
+        cleaned_words = []
+        for w in custom_words:
+            w_txt = str(w.get("word", "")).strip()
+            if not w_txt:
+                continue
+            w_s = round(float(w.get("start", 0.0)), 3)
+            w_e = round(max(w_s + 0.08, float(w.get("end", w_s + 0.3))), 3)
+            cleaned_words.append({
+                "word": w_txt,
+                "start": w_s,
+                "end": w_e,
+                "probability": 1.0
+            })
+
+        # تحديث نصوص الجمل لتطابق الكلمات المعدلة
+        updated_sentences = []
+        if base_sentences:
+            for sent in base_sentences:
+                s_start = float(sent.get("start", 0.0))
+                s_end = float(sent.get("end", 0.0))
+                matching = [
+                    cw for cw in cleaned_words
+                    if cw["start"] >= s_start - 0.15 and cw["end"] <= s_end + 0.25
+                ]
+                if matching:
+                    updated_sentences.append({
+                        "text": " ".join(m["word"] for m in matching),
+                        "start": round(s_start, 3),
+                        "end": round(s_end, 3),
+                        "words": matching
+                    })
+        if not updated_sentences and cleaned_words:
+            # تجميع كل 6 كلمات في جملة إذا لم توجد جمل سابقة
+            for i in range(0, len(cleaned_words), 6):
+                grp = cleaned_words[i:i + 6]
+                updated_sentences.append({
+                    "text": " ".join(m["word"] for m in grp),
+                    "start": grp[0]["start"],
+                    "end": grp[-1]["end"],
+                    "words": grp
+                })
+
+        _CUSTOM_CAPTION_OVERRIDE["enabled"] = True
+        _CUSTOM_CAPTION_OVERRIDE["words"] = cleaned_words
+        _CUSTOM_CAPTION_OVERRIDE["sentences"] = updated_sentences
+        _LAST_EXTRACTED_TRANSCRIPT["words"] = cleaned_words
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = updated_sentences
+        return cleaned_words, updated_sentences
+
+    return base_words, base_sentences
+
+
+# ==============================================================================
+# 3. تطبيع وتدقيق الدارجة الجزائرية
+# ==============================================================================
 def normalize_algerian_word(word: str) -> str:
-    """تنظيف وتصحيح الكلمة المفردة وفق قواعد الدارجة الجزائرية."""
     if not word:
         return ""
     cleaned = word.strip()
-    # فحص المطابقة المباشرة في قاموس الدارجة
     if cleaned in ALGERIAN_DARIJA_LEXICON_FIXES:
         return ALGERIAN_DARIJA_LEXICON_FIXES[cleaned]
     return cleaned
 
 
 def normalize_algerian_sentence(text: str) -> str:
-    """تطبيع الجملة بالدارجة الجزائرية لتصحيح التراكيب المندمجة."""
     if not text:
         return ""
     out = text.strip()
@@ -109,10 +260,6 @@ def refine_darija_words_with_ai(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """
-    تدقيق الكلمات المستخرجة بالذكاء الاصطناعي لتصحيح أي تحريف في الدارجة الجزائرية
-    (أو تحويلها للعربية المبسطة إذا طلب المستخدم ذلك) مع الحفاظ الصارم على عدد الكلمات وتوقيتها.
-    """
     if not words_list or len(words_list) > 250:
         return words_list
 
@@ -127,7 +274,6 @@ def refine_darija_words_with_ai(
     else:
         instruction = (
             "المدخل التالي هو كلمات مستخرجة من تسجيل صوتي بالدارجة الجزائرية (Algerian Darija) مفصولة بـ |. "
-            "بعض الكلمات قد يكون Whisper قد كتبها بشكل خاطئ لأنها باللهجة الجزائرية (مثل: واش، راكم، بزاف، علاش، كيفاش، عفسة، باسكو، ديجا، درك، ماكانش، خاوتي). "
             "قم بتصحيح الإملاء الخاطئ فقط لتظهر بالدارجة الجزائرية الصحيحة والواضحة، ولا تغير الكلمات الصحيحة."
         )
 
@@ -162,14 +308,14 @@ def refine_darija_words_with_ai(
                     if 0 <= idx < len(updated) and isinstance(new_val, str) and new_val.strip():
                         updated[idx]["word"] = new_val.strip()
                 return updated
-    except Exception as e:
-        logger.debug(f"تجاوز التدقيق اللغوي الإضافي: {e}")
+    except Exception:
+        pass
 
     return words_list
 
 
 # ==============================================================================
-# 2. التفريغ السحابي السريع (Groq Whisper Large-v3 / OpenAI Whisper)
+# 4. التفريغ السحابي والمحلي
 # ==============================================================================
 def _transcribe_via_cloud_api(
     audio_path: str,
@@ -177,13 +323,9 @@ def _transcribe_via_cloud_api(
     openai_api_key: Optional[str] = None,
     language: str = "ar"
 ) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
-    """
-    محاولة التفريغ عبر السحابة باستخدام نموذج whisper-large-v3 الدقيق جداً مع الدارجة الجزائرية.
-    """
     groq_key = (groq_api_key or os.environ.get("GROQ_API_KEY", "")).strip()
     openai_key = (openai_api_key or os.environ.get("OPENAI_API_KEY", "")).strip()
 
-    # التأكد من أن حجم الملف الصوتي أقل من 24MB لواجهة API، وإلا نستخرج منه ملف mp3 مضغوط خفيف
     upload_path = audio_path
     temp_compressed = None
     try:
@@ -199,22 +341,13 @@ def _transcribe_via_cloud_api(
 
     endpoints = []
     if groq_key:
-        endpoints.append((
-            "https://api.groq.com/openai/v1/audio/transcriptions",
-            groq_key,
-            "whisper-large-v3"
-        ))
+        endpoints.append(("https://api.groq.com/openai/v1/audio/transcriptions", groq_key, "whisper-large-v3"))
     if openai_key:
-        endpoints.append((
-            "https://api.openai.com/v1/audio/transcriptions",
-            openai_key,
-            "whisper-1"
-        ))
+        endpoints.append(("https://api.openai.com/v1/audio/transcriptions", openai_key, "whisper-1"))
 
     try:
         for url, api_key, model_name in endpoints:
             try:
-                logger.info(f"جاري التفريغ السحابي عبر {model_name} مع موجه الدارجة الجزائرية...")
                 with open(upload_path, "rb") as f:
                     files = {"file": (os.path.basename(upload_path), f, "audio/mpeg")}
                     data = [
@@ -261,7 +394,6 @@ def _transcribe_via_cloud_api(
                             if w["start"] >= seg_start - 0.1 and w["end"] <= seg_end + 0.2
                         ]
                         if not seg_words and seg_text:
-                            # توزيع التوقيت بالتساوي إذا لم ترجع الكلمات المفردة
                             parts = seg_text.split()
                             dur = max(0.2, seg_end - seg_start) / max(1, len(parts))
                             for idx, p in enumerate(parts):
@@ -283,10 +415,9 @@ def _transcribe_via_cloud_api(
                             })
 
                     if words_list:
-                        logger.info(f"نجح التفريغ السحابي عبر {model_name}: {len(words_list)} كلمة.")
                         return words_list, sentences_list
             except Exception as e:
-                logger.warning(f"فشل التفريغ السحابي ({model_name})، سيتم الانتقال للمحرك المحلي: {e}")
+                logger.warning(f"فشل التفريغ السحابي ({model_name}): {e}")
     finally:
         if temp_compressed and os.path.exists(temp_compressed):
             try:
@@ -297,29 +428,20 @@ def _transcribe_via_cloud_api(
     return None
 
 
-# ==============================================================================
-# 3. التفريغ المحلي المحسن عبر faster-whisper مع دعم الدارجة الجزائرية
-# ==============================================================================
 def get_optimal_device_settings() -> Tuple[str, str]:
-    """تحديد الإعدادات المثلى للعتاد المحلي تلقائياً (GPU/CUDA مقابل CPU)."""
     try:
         import torch
         if torch.cuda.is_available():
-            logger.info("تم العثور على كرت شاشة يدعم CUDA. سيتم استخدام نمط GPU مع float16.")
             return "cuda", "float16"
     except ImportError:
         pass
-
-    logger.info("سيتم استخدام المعالج المحلي (CPU) مع نمط الحسابات السريع int8.")
     return "cpu", "int8"
 
 
 def _get_or_load_whisper_model(model_size: str, device: str, compute_type: str):
-    """تحميل نموذج faster-whisper مرة واحدة وحفظه في الذاكرة لتسريع العمليات المتتالية."""
     from faster_whisper import WhisperModel
     cache_key = f"{model_size}_{device}_{compute_type}"
     if cache_key not in _WHISPER_MODEL_CACHE:
-        logger.info(f"جاري تحميل نموذج Whisper ({model_size}) على {device} بنمط {compute_type}...")
         _WHISPER_MODEL_CACHE[cache_key] = WhisperModel(
             model_size_or_path=model_size,
             device=device,
@@ -340,20 +462,25 @@ def _run_full_transcription(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    تشغيل التفريغ الكامل (سحابي أولاً ثم محلي) مع التخزين المؤقت وتصحيح الدارجة الجزائرية.
-    """
+    """تشغيل التفريغ الكامل أو إرجاع الكابشن المعدل يدوياً من طرف المستخدم فوراً."""
+    if _CUSTOM_CAPTION_OVERRIDE["enabled"] and _CUSTOM_CAPTION_OVERRIDE["words"]:
+        logger.info("استخدام الكابشن المعدل يدوياً من طرف المستخدم.")
+        return (
+            [dict(w) for w in _CUSTOM_CAPTION_OVERRIDE["words"]],
+            [dict(s) for s in _CUSTOM_CAPTION_OVERRIDE["sentences"]]
+        )
+
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"الملف المطلوب تفريغه غير موجود: {audio_path}")
 
     file_mtime = os.path.getmtime(audio_path)
     cache_key = f"{os.path.abspath(audio_path)}_{file_mtime}_{model_size}_{dialect_mode}"
     if cache_key in _TRANSCRIPTION_CACHE:
-        logger.info("تم استرجاع التفريغ الصوتي من الذاكرة المؤقتة (Cache) فوراً.")
         cached = _TRANSCRIPTION_CACHE[cache_key]
+        _LAST_EXTRACTED_TRANSCRIPT["words"] = cached["words"]
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = cached["sentences"]
         return cached["words"], cached["sentences"]
 
-    # 1. محاولة التفريغ السحابي (Groq Whisper Large-v3 / OpenAI) إذا توفر مفتاح وإنترنت
     cloud_res = _transcribe_via_cloud_api(
         audio_path=audio_path,
         groq_api_key=groq_api_key,
@@ -370,9 +497,10 @@ def _run_full_transcription(
             openai_api_key=openai_api_key
         )
         _TRANSCRIPTION_CACHE[cache_key] = {"words": words_list, "sentences": sentences_list}
+        _LAST_EXTRACTED_TRANSCRIPT["words"] = words_list
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = sentences_list
         return words_list, sentences_list
 
-    # 2. التفريغ المحلي عبر faster-whisper مع إعدادات الدارجة الجزائرية المتقدمة
     detected_device, detected_compute = get_optimal_device_settings()
     final_device = device if device is not None else detected_device
     final_compute = compute_type if compute_type is not None else detected_compute
@@ -380,7 +508,6 @@ def _run_full_transcription(
     model = _get_or_load_whisper_model(model_size, final_device, final_compute)
     target_language = None if (language == "auto" or not language) else language
 
-    # تمرير initial_prompt الخاص بالدارجة الجزائرية وإيقاف condition_on_previous_text لمنع الهلوسة والتكرار
     segments, info = model.transcribe(
         audio_path,
         word_timestamps=True,
@@ -390,10 +517,8 @@ def _run_full_transcription(
         best_of=5,
         condition_on_previous_text=False,
         vad_filter=vad_filter,
-        vad_parameters=dict(min_silence_duration_ms=350, speech_pad_ms=200)
+        vad_parameters=dict(min_silence_duration_ms=500, speech_pad_ms=260)
     )
-
-    logger.info(f"تم اكتشاف اللغة: {info.language} بنسبة ثقة: {info.language_probability:.2f}")
 
     word_timestamps: List[Dict[str, Any]] = []
     sentence_list: List[Dict[str, Any]] = []
@@ -422,7 +547,6 @@ def _run_full_transcription(
                 "words": seg_words
             })
 
-    # تدقيق سياقي للدارجة الجزائرية عبر الذكاء الاصطناعي (إن توفر اتصال)
     if word_timestamps:
         word_timestamps = refine_darija_words_with_ai(
             word_timestamps,
@@ -431,7 +555,6 @@ def _run_full_transcription(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        # تحديث الجمل بالكلمات المدققة
         w_idx = 0
         for sent in sentence_list:
             count = len(sent["words"])
@@ -444,8 +567,9 @@ def _run_full_transcription(
         "words": word_timestamps,
         "sentences": sentence_list
     }
+    _LAST_EXTRACTED_TRANSCRIPT["words"] = word_timestamps
+    _LAST_EXTRACTED_TRANSCRIPT["sentences"] = sentence_list
 
-    logger.info(f"اكتمل التفريغ الصوتي بنجاح ({len(word_timestamps)} كلمة، {len(sentence_list)} جملة).")
     return word_timestamps, sentence_list
 
 
@@ -461,7 +585,6 @@ def transcribe_audio(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """إرجاع قائمة الكلمات مع تواقيتها الدقيقة."""
     words, _ = _run_full_transcription(
         audio_path=audio_path,
         model_size=model_size,
@@ -488,7 +611,6 @@ def transcribe_sentences(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """إرجاع قائمة الجمل الكاملة مع كلماتها وتواقيتها."""
     _, sentences = _run_full_transcription(
         audio_path=audio_path,
         model_size=model_size,
