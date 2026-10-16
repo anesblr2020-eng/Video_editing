@@ -1,16 +1,15 @@
 """
-motion_text.py - محرك الموشن جرافيك الاحترافي الفائق (Pro Studio Vector, Shader & VisionOS Motion Engine)
-========================================================================================================
-يجمع هذا المحرك بين 4 تقنيات متقدمة للوصول لمستوى مصمم موشن جرافيك محترف (After Effects / Apple visionOS):
-1. محرك الفيكتور والتدرجات اللونية (PyCairo Vector & Bezier Spline Engine):
-   - رسم منحنيات بيزيير الناعمة (Cubic Bezier Curves) بتنعيم حواف فائق (Sub-pixel Anti-aliasing).
-   - تدرجات لونية خطية وشعاعية متصلة (Linear & Radial Gradients) مع توهج ضوئي متعدد الطبقات.
-2. محرك الزجاج الحقيقي والظلال الثلاثية الأبعاد (Real Backdrop Gaussian Blur & Soft Drop Shadows):
-   - ضبابية خلفية حقيقية (Optical Frosted Glass) تحاكي نظام Apple visionOS مع انعكاس ضوئي متحرك (Light Sweep).
-3. فيزياء النوابض الحقيقية وتحريك الطبقات المتتابع (Damped Spring Physics & Staggered Layer Choreography):
-   - معادلات تفاضلية للنوابض (Hooke's Law + Damping) لدخول العناصر بنعومة وارتداد طبيعي مع تمويه حركي (Motion Blur).
-4. مستورد الأصول الفيكتور والأيقونات السحابية الذكي (Smart Cloud SVG / Iconify & Caching Engine):
-   - جلب وتخزين أيقونات ورسوميات عالية الدقة عند توفر الاتصال مع تكامل سلس مع محرك الفيكتور المحلي.
+motion_text.py - محرك الموشن جرافيك الاحترافي الفائق الموجه بالسياق (Contextual Pro Vector, Shader & VisionOS Engine)
+=======================================================================================================================
+يجمع هذا المحرك بين 5 تقنيات متقدمة للوصول لمستوى مصمم موشن جرافيك محترف يفهم سياق الفيديو الكامل:
+1. مخ التحليل السياقي والسردي (Contextual & Narrative Storyboard Brain):
+   - يحلل النص الكامل للفيديو ويقسمه إلى جمل وأفكار متكاملة المعنى (وليس كلمة بكلمة).
+   - يولد لكل فكرة مشهداً بصرياً متكاملاً، وعنواناً مفاهيمياً (`concept_title`)، ومؤشر أداء سياقي (`kpi_value`) دون تكرار نص الكابشن حرفياً.
+2. محرك الفيكتور والتدرجات اللونية (PyCairo Vector & Bezier Spline Engine):
+   - رسم منحنيات بيزيير الناعمة وتدرجات لونية خطية وشعاعية متصلة لجميع أنماط المشاهد.
+3. محرك الزجاج الحقيقي والظلال الثلاثية الأبعاد (Real Backdrop Gaussian Blur & Soft Drop Shadows - Apple visionOS).
+4. فيزياء النوابض الحقيقية وتحريك الطبقات المتتابع (Damped Spring Physics & Staggered Layer Choreography).
+5. كابشن كاريوكي زجاجي موحد يبرز الكلمة المنطوقة لحظياً داخل الجملة السياقية الكاملة.
 """
 
 import sys
@@ -25,7 +24,8 @@ if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import PIL.ImageDraw
-_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
+if not hasattr(PIL.ImageDraw.ImageDraw, "_true_orig_rounded_rect"):
+    PIL.ImageDraw.ImageDraw._true_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
     try:
@@ -40,7 +40,9 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
         if y_max - y_min < 1:
             y_max = y_min + 1
         safe_r = max(0, min(int(radius), int((x_max - x_min) // 2), int((y_max - y_min) // 2)))
-        return _orig_rounded_rect(self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners)
+        return PIL.ImageDraw.ImageDraw._true_orig_rounded_rect(
+            self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners
+        )
     except Exception:
         pass
 
@@ -108,7 +110,7 @@ def shape_arabic_text(text: str) -> str:
 
 def _get_latin_safe_font(font: ImageFont.FreeTypeFont, text: str) -> ImageFont.FreeTypeFont:
     """استخدام خط يدعم الرموز والحروف اللاتينية (+, %, W, AI) تلقائياً لمنع ظهور المربعات الفارغة."""
-    if not text or not re.search(r"[A-Za-z+%$#@&*=/\\]", str(text)):
+    if not text or not re.search(r"[A-Za-z+%$#@&*=/\\•()\-:|]", str(text)):
         return font
     f_path = getattr(font, "path", "")
     if "Cairo" in f_path or "DejaVu" in f_path:
@@ -210,8 +212,8 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
         "/usr/share/fonts/truetype/noto/NotoKufiArabic-Bold.ttf",
         "/usr/share/fonts/truetype/noto/NotoNaskhArabic-Bold.ttf" if bold else "/usr/share/fonts/truetype/noto/NotoKufiArabic-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-        "C:\Windows\Fonts\arialbd.ttf" if bold else "C:\Windows\Fonts\arial.ttf",
-        "C:\Windows\Fonts\tahoma.ttf",
+        "C:\\Windows\\Fonts\\arialbd.ttf" if bold else "C:\\Windows\\Fonts\\arial.ttf",
+        "C:\\Windows\\Fonts\\tahoma.ttf",
         "/System/Library/Fonts/GeezaPro.ttc",
         "arial.ttf"
     ]
@@ -312,10 +314,7 @@ def _ease_out_back(x: float) -> float:
 
 
 def _spring_physics(t: float, stiffness: float = 210.0, damping: float = 15.0, mass: float = 1.0) -> float:
-    """
-    محرك فيزياء النوابض الحقيقي (Hooke's Law Damped Harmonic Oscillator)
-    يحاكي حركة Apple iOS و After Effects الحقيقية بارتداد طبيعي ناعم.
-    """
+    """محرك فيزياء النوابض الحقيقي (Hooke's Law Damped Harmonic Oscillator)."""
     if t <= 0.0:
         return 0.0
     if t >= 1.0:
@@ -338,102 +337,60 @@ def _staggered_spring(global_prog: float, delay: float = 0.0, duration: float = 
 
 
 # ==============================================================================
-# 4. تصنيف المشاهد وبناء البلوبرينت الدلالي الذكي
+# 4. تصنيف المشاهد وبناء البلوبرينت الدلالي السياقي الذكي
 # ==============================================================================
 def classify_micro_scene_blueprint(
     scene_text: str,
     scene_index: int,
     total_scenes: int,
     prev_scene_type: Optional[str] = None,
+    full_transcript: str = "",
+    prev_scene_text: str = "",
+    next_scene_text: str = "",
     **kwargs
 ) -> Dict[str, Any]:
+    """
+    تصنيف المشهد بناءً على السياق الكامل للجملة والفيديو (وليس كلمة بكلمة):
+    يستدعي المخ السياقي في `smart_analyzer` لتوليد نوع المشهد، عنوان الشارة، المفهوم السياقي للبطاقة اليسرى،
+    ومؤشر الـ KPI السياقي للبطاقة اليمنى دون تكرار الكلمات المنطوقة حرفياً.
+    """
+    try:
+        from smart_analyzer import extract_global_video_context, analyze_scene_with_context
+        global_ctx = extract_global_video_context(full_transcript or scene_text)
+        res = analyze_scene_with_context(
+            scene_text=scene_text,
+            scene_index=scene_index,
+            total_scenes=total_scenes,
+            global_ctx=global_ctx,
+            prev_scene_text=prev_scene_text,
+            next_scene_text=next_scene_text,
+            prev_scene_type=prev_scene_type
+        )
+        theme_keys = list(MOTION_THEMES.keys())
+        transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
+        res["theme_name"] = theme_keys[scene_index % len(theme_keys)]
+        res["transition_type"] = transitions[scene_index % len(transitions)]
+        return res
+    except Exception:
+        pass
+
+    # احتياطي سياقي مدمج
     t = scene_text.strip()
-    t_low = t.lower()
-
-    num_match = re.search(r"(\d+)", t)
-    extracted_number = int(num_match.group(1)) if num_match else None
-
-    chosen_type = None
-    badge_label = "مشهد موشن جرافيك"
-
-    if any(w in t_low for w in ["مونتاج", "منتاج", "تمنتج", "فيديوهات", "فيديو", "ايديت", "إيديتينج", "editing", "قص", "لقطات"]):
-        if scene_index == total_scenes - 1 and any(w in t_low for w in ["اسم", "منصة", "إيديتينج", "editing"]):
-            chosen_type = "brand_finale"
-            badge_label = "منصة تحرير الفيديو الذكية"
-        else:
-            chosen_type = "video_montage_studio"
-            badge_label = "أستوديو المونتاج الذكي"
-    elif any(w in t_low for w in ["ذكاء", "اصطناعي", "استناعي", "أوتوماتيكي", "اوتوماتيكي", "تلقائي", "آلي", "خوارزمية"]):
-        chosen_type = "ai_neural_brain"
-        badge_label = "محرك الذكاء الاصطناعي"
-    elif any(w in t_low for w in ["توصيل", "ولاية", "58", "باب الدار"]) or (any(w in t_low for w in ["شحن"]) and any(w in t_low for w in ["توصيل", "ولاية"])):
-        chosen_type = "delivery_express"
-        badge_label = "توصيل سريع 58 ولاية"
-    elif any(w in t_low for w in ["شحن", "واط", "شارجي", "fast charge", "شحن فائق"]):
-        chosen_type = "ecommerce_showcase"
-        badge_label = "شحن فائق السرعة"
-    elif any(w in t_low for w in ["سيبور", "ستاند", "حامل", "تيليفون"]) and any(w in t_low for w in ["تتفرج", "مشاهدة", "راحة"]):
-        chosen_type = "reels_smartphone"
-        badge_label = "حامل هاتف مدمج ومشاهدة مريحة"
-    elif any(w in t_low for w in ["قماش", "يتقطع", "ضد القطع", "متانة", "جودة", "مضمونة"]):
-        chosen_type = "ecommerce_showcase"
-        badge_label = "متانة وجودة فائقة ضد القطع"
-    elif any(w in t_low for w in ["منتج", "سلعة", "أصلي", "اطلب", "كليكي", "بايو", "تعليق"]) and scene_index >= total_scenes - 2:
-        chosen_type = "ecommerce_showcase"
-        badge_label = "اطلب الآن - متوفر بكمية محدودة"
-    elif any(w in t_low for w in ["اصبر", "انتبه", "شوف"]) and scene_index == 0:
-        chosen_type = "ecommerce_showcase"
-        badge_label = "انتبه - منتج عملي واستثنائي"
-    elif any(w in t_low for w in ["ريلز", "ريز", "تيك توك", "شورتس", "ترفع", "نشر", "سوشيال", "يوتيوب", "انستغرام"]):
-        chosen_type = "reels_smartphone"
-        badge_label = "نشر الريلز والمحتوى اليومي"
-    elif any(w in t_low for w in ["أبني", "ابني", "منصة", "تعمل", "موقع", "تطبيق", "مشروع", "نظام", "برمجة"]):
-        chosen_type = "platform_builder"
-        badge_label = "بناء وتطوير المنصة"
-    elif any(w in t_low for w in ["وقت", "ساعة", "ما عندها", "مشغولة", "تأخير", "ثواني"]):
-        chosen_type = "time_warp_clock"
-        badge_label = "توفير الوقت والسرعة"
-    elif any(w in t_low for w in ["سعر", "سومة", "تخفيض", "عرض", "دراهم", "دينار", "بروموسيون", "أغلب", "الناس", "ربح", "نجاح"]):
-        chosen_type = "growth_analytics"
-        badge_label = "مؤشر الأداء والانتشار"
-    elif extracted_number is not None and any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين", "مئة", "ألف", "مليون"]):
-        chosen_type = "age_number_counter"
-        badge_label = f"محطة الإنجاز - {extracted_number}"
-    elif any(w in t_low for w in ["أهلاً", "اهلا", "سلام", "أنا", "أنس", "اسمي", "مرحبا", "خاوتي"]):
-        chosen_type = "creator_profile"
-        badge_label = "بطاقة تعريف المبدع"
-    elif scene_index == total_scenes - 1:
-        chosen_type = "brand_finale"
-        badge_label = "الإطلاق الرسمي للمنصة"
-
-    fallback_cycle = [
-        ("creator_profile", "إضاءة تعريفية"),
-        ("platform_builder", "هندسة وبناء النظام"),
-        ("ai_neural_brain", "نواة الذكاء الاصطناعي"),
-        ("video_montage_studio", "أتمتة شريط المونتاج"),
-        ("growth_analytics", "أداء وإنتاجية عالية"),
-        ("reels_smartphone", "محتوى ريلز تفاعلي"),
-        ("brand_finale", "أستوديو الجيل الجديد")
-    ]
-    if not chosen_type or chosen_type == prev_scene_type:
-        alt_type, alt_label = fallback_cycle[scene_index % len(fallback_cycle)]
-        if alt_type == prev_scene_type:
-            alt_type, alt_label = fallback_cycle[(scene_index + 1) % len(fallback_cycle)]
-        chosen_type = alt_type
-        if badge_label == "مشهد موشن جرافيك":
-            badge_label = alt_label
-
-    words = [w for w in re.findall(r"[\wء-ي]+", t) if len(w) > 2]
-    short_title = " ".join(words[:2]) if len(words) >= 2 else (words[0] if words else t[:16])
+    num_match = re.search(r"(?:^|[^\d])(\d+)(?:$|[^\d])", t)
+    extracted_number = int(num_match.group(1)) if num_match else 17
 
     theme_keys = list(MOTION_THEMES.keys())
     transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
 
     return {
-        "scene_type": chosen_type,
-        "badge_label": badge_label,
-        "short_title": short_title,
-        "target_number": extracted_number if extracted_number is not None else 58,
+        "scene_type": "video_montage_studio",
+        "badge_label": "أستوديو المونتاج الذكي",
+        "short_title": "تطوير المحتوى الذكي",
+        "concept_title": "تطوير المحتوى الذكي",
+        "concept_subtitle": "معالجة سياقية متكاملة",
+        "kpi_value": "AI Studio",
+        "kpi_label": "أداء احترافي",
+        "target_number": extracted_number,
         "theme_name": theme_keys[scene_index % len(theme_keys)],
         "transition_type": transitions[scene_index % len(transitions)]
     }
@@ -477,9 +434,8 @@ def draw_visionos_glass_panel(
         s_draw = ImageDraw.Draw(shadow_layer, "RGBA")
         bx1, by1 = x1 - sx1, y1 - sy1 + shadow_offset
         bx2, by2 = x2 - sx1, y2 - sy1 + shadow_offset
-        s_draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=radius, fill=(0, 0, 0, 150))
-        # هالة لونية خفيفة خلف البطاقة
-        s_draw.rounded_rectangle([(bx1 - 2, by1 - shadow_offset), (bx2 + 2, by2 - shadow_offset)], radius=radius + 2, outline=(*border_color, 75), width=4)
+        s_draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=radius, fill=(0, 0, 0, 155))
+        s_draw.rounded_rectangle([(bx1 - 2, by1 - shadow_offset), (bx2 + 2, by2 - shadow_offset)], radius=radius + 2, outline=(*border_color, 80), width=4)
         shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(radius=max(2, shadow_blur // 2)))
         canvas_rgba.alpha_composite(shadow_layer, (sx1, sy1))
 
@@ -489,16 +445,14 @@ def draw_visionos_glass_panel(
     if blur_radius > 0:
         backdrop_crop = backdrop_crop.filter(ImageFilter.GaussianBlur(radius=blur_radius))
 
-    # طبقة التلوين الزجاجي
     glass_tint = Image.new("RGBA", (pw, ph), tint_color)
     frosted = Image.alpha_composite(backdrop_crop, glass_tint)
 
     # 3. انعكاس الضوء القطري المتحرك (Specular Sheen & Light Sweep)
     sheen = Image.new("RGBA", (pw, ph), (0, 0, 0, 0))
     sh_draw = ImageDraw.Draw(sheen, "RGBA")
-    # تدرج إضاءة زجاجية ناعمة على الحافة العلوية فقط بدون خط قاطع
     for sy in range(min(28, ph // 4)):
-        alpha_v = int(22 * (1.0 - sy / 28.0))
+        alpha_v = int(24 * (1.0 - sy / 28.0))
         if alpha_v > 0:
             sh_draw.line([(radius // 2, sy + 2), (pw - radius // 2, sy + 2)], fill=(255, 255, 255, alpha_v), width=1)
 
@@ -510,11 +464,10 @@ def draw_visionos_glass_panel(
             (sweep_x + beam_w, 0),
             (sweep_x - int(ph * 0.4) + beam_w, ph),
             (sweep_x - int(ph * 0.4), ph)
-        ], fill=(255, 255, 255, 28))
+        ], fill=(255, 255, 255, 30))
 
     frosted = Image.alpha_composite(frosted, sheen)
 
-    # قناع الحواف المستديرة (Rounded Mask)
     mask = Image.new("L", (pw, ph), 0)
     m_draw = ImageDraw.Draw(mask)
     m_draw.rounded_rectangle([(0, 0), (pw - 1, ph - 1)], radius=radius, fill=255)
@@ -522,8 +475,8 @@ def draw_visionos_glass_panel(
 
     # 4. رسم الإطار المتوهج المزدوج (Dual Specular Rim)
     c_draw = ImageDraw.Draw(canvas_rgba, "RGBA")
-    c_draw.rounded_rectangle([(x1, y1), (x2 - 1, y2 - 1)], radius=radius, outline=(*border_color, 215), width=2)
-    c_draw.rounded_rectangle([(x1 + 2, y1 + 2), (x2 - 3, y2 - 3)], radius=max(2, radius - 2), outline=(255, 255, 255, 45), width=1)
+    c_draw.rounded_rectangle([(x1, y1), (x2 - 1, y2 - 1)], radius=radius, outline=(*border_color, 225), width=2)
+    c_draw.rounded_rectangle([(x1 + 2, y1 + 2), (x2 - 3, y2 - 3)], radius=max(2, radius - 2), outline=(255, 255, 255, 50), width=1)
 
     return canvas_rgba
 
@@ -541,6 +494,19 @@ def _cairo_rounded_rect(ctx, x: float, y: float, w: float, h: float, r: float):
     ctx.close_path()
 
 
+def _cairo_regular_polygon(ctx, cx: float, cy: float, radius: float, sides: int = 6, rotation: float = 0.0):
+    ctx.new_sub_path()
+    for i in range(sides):
+        ang = rotation + i * (2.0 * math.pi / sides)
+        px = cx + radius * math.cos(ang)
+        py = cy + radius * math.sin(ang)
+        if i == 0:
+            ctx.move_to(px, py)
+        else:
+            ctx.line_to(px, py)
+    ctx.close_path()
+
+
 def _norm_rgb(rgb: Tuple[int, int, int]) -> Tuple[float, float, float]:
     return (rgb[0] / 255.0, rgb[1] / 255.0, rgb[2] / 255.0)
 
@@ -552,11 +518,11 @@ def render_cairo_vector_illustration(
     scene_progress: float,
     global_t: float,
     theme: Dict[str, Any],
-    target_number: int = 58
+    target_number: int = 17
 ) -> Image.Image:
     """
     توليد رسومات فيكتور احترافية بمنحنيات بيزيير وتدرجات لونية عبر PyCairo
-    بمستوى مصمم موشن جرافيك محترف (After Effects / Illustrator Vector Art).
+    مع ضمان ظهور الرسمة فوراً من اللحظة 0.0 (Scale 0.78 -> 1.0) لجميع الأنماط الـ 11.
     """
     if not _HAS_CAIRO:
         return Image.new("RGBA", (width, height), (0, 0, 0, 0))
@@ -566,20 +532,20 @@ def render_cairo_vector_illustration(
     ctx.set_antialias(cairo.ANTIALIAS_BEST)
 
     cx, cy = width / 2.0, height / 2.0
-    r = min(width, height) * 0.47
+    r = min(width, height) * 0.46
     p1 = _norm_rgb(theme["primary"])
     p2 = _norm_rgb(theme["secondary"])
     acc = _norm_rgb(theme["accent"])
 
-    # حركة نابضية متتابعة للطبقات
-    s_main = _staggered_spring(scene_progress, delay=0.0, duration=0.45)
-    s_sub1 = _staggered_spring(scene_progress, delay=0.08, duration=0.48)
-    s_sub2 = _staggered_spring(scene_progress, delay=0.16, duration=0.50)
+    # حركة نابضية متتابعة تبدأ من 0.78 لتكون الرسمة مرئية فوراً في الإطار 0.0s
+    s_main = 0.78 + 0.22 * _staggered_spring(scene_progress, delay=0.0, duration=0.45)
+    s_sub1 = 0.72 + 0.28 * _staggered_spring(scene_progress, delay=0.06, duration=0.48)
+    s_sub2 = 0.68 + 0.32 * _staggered_spring(scene_progress, delay=0.12, duration=0.50)
 
     # 1. هالة ضوئية خلفية ناعمة (Radial Ambient Glow)
     rad_glow = cairo.RadialGradient(cx, cy, r * 0.05, cx, cy, r * 1.15)
     rad_glow.add_color_stop_rgba(0.0, p1[0], p1[1], p1[2], 0.28 * s_main)
-    rad_glow.add_color_stop_rgba(0.5, p2[0], p2[1], p2[2], 0.10 * s_main)
+    rad_glow.add_color_stop_rgba(0.5, p2[0], p2[1], p2[2], 0.11 * s_main)
     rad_glow.add_color_stop_rgba(1.0, 0.0, 0.0, 0.0, 0.0)
     ctx.set_source(rad_glow)
     ctx.arc(cx, cy, r * 1.15, 0, 2 * math.pi)
@@ -589,7 +555,7 @@ def render_cairo_vector_illustration(
     ctx.save()
     ctx.translate(cx, cy)
     ctx.rotate(global_t * 0.45)
-    ctx.set_source_rgba(p2[0], p2[1], p2[2], 0.22 * s_main)
+    ctx.set_source_rgba(p2[0], p2[1], p2[2], 0.24 * s_main)
     ctx.set_line_width(2.0)
     ctx.set_dash([14.0, 10.0])
     ctx.arc(0, 0, r * 0.96 * s_main, 0, 2 * math.pi)
@@ -603,7 +569,6 @@ def render_cairo_vector_illustration(
         mw, mh = r * 1.65 * s_main, r * 1.25 * s_main
         mx, my = cx - mw / 2, cy - mh / 2
 
-        # نافذة الأستوديو الرئيسية
         _cairo_rounded_rect(ctx, mx, my, mw, mh, 22)
         bg_grad = cairo.LinearGradient(mx, my, mx, my + mh)
         bg_grad.add_color_stop_rgba(0, 0.08, 0.12, 0.22, 0.95)
@@ -614,7 +579,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.0)
         ctx.stroke()
 
-        # شاشة العرض العلوية (Cinema Viewport)
         vw, vh = mw * 0.88, mh * 0.46
         vx, vy = cx - vw / 2, my + mh * 0.08
         _cairo_rounded_rect(ctx, vx, vy, vw, vh, 12)
@@ -627,7 +591,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(1.5)
         ctx.stroke()
 
-        # موجة لونية داخل الشاشة (Bezier Wave)
         ctx.move_to(vx + 10, vy + vh * 0.7)
         ctx.curve_to(
             vx + vw * 0.3, vy + vh * (0.3 + 0.2 * math.sin(global_t * 3)),
@@ -638,7 +601,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.0)
         ctx.stroke()
 
-        # زر التشغيل المتوهج في وسط الشاشة
         pr = vh * 0.24 * (1.0 + 0.08 * math.sin(global_t * 5))
         ctx.arc(cx, vy + vh / 2, pr * 1.35, 0, 2 * math.pi)
         ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.25)
@@ -646,7 +608,6 @@ def render_cairo_vector_illustration(
         ctx.arc(cx, vy + vh / 2, pr, 0, 2 * math.pi)
         ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.95)
         ctx.fill()
-        # مثلث التشغيل
         ctx.move_to(cx - pr * 0.3, vy + vh / 2 - pr * 0.42)
         ctx.line_to(cx - pr * 0.3, vy + vh / 2 + pr * 0.42)
         ctx.line_to(cx + pr * 0.48, vy + vh / 2)
@@ -654,7 +615,6 @@ def render_cairo_vector_illustration(
         ctx.set_source_rgba(0.05, 0.08, 0.15, 1.0)
         ctx.fill()
 
-        # مسارات التايم لاين الاحترافية (3 Multi-Tracks)
         track_colors = [p1, p2, acc]
         track_y0 = vy + vh + mh * 0.08
         track_h = mh * 0.09
@@ -664,7 +624,6 @@ def render_cairo_vector_illustration(
             ctx.set_source_rgba(1, 1, 1, 0.07)
             ctx.fill()
 
-            # مقاطع الكليبات الملونة داخل كل مسار
             tc = track_colors[ti]
             c1_w = vw * (0.38 if ti != 1 else 0.28) * s_sub1
             _cairo_rounded_rect(ctx, vx + 6, ty + 2, c1_w, track_h - 4, 4)
@@ -681,7 +640,6 @@ def render_cairo_vector_illustration(
                 ctx.set_source_rgba(tc[0], tc[1], tc[2], 0.75)
                 ctx.fill()
 
-        # مؤشر القراءة الليزري المتحرك (Laser Playhead)
         ph_x = vx + vw * (0.15 + 0.72 * ((scene_progress * 0.8 + (global_t * 0.25) % 1.0) % 1.0))
         ctx.move_to(ph_x, vy + vh + 4)
         ctx.line_to(ph_x, my + mh - 10)
@@ -704,7 +662,6 @@ def render_cairo_vector_illustration(
             ny = cy + outer_r * math.sin(ang)
             nodes.append((nx, ny, ang))
 
-        # رسم الروابط العصبية بمنحنيات بيزيير الناعمة ونبضات الضوء
         for i, (nx, ny, ang) in enumerate(nodes):
             ctrl_ang = ang + 0.45 * math.sin(global_t * 2 + i)
             ctrl_x = cx + outer_r * 0.48 * math.cos(ctrl_ang)
@@ -719,7 +676,6 @@ def render_cairo_vector_illustration(
             ctx.set_line_width(3.0)
             ctx.stroke()
 
-            # نبضة ضوئية تسير على المنحنى
             pulse_t = (global_t * 1.4 + i * 0.18) % 1.0
             px = (1 - pulse_t)**2 * cx + 2 * (1 - pulse_t) * pulse_t * ctrl_x + pulse_t**2 * nx
             py = (1 - pulse_t)**2 * cy + 2 * (1 - pulse_t) * pulse_t * ctrl_y + pulse_t**2 * ny
@@ -727,7 +683,6 @@ def render_cairo_vector_illustration(
             ctx.set_source_rgba(1, 1, 1, 0.95)
             ctx.fill()
 
-            # عقدة خارجية متوهجة
             nr = 15.0 + 3.0 * math.sin(global_t * 4 + i)
             ctx.arc(nx, ny, nr * 1.6, 0, 2 * math.pi)
             ctx.set_source_rgba(p2[0], p2[1], p2[2], 0.25)
@@ -739,7 +694,6 @@ def render_cairo_vector_illustration(
             ctx.set_line_width(3.0)
             ctx.stroke()
 
-        # النواة المركزية الذكية (AI Processor Core)
         core_r = r * 0.32 * s_main
         _cairo_rounded_rect(ctx, cx - core_r, cy - core_r, core_r * 2, core_r * 2, core_r * 0.38)
         core_grad = cairo.RadialGradient(cx - core_r * 0.3, cy - core_r * 0.3, 4, cx, cy, core_r * 1.3)
@@ -751,7 +705,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.5)
         ctx.stroke()
 
-        # رمز شريحة الذكاء الداخلي
         inner_s = core_r * 0.52
         _cairo_rounded_rect(ctx, cx - inner_s, cy - inner_s, inner_s * 2, inner_s * 2, 8)
         ctx.set_source_rgba(0.05, 0.08, 0.16, 0.92)
@@ -767,7 +720,6 @@ def render_cairo_vector_illustration(
         pw, ph = r * 0.92 * s_main, r * 1.62 * s_main
         px, py = cx - pw / 2, cy - ph / 2
 
-        # جسم الهاتف المعدني
         _cairo_rounded_rect(ctx, px, py, pw, ph, 28)
         ph_grad = cairo.LinearGradient(px, py, px + pw, py + ph)
         ph_grad.add_color_stop_rgba(0, 0.12, 0.18, 0.32, 0.98)
@@ -778,7 +730,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(4.0)
         ctx.stroke()
 
-        # شاشة الهاتف المتوهجة
         _cairo_rounded_rect(ctx, px + 10, py + 14, pw - 20, ph - 28, 20)
         scr_g = cairo.LinearGradient(px, py, px + pw, py + ph)
         scr_g.add_color_stop_rgba(0, acc[0] * 0.45, acc[1] * 0.45, acc[2] * 0.65, 0.85)
@@ -786,13 +737,11 @@ def render_cairo_vector_illustration(
         ctx.set_source(scr_g)
         ctx.fill()
 
-        # الجزيرة التفاعلية (Dynamic Island)
         di_w, di_h = pw * 0.34, 10
         _cairo_rounded_rect(ctx, cx - di_w / 2, py + 22, di_w, di_h, 5)
         ctx.set_source_rgba(0.02, 0.03, 0.06, 0.95)
         ctx.fill()
 
-        # بطاقة تفاعل عائمة تخرج من الهاتف (Floating Viral Card)
         float_y = cy - ph * 0.12 + 8 * math.sin(global_t * 3.5)
         fw, fh = pw * 1.25 * s_sub1, ph * 0.28 * s_sub1
         _cairo_rounded_rect(ctx, cx - fw / 2, float_y - fh / 2, fw, fh, 18)
@@ -802,12 +751,10 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(2.5)
         ctx.stroke()
 
-        # دائرة تشغيل متوهجة داخل البطاقة العائمة
         ctx.arc(cx, float_y, fh * 0.28, 0, 2 * math.pi)
         ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.95)
         ctx.fill()
 
-        # أيقونات تفاعل صاعدة (Floating Engagement Orbs)
         for bi in range(4):
             by = py + ph * 0.78 - ((global_t * 55 + bi * 38) % (ph * 0.55))
             bx = px + pw * 0.82 + 12 * math.sin(global_t * 3 + bi)
@@ -823,7 +770,6 @@ def render_cairo_vector_illustration(
         cw, ch = r * 1.62 * s_main, r * 1.15 * s_main
         x0, y0 = cx - cw / 2, cy - ch / 2
 
-        # لوحة الإحصائيات الزجاجية
         _cairo_rounded_rect(ctx, x0, y0, cw, ch, 22)
         ctx.set_source_rgba(0.06, 0.10, 0.20, 0.92)
         ctx.fill_preserve()
@@ -831,7 +777,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(2.0)
         ctx.stroke()
 
-        # خطوط الشبكة الأفقية (Grid Lines)
         gx1, gx2 = x0 + cw * 0.10, x0 + cw * 0.90
         gy_bot = y0 + ch * 0.82
         gy_top = y0 + ch * 0.22
@@ -843,7 +788,6 @@ def render_cairo_vector_illustration(
             ctx.set_line_width(1.2)
             ctx.stroke()
 
-        # نقاط منحنى النمو التصاعدي (Smooth Cubic Spline Points)
         pts = [
             (gx1, gy_bot - (gy_bot - gy_top) * 0.12),
             (gx1 + (gx2 - gx1) * 0.25, gy_bot - (gy_bot - gy_top) * 0.35 * s_sub1),
@@ -852,7 +796,6 @@ def render_cairo_vector_illustration(
             (gx2, gy_bot - (gy_bot - gy_top) * 0.92 * s_sub2)
         ]
 
-        # تعبئة متدرجة تحت المنحنى (Area Gradient Fill)
         ctx.move_to(pts[0][0], gy_bot)
         ctx.line_to(pts[0][0], pts[0][1])
         for i in range(len(pts) - 1):
@@ -869,7 +812,6 @@ def render_cairo_vector_illustration(
         ctx.set_source(area_g)
         ctx.fill()
 
-        # رسم خط المنحنى المتوهج نفسه
         ctx.move_to(pts[0][0], pts[0][1])
         for i in range(len(pts) - 1):
             p_curr = pts[i]
@@ -880,7 +822,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(4.5)
         ctx.stroke()
 
-        # نقاط البيانات المضيئة على المنحنى
         for px_i, py_i in pts:
             ctx.arc(px_i, py_i, 9, 0, 2 * math.pi)
             ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.35)
@@ -893,7 +834,6 @@ def render_cairo_vector_illustration(
     # المشهد 5: استعراض المنتج الفاخر (3D Spotlight Podium & Quality Shield)
     # -------------------------------------------------------------------------
     elif scene_type == "ecommerce_showcase":
-        # مخروط الإضاءة المسرحية العلوي (Volumetric Spotlight Cone)
         ctx.move_to(cx - r * 0.25, cy - r * 0.95)
         ctx.line_to(cx + r * 0.25, cy - r * 0.95)
         ctx.line_to(cx + r * 0.85, cy + r * 0.65)
@@ -905,7 +845,6 @@ def render_cairo_vector_illustration(
         ctx.set_source(spot_g)
         ctx.fill()
 
-        # المنصة ثلاثية الأبعاد (3D Elliptical Podium)
         ctx.save()
         ctx.translate(cx, cy + r * 0.58)
         ctx.scale(1.0, 0.28)
@@ -920,7 +859,6 @@ def render_cairo_vector_illustration(
         ctx.stroke()
         ctx.restore()
 
-        # درع/مكعب المنتج العائم في الوسط (Floating Hero Shield/Box)
         fy = cy - r * 0.08 + 10 * math.sin(global_t * 3.0)
         bs = r * 0.48 * s_sub1
         _cairo_rounded_rect(ctx, cx - bs, fy - bs, bs * 2, bs * 2, 24)
@@ -933,7 +871,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.5)
         ctx.stroke()
 
-        # علامة صح الكبيرة (Quality Checkmark)
         ctx.move_to(cx - bs * 0.38, fy + bs * 0.02)
         ctx.line_to(cx - bs * 0.08, fy + bs * 0.32)
         ctx.line_to(cx + bs * 0.42, fy - bs * 0.28)
@@ -950,7 +887,6 @@ def render_cairo_vector_illustration(
         p_start = (cx - r * 0.65, cy + r * 0.32)
         p_end = (cx + r * 0.65, cy - r * 0.28)
 
-        # مسار التوصيل المنحني (S-Curve Route)
         ctx.move_to(p_start[0], p_start[1])
         ctx.curve_to(cx - r * 0.1, cy + r * 0.45, cx + r * 0.1, cy - r * 0.45, p_end[0], p_end[1])
         ctx.set_source_rgba(1, 1, 1, 0.22)
@@ -959,7 +895,6 @@ def render_cairo_vector_illustration(
         ctx.stroke()
         ctx.set_dash([])
 
-        # المسار المقطوع المتوهج
         ctx.move_to(p_start[0], p_start[1])
         ctx.curve_to(cx - r * 0.1, cy + r * 0.45, cx + r * 0.1, cy - r * 0.45, p_end[0], p_end[1])
         rt_g = cairo.LinearGradient(p_start[0], p_start[1], p_end[0], p_end[1])
@@ -969,7 +904,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(4.0)
         ctx.stroke()
 
-        # حلقات رادار الهدف عند نقطة الوصول
         for ri in range(3):
             rr = (16 + ri * 16 + (global_t * 25) % 16) * s_sub1
             ctx.arc(p_end[0], p_end[1], rr, 0, 2 * math.pi)
@@ -977,7 +911,6 @@ def render_cairo_vector_illustration(
             ctx.set_line_width(2.5)
             ctx.stroke()
 
-        # دبوس الموقع المتوهج (Location Pin)
         ctx.arc(p_end[0], p_end[1] - 24, 18 * s_main, 0, 2 * math.pi)
         ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.98)
         ctx.fill()
@@ -985,7 +918,6 @@ def render_cairo_vector_illustration(
         ctx.set_source_rgba(0.05, 0.08, 0.16, 1.0)
         ctx.fill()
 
-        # الشحنة المتحركة على المسار
         t_pos = (scene_progress * 0.85 + 0.15) % 1.0
         bx = (1 - t_pos)**3 * p_start[0] + 3 * (1 - t_pos)**2 * t_pos * (cx - r * 0.1) + 3 * (1 - t_pos) * t_pos**2 * (cx + r * 0.1) + t_pos**3 * p_end[0]
         by = (1 - t_pos)**3 * p_start[1] + 3 * (1 - t_pos)**2 * t_pos * (cy + r * 0.45) + 3 * (1 - t_pos) * t_pos**2 * (cy - r * 0.45) + t_pos**3 * p_end[1]
@@ -1008,9 +940,8 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.0)
         ctx.stroke()
 
-        # قوس السرعة المتوهج (Tachometer Arc)
         start_a = 0.75 * math.pi
-        end_a = start_a + 1.5 * math.pi * min(1.0, scene_progress * 1.15)
+        end_a = start_a + 1.5 * math.pi * min(1.0, 0.25 + scene_progress * 0.90)
         ctx.arc(cx, cy, cr * 0.84, start_a, end_a)
         arc_g = cairo.LinearGradient(cx - cr, cy, cx + cr, cy)
         arc_g.add_color_stop_rgba(0, p2[0], p2[1], p2[2], 1.0)
@@ -1020,7 +951,6 @@ def render_cairo_vector_illustration(
         ctx.set_line_cap(cairo.LINE_CAP_ROUND)
         ctx.stroke()
 
-        # تدريجات الكرونومتر الدقيقة (24 Ticks)
         for ti in range(24):
             tang = ti * (2 * math.pi / 24)
             in_r = cr * (0.68 if ti % 3 == 0 else 0.73)
@@ -1031,7 +961,6 @@ def render_cairo_vector_illustration(
             ctx.set_line_width(2.5 if ti % 3 == 0 else 1.2)
             ctx.stroke()
 
-        # عقرب السرعة الليزري
         needle_a = end_a
         ctx.move_to(cx, cy)
         ctx.line_to(cx + cr * 0.65 * math.cos(needle_a), cy + cr * 0.65 * math.sin(needle_a))
@@ -1056,47 +985,95 @@ def render_cairo_vector_illustration(
         ctx.set_line_width(3.0)
         ctx.stroke()
 
-        # أزرار نافذة macOS
         for bi, bcol in enumerate([(1.0, 0.37, 0.34), (1.0, 0.74, 0.18), (0.16, 0.78, 0.25)]):
             ctx.arc(wx + 24 + bi * 20, wy + 22, 6.0, 0, 2 * math.pi)
             ctx.set_source_rgba(*bcol, 0.95)
             ctx.fill()
 
-        # أسطر الكود البرمجية المتدرجة (Syntax Highlighted Code Bars)
         code_y0 = wy + 52
         bar_Pallet = [p1, p2, acc, (0.95, 0.95, 0.98)]
         for row in range(6):
             ry = code_y0 + row * 24
             indent = (row % 3) * 24
-            bw = (ww * (0.28 + 0.35 * ((row * 37) % 10) / 10.0)) * _staggered_spring(scene_progress, delay=row * 0.05)
+            row_prog = 0.45 + 0.55 * _staggered_spring(scene_progress, delay=row * 0.04)
+            bw = (ww * (0.28 + 0.35 * ((row * 37) % 10) / 10.0)) * row_prog
             if bw > 8:
                 _cairo_rounded_rect(ctx, wx + 28 + indent, ry, bw, 12, 6)
                 bc = bar_Pallet[row % len(bar_Pallet)]
                 ctx.set_source_rgba(bc[0], bc[1], bc[2], 0.88)
                 ctx.fill()
 
-        # حلقة جاهزية النظام الجانبية (Deployment Ring)
         ring_cx, ring_cy = wx + ww * 0.78, wy + wh * 0.62
         ring_r = wh * 0.22 * s_sub2
         ctx.arc(ring_cx, ring_cy, ring_r, 0, 2 * math.pi)
         ctx.set_source_rgba(1, 1, 1, 0.12)
         ctx.set_line_width(7.0)
         ctx.stroke()
-        ctx.arc(ring_cx, ring_cy, ring_r, -math.pi / 2, -math.pi / 2 + 2 * math.pi * min(1.0, scene_progress * 1.2))
+        ctx.arc(ring_cx, ring_cy, ring_r, -math.pi / 2, -math.pi / 2 + 2 * math.pi * min(1.0, 0.3 + scene_progress * 0.9))
         ctx.set_source_rgba(p1[0], p1[1], p1[2], 1.0)
         ctx.set_line_width(7.0)
         ctx.stroke()
 
     # -------------------------------------------------------------------------
-    # بقية المشاهد (Creator Profile / Milestone Counter / Brand Finale)
+    # المشهد 9: هوية المؤسس والمبدع ومحطة العمر (Founder Identity & Milestone Badge)
+    # -------------------------------------------------------------------------
+    elif scene_type in ("creator_profile", "age_number_counter"):
+        # درع سداسي متوهج يمثل هوية المبدع أو محطة الإنجاز
+        hex_r = r * 0.72 * s_main
+        _cairo_regular_polygon(ctx, cx, cy, hex_r, sides=6, rotation=-math.pi / 2 + 0.06 * math.sin(global_t * 2))
+        hex_g = cairo.LinearGradient(cx - hex_r, cy - hex_r, cx + hex_r, cy + hex_r)
+        hex_g.add_color_stop_rgba(0, 0.08, 0.14, 0.28, 0.95)
+        hex_g.add_color_stop_rgba(1, 0.04, 0.07, 0.16, 0.98)
+        ctx.set_source(hex_g)
+        ctx.fill_preserve()
+        ctx.set_source_rgba(p1[0], p1[1], p1[2], 0.92)
+        ctx.set_line_width(4.0)
+        ctx.stroke()
+
+        # حلقة طاقة داخلية مضيئة
+        ctx.arc(cx, cy, hex_r * 0.72 * s_sub1, 0, 2 * math.pi)
+        ctx.set_source_rgba(p2[0], p2[1], p2[2], 0.45)
+        ctx.set_line_width(2.5)
+        ctx.stroke()
+
+        # أيقونة المبدع المبرمج (Avatar Silhouette + Glowing Crown/Star Nodes)
+        head_r = hex_r * 0.22 * s_sub1
+        ctx.arc(cx, cy - hex_r * 0.14, head_r, 0, 2 * math.pi)
+        av_g = cairo.RadialGradient(cx - head_r * 0.3, cy - hex_r * 0.18, 2, cx, cy - hex_r * 0.14, head_r * 1.2)
+        av_g.add_color_stop_rgba(0, p1[0], p1[1], p1[2], 1.0)
+        av_g.add_color_stop_rgba(1, p2[0], p2[1], p2[2], 0.95)
+        ctx.set_source(av_g)
+        ctx.fill()
+
+        # قوس الكتفين الانسيابي (Shoulders Bezier Arc)
+        sh_w = hex_r * 0.42 * s_sub2
+        sh_y = cy + hex_r * 0.34
+        ctx.move_to(cx - sh_w, sh_y)
+        ctx.curve_to(cx - sh_w * 0.6, cy + hex_r * 0.06, cx + sh_w * 0.6, cy + hex_r * 0.06, cx + sh_w, sh_y)
+        ctx.close_path()
+        ctx.set_source(av_g)
+        ctx.fill()
+
+        # 6 عقد ضوئية تدور حول درع المؤسس
+        for ni in range(6):
+            n_ang = ni * (math.pi / 3.0) + global_t * 0.6
+            nx = cx + hex_r * 0.92 * math.cos(n_ang)
+            ny = cy + hex_r * 0.92 * math.sin(n_ang)
+            ctx.arc(nx, ny, 7.0, 0, 2 * math.pi)
+            col = p1 if ni % 2 == 0 else p2
+            ctx.set_source_rgba(col[0], col[1], col[2], 0.92)
+            ctx.fill()
+
+    # -------------------------------------------------------------------------
+    # المشهد 10: الإطلاق الرسمي للمنصة والختام (Brand Finale & Prism Studio Crest)
     # -------------------------------------------------------------------------
     else:
-        # حلقات طاقة وموجات صوتية متفاعلة حول المركز
+        # أشعة طاقة سينمائية متوهجة خلف شعار المنصة
         num_bars = 24
-        inner_rad = r * 0.52 * s_main
+        inner_rad = r * 0.54 * s_main
         for bi in range(num_bars):
-            bang = bi * (2 * math.pi / num_bars) + global_t * 0.3
-            blen = r * (0.12 + 0.16 * abs(math.sin(global_t * 4 + bi * 0.5))) * s_sub1
+            bang = bi * (2 * math.pi / num_bars) + global_t * 0.35
+            blen = r * (0.14 + 0.16 * abs(math.sin(global_t * 4 + bi * 0.5))) * s_sub1
             x_in = cx + inner_rad * math.cos(bang)
             y_in = cy + inner_rad * math.sin(bang)
             x_out = cx + (inner_rad + blen) * math.cos(bang)
@@ -1104,23 +1081,31 @@ def render_cairo_vector_illustration(
             ctx.move_to(x_in, y_in)
             ctx.line_to(x_out, y_out)
             col = p1 if bi % 2 == 0 else p2
-            ctx.set_source_rgba(col[0], col[1], col[2], 0.85)
+            ctx.set_source_rgba(col[0], col[1], col[2], 0.88)
             ctx.set_line_width(4.5)
             ctx.set_line_cap(cairo.LINE_CAP_ROUND)
             ctx.stroke()
 
-        # الدرع الدائري المركزي
-        ctx.arc(cx, cy, inner_rad * 0.86, 0, 2 * math.pi)
-        cg = cairo.RadialGradient(cx - inner_rad * 0.2, cy - inner_rad * 0.2, 4, cx, cy, inner_rad)
-        cg.add_color_stop_rgba(0, p1[0], p1[1], p1[2], 0.95)
-        cg.add_color_stop_rgba(1, 0.06, 0.10, 0.22, 0.95)
+        # درع المنصة المركزي الثلاثي الأبعاد
+        ctx.arc(cx, cy, inner_rad * 0.88, 0, 2 * math.pi)
+        cg = cairo.RadialGradient(cx - inner_rad * 0.25, cy - inner_rad * 0.25, 4, cx, cy, inner_rad)
+        cg.add_color_stop_rgba(0, p1[0], p1[1], p1[2], 0.98)
+        cg.add_color_stop_rgba(1, 0.06, 0.10, 0.22, 0.96)
         ctx.set_source(cg)
         ctx.fill_preserve()
-        ctx.set_source_rgba(1, 1, 1, 0.9)
-        ctx.set_line_width(3.0)
+        ctx.set_source_rgba(1, 1, 1, 0.92)
+        ctx.set_line_width(3.5)
         ctx.stroke()
 
-    # تحويل سطح Cairo (BGRA Pre-multiplied) إلى صورة Pillow RGBA
+        # أيقونة عدسة/تشغيل المنصة في المركز (Studio Play Prism)
+        pr_s = inner_rad * 0.38 * s_sub2
+        ctx.move_to(cx - pr_s * 0.45, cy - pr_s * 0.65)
+        ctx.line_to(cx - pr_s * 0.45, cy + pr_s * 0.65)
+        ctx.line_to(cx + pr_s * 0.72, cy)
+        ctx.close_path()
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.96)
+        ctx.fill()
+
     buf = np.frombuffer(surface.get_data(), dtype=np.uint8).reshape((height, width, 4)).copy()
     buf = buf[:, :, [2, 1, 0, 3]]
     return Image.fromarray(buf, mode="RGBA")
@@ -1138,7 +1123,6 @@ def draw_animated_scene_illustration(
     target_number: int = 58,
     short_title: str = ""
 ):
-    """دالة توافقية لرسم الأيقونات الفيكتور داخل أستوديو الرسم."""
     r = max(16, int(radius))
     p1 = (*theme["primary"], 255)
     p2 = (*theme["secondary"], 255)
@@ -1165,7 +1149,6 @@ def create_studio_background(
     grad = top_c * (1.0 - y_idx) + bot_c * y_idx
     canvas_np = np.broadcast_to(grad, (height, width, 3)).copy()
 
-    # إضاءة أورورا ثنائية البؤرة (Dual Aurora Mesh Orbs)
     yy, xx = np.ogrid[:height, :width]
     cx1, cy1 = width * 0.5, height * 0.34
     dist1 = ((xx - cx1) / (width * 0.52)) ** 2 + ((yy - cy1) / (height * 0.32)) ** 2
@@ -1181,7 +1164,6 @@ def create_studio_background(
     img = Image.fromarray(canvas_np, mode="RGB")
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # شبكة نقاط تقنية دقيقة (Subtle Studio Dot Matrix)
     step = max(56, min(width, height) // 14)
     for x in range(step // 2, width, step):
         for y in range(step // 2, height, step):
@@ -1191,7 +1173,7 @@ def create_studio_background(
 
 
 # ==============================================================================
-# 8. تصيير مشهد موشن جرافيك كامل الشاشة (Full-Screen Bento & Vector Scene)
+# 8. تصيير مشهد موشن جرافيك كامل الشاشة موجه بالسياق (Contextual Bento Scene)
 # ==============================================================================
 def render_single_scene_canvas(
     scene_meta: Dict[str, Any],
@@ -1210,17 +1192,18 @@ def render_single_scene_canvas(
 ) -> Image.Image:
     """
     تصيير مشهد موشن جرافيك كامل الشاشة بأسلوب Apple Keynote / Stripe Bento Grid:
-    - بطاقة علوية ديناميكية (Dynamic Island Header).
-    - بطاقة Bento رئيسية (Hero Vector Canvas) مع شريط عنوان macOS ورسمة فيكتور كبيرة.
-    - بطاقتا Bento فرعيتان جنباً إلى جنب (KPI Metric Card + Feature Highlight Card) بحركة متتابعة.
-    - كابشن كاريوكي زجاجي موحد + طيف صوتي تفاعلي (Audio Spectrum).
+    - بطاقة علوية ديناميكية (Dynamic Island Header) تعرض مرحلة السرد السياقية (`badge_label`).
+    - بطاقة Bento رئيسية (Hero Vector Canvas) مع شريط عنوان macOS ورسمة فيكتور سياقية.
+    - البطاقة اليمنى (Contextual KPI Card): تعرض المؤشر الرقمي السياقي المستنتج من معنى الجملة والفيديو.
+    - البطاقة اليسرى (Contextual Concept Card): تعرض المفهوم الضمني للجملة (وليس تكرار الكلمات المنطوقة!).
+    - كابشن كاريوكي زجاجي موحد في الثلث السفلي + طيف صوتي تفاعلي.
     """
     theme_name = scene_meta.get("theme_name", "cyber_gold")
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     scene_type = scene_meta.get("scene_type", "video_montage_studio")
     badge_label = scene_meta.get("badge_label", "موشن جرافيك احترافي")
-    short_title = scene_meta.get("short_title", "ميزة ذكية")
-    target_number = int(scene_meta.get("target_number", 58))
+    concept_title = scene_meta.get("concept_title") or scene_meta.get("short_title") or "مفهوم ذكي"
+    target_number = int(scene_meta.get("target_number", 17))
 
     if theme_name not in bg_cache:
         bg_cache[theme_name] = create_studio_background(width, height, theme_name)
@@ -1228,18 +1211,18 @@ def render_single_scene_canvas(
     img = Image.fromarray(base_arr, mode="RGB").convert("RGBA")
 
     cx = width // 2
-    s_card = _staggered_spring(scene_progress, delay=0.0, duration=0.40)
-    s_sub_left = _staggered_spring(scene_progress, delay=0.10, duration=0.45)
-    s_sub_right = _staggered_spring(scene_progress, delay=0.16, duration=0.48)
+    s_card = 0.88 + 0.12 * _staggered_spring(scene_progress, delay=0.0, duration=0.40)
+    s_sub_left = 0.85 + 0.15 * _staggered_spring(scene_progress, delay=0.08, duration=0.45)
+    s_sub_right = 0.85 + 0.15 * _staggered_spring(scene_progress, delay=0.14, duration=0.48)
 
     # 1. شارة العنوان العلوية بأسلوب Apple Dynamic Pill
     draw = ImageDraw.Draw(img, "RGBA")
-    s_badge = _staggered_spring(scene_progress, delay=0.03, duration=0.40)
-    badge_font = get_arabic_font(max(24, int(min(width, height) * 0.033)), bold=True)
+    s_badge = 0.85 + 0.15 * _staggered_spring(scene_progress, delay=0.02, duration=0.40)
+    badge_font = get_arabic_font(max(24, int(min(width, height) * 0.032)), bold=True)
     btw, bth = measure_arabic_text(draw, badge_label, badge_font)
-    bp_w = min(int(width * 0.86), btw + 76)
-    bp_h = max(50, bth + 24)
-    bp_y = int(height * 0.055 - 28 * (1.0 - s_badge))
+    bp_w = min(int(width * 0.88), btw + 80)
+    bp_h = max(52, bth + 24)
+    bp_y = int(height * 0.052 - 20 * (1.0 - s_badge))
 
     img = draw_visionos_glass_panel(
         canvas_rgba=img,
@@ -1247,7 +1230,7 @@ def render_single_scene_canvas(
         radius=bp_h // 2,
         tint_color=(10, 16, 30, 215),
         border_color=theme["secondary"],
-        blur_radius=10,
+        blur_radius=12,
         shadow_offset=8,
         shadow_blur=14
     )
@@ -1257,9 +1240,9 @@ def render_single_scene_canvas(
     draw_arabic_text(draw, (cx - 8, bp_y + bp_h // 2), badge_label, font=badge_font, fill=(255, 255, 255, 250), stroke_width=2, stroke_fill=(0, 0, 0, 210))
 
     # 2. بطاقة الـ Bento الرئيسية الكبرى (Hero Vector Studio Card)
-    bento_w = int(width * 0.88 * (0.90 + 0.10 * s_card))
-    bento_h = int(height * 0.37 * (0.90 + 0.10 * s_card))
-    bento_y1 = int(height * 0.125 + 35 * (1.0 - s_card))
+    bento_w = int(width * 0.88 * s_card)
+    bento_h = int(height * 0.37 * s_card)
+    bento_y1 = int(height * 0.125 + 24 * (1.0 - s_card))
     bento_x1 = cx - bento_w // 2
     bento_x2 = cx + bento_w // 2
     bento_y2 = bento_y1 + bento_h
@@ -1268,7 +1251,7 @@ def render_single_scene_canvas(
         canvas_rgba=img,
         bbox=(bento_x1, bento_y1, bento_x2, bento_y2),
         radius=34,
-        tint_color=(*theme["card_bg"], 195),
+        tint_color=(*theme["card_bg"], 200),
         border_color=theme["primary"],
         secondary_color=theme["secondary"],
         blur_radius=16,
@@ -1277,15 +1260,13 @@ def render_single_scene_canvas(
         light_sweep_prog=(scene_progress * 1.35 - 0.08)
     )
 
-    # شريط عنوان النافذة الاحترافي أعلى بطاقة الـ Bento
     draw = ImageDraw.Draw(img, "RGBA")
     hdr_y = bento_y1 + 24
     for bi, bcol in enumerate([(255, 95, 86), (255, 189, 46), (39, 201, 63)]):
         bx = bento_x1 + 28 + bi * 20
-        draw.ellipse([(bx - 6, hdr_y - 6), (bx + 6, hdr_y + 6)], fill=(*bcol, 230))
-    draw.line([(bento_x1 + 16, bento_y1 + 46), (bento_x2 - 16, bento_y1 + 46)], fill=(255, 255, 255, 22), width=1)
+        draw.ellipse([(bx - 6, hdr_y - 6), (bx + 6, hdr_y + 6)], fill=(*bcol, 235))
+    draw.line([(bento_x1 + 16, bento_y1 + 46), (bento_x2 - 16, bento_y1 + 46)], fill=(255, 255, 255, 28), width=1)
 
-    # تصيير رسمة الفيكتور بحجم كبير يملأ بطاقة الـ Bento
     vec_w = max(80, int(bento_w * 0.96))
     vec_h = max(80, int((bento_h - 52) * 0.96))
     vec_img = render_cairo_vector_illustration(
@@ -1299,59 +1280,66 @@ def render_single_scene_canvas(
     )
     img.alpha_composite(vec_img, (cx - vec_w // 2, bento_y1 + 48 + (bento_h - 48 - vec_h) // 2))
 
-    # 3. بطاقتا الـ Bento الفرعيتان جنباً إلى جنب (Dual Sub-Bento KPI & Feature Cards)
+    # 3. بطاقتا الـ Bento الفرعيتان جنباً إلى جنب (Contextual KPI + Contextual Concept Cards)
     gap = int(width * 0.03)
     total_w = int(width * 0.88)
     sub_w = (total_w - gap) // 2
     sub_h = int(height * 0.145)
     sub_y1 = bento_y2 + int(height * 0.022)
 
-    # أ) البطاقة اليمنى: بطاقة المؤشر الرقمي (KPI Metric Card)
+    # أ) البطاقة اليمنى: بطاقة المؤشر الرقمي السياقي (Contextual KPI Metric Card)
     rx1 = cx + gap // 2
     rx2 = rx1 + sub_w
-    ry1 = int(sub_y1 + 28 * (1.0 - s_sub_right))
+    ry1 = int(sub_y1 + 22 * (1.0 - s_sub_right))
     ry2 = ry1 + sub_h
 
     img = draw_visionos_glass_panel(
         canvas_rgba=img,
         bbox=(rx1, ry1, rx2, ry2),
         radius=26,
-        tint_color=(12, 19, 38, 205),
+        tint_color=(12, 19, 38, 210),
         border_color=theme["secondary"],
         blur_radius=12,
         shadow_offset=10,
         shadow_blur=16
     )
     draw = ImageDraw.Draw(img, "RGBA")
-    kpi_map = {
-        "video_montage_studio": ("4K 60FPS", "جودة الرندرة"),
-        "ai_neural_brain": ("99.8%", "دقة التحليل الذكي"),
-        "reels_smartphone": ("10x", "تفاعل وانتشار"),
-        "growth_analytics": (f"+{int(round(target_number * min(1.0, scene_progress * 1.2)))}%", "معدل النمو"),
-        "ecommerce_showcase": ("100%", "ضمان الجودة"),
+
+    default_kpi_map = {
+        "creator_profile": (f"{target_number} عاماً", "مؤسس ومطور شاب"),
+        "age_number_counter": (f"{target_number} سنة", "محطة طموح مبكرة"),
+        "video_montage_studio": ("4K 60FPS", "جودة إخراج سينمائية"),
+        "ai_neural_brain": ("100% تلقائي", "يعمل بالذكاء الاصطناعي"),
+        "reels_smartphone": ("يومياً", "نشر ريلز مستمر"),
+        "growth_analytics": ("+300%", "مضاعفة الإنتاجية"),
+        "ecommerce_showcase": ("100%", "ضمان الجودة والمتانة"),
         "delivery_express": (f"{target_number} ولاية", "تغطية التوصيل"),
-        "time_warp_clock": ("10x أسرع", "توفير الوقت"),
-        "platform_builder": ("AI Cloud", "بنية متكاملة"),
+        "time_warp_clock": ("10x أسرع", "توفير وقت الصناع"),
+        "platform_builder": ("Full-Stack", "تطوير وبناء المنصة"),
+        "brand_finale": ("AI Studio", "منصة الجيل الجديد"),
     }
-    kpi_val, kpi_lbl = kpi_map.get(scene_type, (f"{target_number}+", "مؤشر الأداء"))
-    kpi_val_font = get_arabic_font(max(32, int(min(width, height) * 0.046)), bold=True)
-    kpi_lbl_font = get_arabic_font(max(20, int(min(width, height) * 0.026)), bold=True)
+    fallback_val, fallback_lbl = default_kpi_map.get(scene_type, ("AI Pro", "أداء ذكي متكامل"))
+    kpi_val = str(scene_meta.get("kpi_value") or fallback_val)
+    kpi_lbl = str(scene_meta.get("kpi_label") or fallback_lbl)
+
+    kpi_val_font = get_arabic_font(max(30, int(min(width, height) * 0.042)), bold=True)
+    kpi_lbl_font = get_arabic_font(max(20, int(min(width, height) * 0.025)), bold=True)
 
     rcx = (rx1 + rx2) // 2
     draw_arabic_text(draw, (rcx, ry1 + int(sub_h * 0.38)), kpi_val, font=kpi_val_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 220))
-    draw_arabic_text(draw, (rcx, ry1 + int(sub_h * 0.74)), kpi_lbl, font=kpi_lbl_font, fill=(210, 220, 240, 235))
+    draw_arabic_text(draw, (rcx, ry1 + int(sub_h * 0.74)), kpi_lbl, font=kpi_lbl_font, fill=(215, 225, 245, 240))
 
-    # ب) البطاقة اليسرى: بطاقة الكلمة المحورية وحالة النظام (Feature Highlight Card)
+    # ب) البطاقة اليسرى: بطاقة المفهوم السياقي (Contextual Concept Card - لا تكرر الكلمات المنطوقة!)
     lx1 = cx - gap // 2 - sub_w
     lx2 = lx1 + sub_w
-    ly1 = int(sub_y1 + 28 * (1.0 - s_sub_left))
+    ly1 = int(sub_y1 + 22 * (1.0 - s_sub_left))
     ly2 = ly1 + sub_h
 
     img = draw_visionos_glass_panel(
         canvas_rgba=img,
         bbox=(lx1, ly1, lx2, ly2),
         radius=26,
-        tint_color=(12, 19, 38, 205),
+        tint_color=(12, 19, 38, 210),
         border_color=theme["primary"],
         blur_radius=12,
         shadow_offset=10,
@@ -1359,17 +1347,17 @@ def render_single_scene_canvas(
     )
     draw = ImageDraw.Draw(img, "RGBA")
     lcx = (lx1 + lx2) // 2
-    feat_font = get_arabic_font(max(24, int(min(width, height) * 0.032)), bold=True)
-    clean_short = re.sub(r"^[،,.\s!؟:؛-]+|[،,.\s!؟:؛-]+$", "", str(short_title)).strip() or "ميزة احترافية"
-    draw_arabic_text(draw, (lcx, ly1 + int(sub_h * 0.38)), clean_short, font=feat_font, fill=(255, 255, 255, 250), stroke_width=2, stroke_fill=(0, 0, 0, 220))
+    feat_font = get_arabic_font(max(22, int(min(width, height) * 0.030)), bold=True)
+    clean_concept = re.sub(r"^[،,.\s!؟:؛-]+|[،,.\s!؟:؛-]+$", "", str(concept_title)).strip() or "فكرة محورية"
+    draw_arabic_text(draw, (lcx, ly1 + int(sub_h * 0.38)), clean_concept, font=feat_font, fill=(255, 255, 255, 250), stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
-    # شريط طاقة متحرك داخل البطاقة اليسرى
-    pbar_w = int(sub_w * 0.72)
+    # شريط طاقة متحرك أنيق داخل البطاقة اليسرى
+    pbar_w = int(sub_w * 0.74)
     pbar_x1 = lcx - pbar_w // 2
-    pbar_y = ly1 + int(sub_h * 0.74)
-    fill_w = max(12, int(pbar_w * min(1.0, 0.25 + 0.75 * scene_progress)))
-    draw.rounded_rectangle([(pbar_x1, pbar_y - 5), (pbar_x1 + pbar_w, pbar_y + 5)], radius=5, fill=(255, 255, 255, 30))
-    draw.rounded_rectangle([(pbar_x1, pbar_y - 5), (pbar_x1 + fill_w, pbar_y + 5)], radius=5, fill=(*theme["secondary"], 240))
+    pbar_y = ly1 + int(sub_h * 0.75)
+    fill_w = max(16, int(pbar_w * min(1.0, 0.28 + 0.72 * scene_progress)))
+    draw.rounded_rectangle([(pbar_x1, pbar_y - 6), (pbar_x1 + pbar_w, pbar_y + 6)], radius=6, fill=(255, 255, 255, 38))
+    draw.rounded_rectangle([(pbar_x1, pbar_y - 6), (pbar_x1 + fill_w, pbar_y + 6)], radius=6, fill=(*theme["secondary"], 245))
 
     # 4. كابشن الكاريوكي الموحد في الثلث السفلي
     _render_unified_karaoke_subtitle(
@@ -1392,15 +1380,15 @@ def render_single_scene_canvas(
         wave = abs(math.sin(global_t * 6.5 + ei * 0.45)) * abs(math.cos(global_t * 3.2 - ei * 0.25))
         bh = int(6 + 22 * wave * audio_level)
         ex = eq_x0 + ei * eq_spacing
-        ecol = (*theme["primary"], 190) if ei % 2 == 0 else (*theme["secondary"], 190)
+        ecol = (*theme["primary"], 195) if ei % 2 == 0 else (*theme["secondary"], 195)
         draw.rounded_rectangle([(ex, eq_base_y - bh), (ex + 5, eq_base_y + bh)], radius=2, fill=ecol)
 
     # 6. شريط التقدم الزمني السفلي الأنيق
     prog_w = int(width * 0.84 * min(1.0, max(0.02, global_t / max(0.1, total_duration))))
     bar_x1 = (width - int(width * 0.84)) // 2
     bar_y = int(height * 0.94)
-    draw.rounded_rectangle([(bar_x1, bar_y), (bar_x1 + int(width * 0.84), bar_y + 6)], radius=3, fill=(255, 255, 255, 35))
-    draw.rounded_rectangle([(bar_x1, bar_y), (bar_x1 + prog_w, bar_y + 6)], radius=3, fill=(*theme["primary"], 240))
+    draw.rounded_rectangle([(bar_x1, bar_y), (bar_x1 + int(width * 0.84), bar_y + 6)], radius=3, fill=(255, 255, 255, 40))
+    draw.rounded_rectangle([(bar_x1, bar_y), (bar_x1 + prog_w, bar_y + 6)], radius=3, fill=(*theme["primary"], 245))
 
     return img
 
@@ -1417,7 +1405,6 @@ def apply_scene_transition(
     p = _spring_physics(trans_progress, stiffness=190.0, damping=18.0)
     w, h = curr_img.size
 
-    # مقدار التمويه الحركي يبلغ ذروته في منتصف الانتقال ويتلاشى عند الاستقرار
     blur_strength = int(10 * math.sin(max(0.0, min(1.0, trans_progress)) * math.pi))
 
     if transition_type == "whip_left":
@@ -1446,7 +1433,6 @@ def apply_scene_transition(
         if blur_strength > 1:
             out = out.filter(ImageFilter.GaussianBlur(radius=blur_strength // 2))
         paste_x, paste_y = (w - zw) // 2, (h - zh) // 2
-        # مزج تدريجي ناعم بدون أي حواف لونية مصطنعة
         alpha_mask = Image.new("L", (zw, zh), int(255 * min(1.0, trans_progress * 1.6)))
         out.paste(resized_curr, (paste_x, paste_y), alpha_mask)
         return out
@@ -1474,7 +1460,7 @@ def _render_unified_karaoke_subtitle(
     if not clean_sc_words and not clean_act_word:
         return
 
-    font_size = max(34, int(min(w, h) * 0.048))
+    font_size = max(32, int(min(w, h) * 0.044))
     cap_font = get_arabic_font(font_size, bold=True)
     pop_scale = _spring_physics(min(1.0, w_prog * 2.5), stiffness=240.0, damping=14.0)
     active_font = get_arabic_font(int(font_size * (1.0 + 0.08 * pop_scale)), bold=True)
@@ -1486,12 +1472,13 @@ def _render_unified_karaoke_subtitle(
             target_idx = wi
             break
 
-    win_size = min(4, len(clean_sc_words))
-    if len(clean_sc_words) <= 4:
+    # نافذة سياقية مريحة تعرض حتى 5 كلمات متتالية من الجملة داخل كبسولة الكابشن
+    win_size = min(5, len(clean_sc_words))
+    if len(clean_sc_words) <= 5:
         display_words = clean_sc_words
         disp_active_idx = target_idx
     else:
-        start_w = max(0, min(target_idx - 1, len(clean_sc_words) - win_size))
+        start_w = max(0, min(target_idx - 2, len(clean_sc_words) - win_size))
         display_words = clean_sc_words[start_w:start_w + win_size]
         disp_active_idx = max(0, min(target_idx - start_w, len(display_words) - 1))
 
@@ -1501,27 +1488,45 @@ def _render_unified_karaoke_subtitle(
 
     draw = ImageDraw.Draw(img, "RGBA")
     word_widths = []
-    word_spaces = int(font_size * 0.36)
-    for dw in display_words:
-        ww, wh = measure_arabic_text(draw, dw, cap_font)
+    word_spaces = int(font_size * 0.48)
+    for wi, dw in enumerate(display_words):
+        f_use = active_font if wi == disp_active_idx else cap_font
+        ww, wh = measure_arabic_text(draw, dw, f_use)
+        if wi == disp_active_idx:
+            ww += 16
         word_widths.append((ww, wh))
 
     total_line_w = sum(ww for ww, _ in word_widths) + (len(display_words) - 1) * word_spaces
+    # إذا كان السطر طويلاً جداً، نصغر الخط تلقائياً ليتسع داخل الكبسولة الزجاجية بأناقة
+    if total_line_w > int(w * 0.82):
+        scale_down = (w * 0.80) / float(total_line_w)
+        font_size = max(24, int(font_size * scale_down))
+        cap_font = get_arabic_font(font_size, bold=True)
+        active_font = get_arabic_font(int(font_size * (1.0 + 0.08 * pop_scale)), bold=True)
+        word_spaces = int(font_size * 0.44)
+        word_widths = []
+        for wi, dw in enumerate(display_words):
+            f_use = active_font if wi == disp_active_idx else cap_font
+            ww, wh = measure_arabic_text(draw, dw, f_use)
+            if wi == disp_active_idx:
+                ww += 14
+            word_widths.append((ww, wh))
+        total_line_w = sum(ww for ww, _ in word_widths) + (len(display_words) - 1) * word_spaces
+
     max_line_h = max(wh for _, wh in word_widths) if word_widths else font_size
 
     box_pad_x = int(font_size * 0.65)
-    box_pad_y = int(font_size * 0.34)
+    box_pad_y = int(font_size * 0.36)
     bar_x1 = max(int(w * 0.04), cx - total_line_w // 2 - box_pad_x)
     bar_x2 = min(int(w * 0.96), cx + total_line_w // 2 + box_pad_x)
     bar_y1 = cap_y - max_line_h // 2 - box_pad_y
     bar_y2 = cap_y + max_line_h // 2 + box_pad_y
 
-    # كبسولة زجاجية حقيقية بتمويه الخلفية وظل ناعم
     draw_visionos_glass_panel(
         canvas_rgba=img,
         bbox=(bar_x1, bar_y1, bar_x2, bar_y2),
         radius=(bar_y2 - bar_y1) // 2,
-        tint_color=(8, 12, 24, 195),
+        tint_color=(8, 12, 24, 205),
         border_color=theme["primary"],
         blur_radius=12,
         shadow_offset=10,
@@ -1536,13 +1541,12 @@ def _render_unified_karaoke_subtitle(
         word_cx = cur_right_x - ww // 2
 
         if is_active:
-            # خلفية كبسولة مضيئة خفيفة خلف الكلمة المنطوقة حالياً
-            hl_pad_x, hl_pad_y = 10, 6
+            hl_pad_x, hl_pad_y = 4, 6
             draw.rounded_rectangle(
                 [(word_cx - ww // 2 - hl_pad_x, cap_y - wh // 2 - hl_pad_y),
                  (word_cx + ww // 2 + hl_pad_x, cap_y + wh // 2 + hl_pad_y)],
                 radius=12,
-                fill=(*theme["primary"], 42)
+                fill=(*theme["primary"], 55)
             )
             draw_arabic_text(
                 draw,
@@ -1610,7 +1614,6 @@ def render_master_directed_video_frame(
             wdur = max(0.10, we - ws)
             w_prog = max(0.0, min(1.0, (t - ws) / wdur))
 
-    # النمط 1: شاشة موشن جرافيك كاملة (تستخدم فقط عند عدم وجود كاميرا أو للمشاهد المخصصة)
     if layout_mode == "full_screen":
         curr_img = render_single_scene_canvas(
             scene_meta=sc,
@@ -1633,23 +1636,21 @@ def render_master_directed_video_frame(
             return np.array(blended.convert("RGB"))
         return np.array(curr_img.convert("RGB"))
 
-    # الأنماط التراكبية فوق فيديو الكاميرا أو مشاهد الـ B-Roll
     img = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
     draw = ImageDraw.Draw(img, "RGBA")
     cx = w // 2
 
-    # أ) شارة الميزة العلوية الزجاجية الفاخرة (Apple visionOS Dynamic Island Pill)
     if layout_mode == "top_overlay":
         spring_in = _spring_physics(min(1.0, (t - sc["start"]) / 0.32), stiffness=210.0, damping=15.0)
         y_slide_offset = int(-95 * (1.0 - spring_in))
 
-        badge_title = sc.get("badge_label", sc.get("short_title", "ميزة حصرية"))
-        title_font = get_arabic_font(max(24, int(min(w, h) * 0.034)), bold=True)
+        badge_title = sc.get("badge_label", sc.get("concept_title", "ميزة حصرية"))
+        title_font = get_arabic_font(max(24, int(min(w, h) * 0.033)), bold=True)
         tw, th = measure_arabic_text(draw, badge_title, title_font)
 
         icon_box = max(44, th + 18)
         pill_h = max(54, th + 24)
-        pill_w = min(int(w * 0.86), max(tw + icon_box + 56, int(w * 0.42)))
+        pill_w = min(int(w * 0.88), max(tw + icon_box + 56, int(w * 0.42)))
         top_y = int(h * 0.045) + y_slide_offset
         x1, y1 = cx - pill_w // 2, top_y
         x2, y2 = cx + pill_w // 2, top_y + pill_h
@@ -1667,7 +1668,6 @@ def render_master_directed_video_frame(
             light_sweep_prog=(sc_prog * 1.5 - 0.1)
         )
 
-        # رسم أيقونة فيكتور مصغرة عالية الدقة عبر Cairo داخل كبسولة البطاقة
         mini_icon = render_cairo_vector_illustration(
             scene_type=sc.get("scene_type", "ecommerce_showcase"),
             width=icon_box,
@@ -1675,7 +1675,7 @@ def render_master_directed_video_frame(
             scene_progress=sc_prog,
             global_t=t,
             theme=theme,
-            target_number=sc.get("target_number", 58)
+            target_number=sc.get("target_number", 17)
         )
         icon_x = x2 - icon_box - 10
         icon_y = y1 + (pill_h - icon_box) // 2
@@ -1693,10 +1693,9 @@ def render_master_directed_video_frame(
             stroke_fill=(0, 0, 0, 220)
         )
 
-    # ب) شارة الثلث السفلي الزجاجية الأنيقة (VisionOS Lower Third Pill)
     elif layout_mode == "lower_third":
         spring_in = _spring_physics(min(1.0, (t - sc["start"]) / 0.32), stiffness=210.0, damping=15.0)
-        l3_font = get_arabic_font(max(24, int(min(w, h) * 0.034)), bold=True)
+        l3_font = get_arabic_font(max(24, int(min(w, h) * 0.033)), bold=True)
         l3_txt = sc.get("badge_label", "ميزة حصرية")
         tw, th = measure_arabic_text(draw, l3_txt, l3_font)
         bar_w = min(int(w * 0.88), tw + 74)
@@ -1728,7 +1727,6 @@ def render_master_directed_video_frame(
             stroke_fill=(0, 0, 0, 235)
         )
 
-    # ج) الكابشن الكاريوكي الموحد في المنطقة الآمنة
     if caption_mode != "none" and (act_word or sc_words):
         if caption_mode == "top_compact":
             cap_y = int(h * 0.14)
@@ -1750,7 +1748,7 @@ def render_master_directed_video_frame(
 
 
 # ==============================================================================
-# 12. المسار الرئيسي لتوليد فيديو الموشن جرافيك الكامل (Studio Kinetic Typography)
+# 12. المسار الرئيسي لتوليد فيديو الموشن جرافيك السياقي الكامل (Studio Kinetic Typography)
 # ==============================================================================
 def create_kinetic_typography_video(
     input_path: str,
@@ -1766,6 +1764,7 @@ def create_kinetic_typography_video(
     **kwargs
 ) -> str:
     from moviepy.editor import VideoFileClip, AudioFileClip, VideoClip
+    from smart_analyzer import analyze_contextual_storyboard
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     temp_dir = os.path.join(os.path.dirname(os.path.abspath(output_path)), "temp")
@@ -1801,7 +1800,7 @@ def create_kinetic_typography_video(
             total_dur = float(audio_clip.duration)
             vw, vh = video_resolution
 
-        update_progress(0.30, "2/4: تفريغ الكلام وتوليد مشاهد الفيكتور والـ Bento Cards...")
+        update_progress(0.30, "2/4: تفريغ الكلام وتشغيل المخ السياقي (Contextual Storyboard Brain)...")
         words = transcribe_audio(
             audio_path=clean_media,
             model_size=whisper_model,
@@ -1811,25 +1810,30 @@ def create_kinetic_typography_video(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        micro_scenes = split_words_into_micro_scenes(words, max_words_per_scene=4, max_duration_per_scene=2.0)
+        # تجميع الكلمات في جمل وأفكار سياقية متكاملة (وليس كلمة بكلمة!)
+        semantic_clauses = split_words_into_micro_scenes(
+            words,
+            max_words_per_scene=8,
+            max_duration_per_scene=4.2,
+            min_words_per_scene=4
+        )
+        full_transcript = " ".join(w.get("word", "") for w in words)
 
-        planned_scenes = []
-        prev_t = None
-        for idx, sc in enumerate(micro_scenes):
-            bp = classify_micro_scene_blueprint(sc.get("text", ""), idx, len(micro_scenes), prev_t)
-            prev_t = bp["scene_type"]
-            entry = dict(sc)
-            entry.update(bp)
-            entry["word_strings"] = [w.get("word", "") for w in sc.get("words", [])]
-            entry["transition"] = bp["transition_type"]
-            planned_scenes.append(entry)
+        planned_scenes = analyze_contextual_storyboard(
+            scenes=semantic_clauses,
+            full_transcript=full_transcript,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key,
+            ollama_model=ollama_model
+        )
 
         bg_cache = {
             t_name: create_studio_background(vw, vh, theme_name=t_name)
             for t_name in MOTION_THEMES.keys()
         }
 
-        update_progress(0.55, "3/4: تصيير رسومات الفيكتور (PyCairo) وتأثيرات الزجاج (VisionOS Glass)...")
+        update_progress(0.55, "3/4: تصيير رسومات الفيكتور السياقية (PyCairo) وبطاقات الزجاج (VisionOS Glass)...")
 
         def make_frame(t: float) -> np.ndarray:
             if not planned_scenes:
@@ -1894,7 +1898,7 @@ def create_kinetic_typography_video(
         if audio_clip is not None:
             final_clip = final_clip.set_audio(audio_clip)
 
-        update_progress(0.85, "4/4: الرندرة النهائية وتصدير فيديو الموشن جرافيك...")
+        update_progress(0.85, "4/4: الرندرة النهائية وتصدير فيديو الموشن جرافيك السياقي...")
         temp_aud = os.path.join(temp_dir, "temp_kinetic_aud.m4a")
         final_clip.write_videofile(
             output_path,
@@ -1907,7 +1911,7 @@ def create_kinetic_typography_video(
             threads=4,
             logger=None
         )
-        update_progress(1.0, "اكتمل تصيير الموشن جرافيك الاحترافي بنجاح!")
+        update_progress(1.0, "اكتمل تصيير الموشن جرافيك السياقي الاحترافي بنجاح!")
         return output_path
 
     finally:

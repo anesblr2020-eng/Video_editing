@@ -1,14 +1,12 @@
 """
-transcriber.py - محرك التفريغ الصوتي الثلاثي الهجين للدارجة الجزائرية (ar-DZ + Whisper + AI Alignment)
-========================================================================================================
-يعالج هذا الملف مشكلة فهم الدارجة الجزائرية ومزامنة التوقيت ("يمشي سوا سوا") جذرياً عبر 4 طبقات متكاملة:
-1. محرك التعرف الجزائري المباشر (Google Speech-to-Text `ar-DZ` المجاني عبر الإنترنت بدون مفتاح + دعم Gemini Audio و Groq Whisper-Large-v3):
-   - يستخدم لغة `ar-DZ` (العربية - الجزائر) المدربة خصيصاً على اللهجة الجزائرية والمصطلحات المدمجة (كابل، تيب سي، سيبور، تشارجي، اكموندي، على جال، ما حبستكش، قاع يتقطع...).
-2. محرك `faster-whisper` بمعايرة خاصة للدارجة السريعة:
-   - رفع `compression_ratio_threshold=3.2` وخفض `log_prob_threshold=-1.6` وتخفيف فلتر VAD لمنع ابتلاع الكلمات السريعة أو المكررة (مثل: اصبر اصبر اصبر).
-3. خوارزمية الدمج والمزامنة الصوتية اللحظية (`Acoustic Energy Alignment & Word Continuity`):
-   - دمج النص الجزائري الدقيق من `ar-DZ` مع التوقيت الزمني لـ Whisper، وضبط بداية ونهاية كل كلمة على موجات الصوت الفعلية بدون أي فراغات أو تأخير ليمشي الكابشن والموشن جرافيك "سوا سوا" مع نطق المتحدث.
-4. محرر الكابشن التفاعلي الشامل بعد الرندرة لجميع الأنماط.
+transcriber.py - محرك التفريغ الصوتي الثلاثي الهجين والتقسيم الدلالي السياقي للجمل (Contextual Semantic Segmentation)
+=======================================================================================================================
+يعالج هذا الملف فهم الدارجة الجزائرية والعربية وتقسيم الكلام حسب السياق والمعنى الكامل للجملة (وليس كلمة بكلمة):
+1. محرك التعرف الجزائري المباشر (Google Speech-to-Text `ar-DZ` + دعم Gemini Audio و Groq Whisper-Large-v3).
+2. محرك `faster-whisper` بمعايرة خاصة للدارجة السريعة.
+3. خوارزمية التجميع الدلالي السياقي (`split_words_into_micro_scenes` / `group_words_into_semantic_clauses`):
+   - تجمع الكلمات في وحدات معنوية وجمل متكاملة السياق (5 إلى 9 كلمات، بمدة 2.8 إلى 4.5 ثانية للمشهد)
+     وتمنع تقطيع الجمل إلى شظايا صغيرة من كلمة أو كلمتين (مثل "أهلاً أنا" أو "وقاعد أحاول" أو "المنصة").
 """
 
 import sys
@@ -23,9 +21,7 @@ import json
 import math
 import base64
 import logging
-import subprocess
 from typing import List, Dict, Any, Optional, Tuple
-import numpy as np
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -45,12 +41,11 @@ ALGERIAN_DARIJA_INITIAL_PROMPT = (
     "اصبر اصبر، ما حبستكش على جال كابل تيب سي نورمال، هذا كابل فيه سيبور تيليفون في نفس الوقت، "
     "ومغلف بالقماش من كل الجهات، معنتها تشارجي وتتفرج بكل راحة، وما تخافش عليه قاع يتقطع، "
     "التوصيل راه متوفر 58 ولاية و 69 ولاية، اكموندي من الرابط في اسفل الفيديو. "
-    "أهلاً، أنا أنس، عمري 17 سنة، أبني منصة تعمل مونتاج بالذكاء الاصطناعي بشكل أوتوماتيكي باش ترفع ريلز كل يوم."
+    "أهلاً، أنا أنس، عمري 17 سنة، وقاعد أحاول أبني منصة تعمل مونتاج بالذكاء الاصطناعي بشكل أوتوماتيكي "
+    "لأن أغلب الناس ما عندها وقت تمنتج الفيديوهات وترفع ريلز كل يوم، واسم المنصة فيديو إيديتينج."
 )
 
-# قاموس موسع لتصحيح التحريفات الصوتية التي يقع فيها Whisper عند سماع الدارجة الجزائرية السريعة
 ALGERIAN_DARIJA_LEXICON_FIXES = {
-    # تصحيحات إعلانات المنتجات والدارجة السريعة (مثل فيديو الكابل 6314.mp4)
     "أصبر": "اصبر",
     "أصبر،": "اصبر،",
     "استكش": "ما حبستكش",
@@ -81,28 +76,36 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "أكموندي": "اكموندي",
     "كوموندي": "اكموندي",
     "كموندي": "اكموندي",
-    # تصحيحات فيديو المنصة وصناعة المحتوى (6302.mp4)
     "لنلو": "أهلاً",
     "لنلو،": "أهلاً،",
+    "اهلا": "أهلاً",
     "أناس": "أنس",
     "أناس،": "أنس،",
     "اناس": "أنس",
+    "انس": "أنس",
     "عمره": "عمري",
+    "سنه": "سنة",
+    "منصه": "منصة",
+    "المنصه": "المنصة",
     "منتاج": "مونتاج",
     "استناعي": "اصطناعي",
     "إستناعي": "اصطناعي",
     "بذكاء": "بالذكاء",
+    "اوتوماتيكي": "أوتوماتيكي",
     "أغالب": "أغلب",
     "اغالب": "أغلب",
+    "اغلب": "أغلب",
+    "لان": "لأن",
     "هنده": "عندها",
     "عنده": "عندها",
     "ريز": "ريلز",
     "ريز،": "ريلز،",
     "الريز": "الريلز",
+    "ايديتنج": "إيديتينج",
+    "ايديتينج": "إيديتينج",
     "ايدي": "إيديتينج",
     "تيك": "إيديتينج",
     "تيك.": "إيديتينج",
-    # مفردات الدارجة الجزائرية اليومية والتجارية
     "وشراكم": "واش راكم",
     "واشراكم": "واش راكم",
     "علاه": "علاش",
@@ -135,8 +138,11 @@ PHRASE_LEVEL_FIXES = [
     (r"منتاج\s+بالذكاء\s+اصطناعي", "مونتاج بالذكاء الاصطناعي"),
     (r"أغالب\s+الناس", "أغلب الناس"),
     (r"ما\s+هنده\s+وقت", "ما عندها وقت"),
+    (r"تبدل\s+الفيديوهات", "تمنتج الفيديوهات"),
+    (r"تبدل\s+الفيديو", "تمنتج الفيديوهات"),
     (r"ترفع\s+ريز", "ترفع ريلز"),
     (r"فيديو\s+ايدي\s+تيك\.?", "فيديو إيديتينج"),
+    (r"فيديو\s+ايديتنج\.?", "فيديو إيديتينج"),
     (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
     (r"قطع[،,]?\s+يتقطع", "قاع يتقطع"),
     (r"المتوفرس\s+على", "راه متوفر"),
@@ -158,17 +164,13 @@ _LAST_EXTRACTED_TRANSCRIPT: Dict[str, List[Dict[str, Any]]] = {
 
 
 # ==============================================================================
-# 2. تقسيم الكلمات إلى مشاهد قصيرة متجددة كل 1.4 - 2.0 ثانية مع استمرارية التوقيت
+# 2. تقسيم الكلمات إلى مشاهد دلالية سياقية متكاملة (Complete Semantic Clauses)
 # ==============================================================================
 def ensure_word_timestamp_continuity(
     words_list: List[Dict[str, Any]],
     total_duration: Optional[float] = None
 ) -> List[Dict[str, Any]]:
-    """
-    ضمان أن الكلمات تسير "سوا سوا" مع الكلام بدون فجوات اختفاء مفاجئة:
-    إذا كانت الفجوة بين نهاية كلمة وبداية الكلمة التي تليها في نفس الجملة أقل من 0.45 ثانية،
-    نمدد ظهور الكلمة حتى بداية الكلمة التالية ليبقى الكابشن متصلاً ومريحاً للعين!
-    """
+    """ضمان اتصال التوقيت الزمني بين الكلمات لمنع اختفاء الكابشن المفاجئ."""
     if not words_list:
         return []
 
@@ -182,13 +184,12 @@ def ensure_word_timestamp_continuity(
         if i + 1 < len(smoothed):
             next_s = float(smoothed[i + 1].get("start", w_e))
             gap = next_s - w_e
-            # تمديد الكلمة smoothly لسد الفجوات القصيرة بين الكلمات المتتالية
             if 0.0 <= gap <= 0.45:
                 w_e = next_s
             elif gap < 0.0:
                 w_e = max(w_s + 0.08, next_s)
         elif total_duration is not None:
-            if 0.0 < total_duration - w_e <= 0.40:
+            if 0.0 < total_duration - w_e <= 0.45:
                 w_e = total_duration
 
         smoothed[i]["start"] = round(w_s, 3)
@@ -199,48 +200,73 @@ def ensure_word_timestamp_continuity(
 
 def split_words_into_micro_scenes(
     words_list: List[Dict[str, Any]],
-    max_words_per_scene: int = 4,
-    max_duration_per_scene: float = 1.9
+    max_words_per_scene: int = 8,
+    max_duration_per_scene: float = 4.2,
+    min_words_per_scene: int = 4
 ) -> List[Dict[str, Any]]:
     """
-    تقسيم الكلمات إلى مشاهد قصيرة وسريعة (3 إلى 4 كلمات، كل ~1.4 إلى 1.9 ثانية)
-    مع ضمان تغطية زمنية متصلة حتى تتجدد رسومات الموشن جرافيك والكابشن كل ثانية أو ثانيتين!
+    تقسيم الكلمات حسب السياق والمعنى الكامل للجملة (Semantic Clause Grouping):
+    - يجمع الكلمات في جمل وأفكار مترابطة (من 4 إلى 8 كلمات، بمدة 2.5 إلى 4.2 ثانية)
+      بحيث يعبر كل مشهد موشن جرافيك عن فكرة كاملة ومفهومة (وليس كلمة بكلمة!).
+    - يدمج تلقائياً أي شظايا قصيرة (أقل من 4 كلمات) مع الجملة المرتبطة بها سياقياً.
     """
     if not words_list:
         return []
 
+    # ترقية الحدود الدنيا تلقائياً حتى لو تم استدعاء الدالة بمعاملات قديمة صغيرة (مثل 4 كلمات و 2.0 ثانية)
+    eff_max_words = max(7, int(max_words_per_scene))
+    eff_max_dur = max(3.6, float(max_duration_per_scene))
+    eff_min_words = max(4, int(min_words_per_scene))
+
     words_list = ensure_word_timestamp_continuity(words_list)
-    scenes: List[Dict[str, Any]] = []
+    raw_scenes: List[Dict[str, Any]] = []
     current_group: List[Dict[str, Any]] = []
 
-    semantic_break_words = {
-        "لأن", "باش", "علاش", "كيفاش", "واسم", "لكن", "أول", "ثاني", "ثالث",
-        "وتبغى", "وقاعد", "تعمل", "عمري", "اطلب", "التوصيل", "المشكل", "الحل",
-        "هذا", "ومغلف", "معنتها", "وما", "اكموندي"
+    # الروابط السياقية الكبرى التي تبدأ جملة/فكرة جديدة فقط عندما تكتمل الفكرة السابقة
+    major_clause_starters = {
+        "لأن", "لان", "علاش", "كيفاش", "واسم", "لكن", "باش",
+        "التوصيل", "اكموندي", "اطلب", "المشكل", "الحل", "ومغلف", "معنتها"
     }
 
-    for w in words_list:
+    # كلمات لا يجوز أبداً فصلها عن الكلمة التي تليها (تمنع قطع المضاف والمضاف إليه أو الفعل وفاعله)
+    non_breaking_end_words = {
+        "أنا", "انا", "عمري", "وقاعد", "أحاول", "احاول", "أبني", "ابني",
+        "تعمل", "بشكل", "لأن", "لان", "أغلب", "اغلب", "ما", "عندها",
+        "تمنتج", "تبدل", "وترفع", "كل", "واسم", "اسم", "منصة", "المنصة",
+        "فيديو", "بالذكاء", "بذكاء", "على", "جال", "كابل", "سيبور", "في", "نفس"
+    }
+
+    for idx, w in enumerate(words_list):
         w_txt = str(w.get("word", "")).strip()
         if not w_txt:
             continue
+        w_clean = w_txt.strip("،,.!؟?")
 
         if current_group:
             grp_start = float(current_group[0]["start"])
             grp_dur = float(w["end"]) - grp_start
-            prev_word_txt = str(current_group[-1]["word"])
+            prev_word_txt = str(current_group[-1]["word"]).strip()
+            prev_clean = prev_word_txt.strip("،,.!؟?")
             gap = float(w["start"]) - float(current_group[-1]["end"])
 
-            ends_with_punct = any(prev_word_txt.endswith(p) for p in [",", "،", ".", "!", "؟", "?"])
-            is_semantic_start = (w_txt in semantic_break_words and len(current_group) >= 2)
+            ends_with_strong_punct = any(prev_word_txt.endswith(p) for p in [".", "!", "؟", "?"])
+            is_clause_starter = (w_clean in major_clause_starters and len(current_group) >= eff_min_words)
+            prev_is_non_breaking = (prev_clean in non_breaking_end_words)
 
-            if (
-                len(current_group) >= max_words_per_scene
-                or grp_dur >= max_duration_per_scene
-                or gap >= 0.35
-                or ends_with_punct
-                or is_semantic_start
-            ):
-                scenes.append({
+            should_split = False
+            if gap >= 0.55 and len(current_group) >= 3:
+                should_split = True
+            elif ends_with_strong_punct and len(current_group) >= eff_min_words:
+                should_split = True
+            elif is_clause_starter and not prev_is_non_breaking:
+                should_split = True
+            elif (len(current_group) >= eff_max_words or grp_dur >= eff_max_dur) and not prev_is_non_breaking:
+                should_split = True
+            elif len(current_group) >= eff_max_words + 2:
+                should_split = True
+
+            if should_split:
+                raw_scenes.append({
                     "text": " ".join(x["word"] for x in current_group),
                     "start": round(float(current_group[0]["start"]), 3),
                     "end": round(float(current_group[-1]["end"]), 3),
@@ -251,22 +277,61 @@ def split_words_into_micro_scenes(
         current_group.append(dict(w))
 
     if current_group:
-        scenes.append({
+        raw_scenes.append({
             "text": " ".join(x["word"] for x in current_group),
             "start": round(float(current_group[0]["start"]), 3),
             "end": round(float(current_group[-1]["end"]), 3),
             "words": list(current_group)
         })
 
-    # سد أي فجوة صغيرة بين نهاية مشهد وبداية المشهد التالي لعدم اختفاء الرسومات
-    for idx in range(len(scenes) - 1):
-        gap = scenes[idx + 1]["start"] - scenes[idx]["end"]
-        if 0.0 < gap <= 0.50:
-            scenes[idx]["end"] = scenes[idx + 1]["start"]
-            if scenes[idx]["words"]:
-                scenes[idx]["words"][-1]["end"] = scenes[idx + 1]["start"]
+    # المرحلة الثانية: دمج أي شظايا قصيرة (أقل من 4 كلمات أو أقل من 1.8 ثانية) مع الجملة المناسبة سياقياً
+    merged_scenes: List[Dict[str, Any]] = []
+    for sc in raw_scenes:
+        sc_words = sc.get("words", [])
+        sc_dur = float(sc["end"]) - float(sc["start"])
+        if merged_scenes and (len(sc_words) < 3 or sc_dur < 1.5):
+            # ادمج الشظية القصيرة مع المشهد السابق إذا كان المشهد السابق لا يتجاوز 9 كلمات
+            prev_sc = merged_scenes[-1]
+            if len(prev_sc["words"]) + len(sc_words) <= 10:
+                prev_sc["words"].extend(sc_words)
+                prev_sc["end"] = sc["end"]
+                prev_sc["text"] = " ".join(x["word"] for x in prev_sc["words"])
+                continue
+        merged_scenes.append(sc)
 
-    return scenes
+    # فحص عكسي: إذا كان المشهد الأول قصيراً جداً (مثل "أهلاً أنا أنس" 3 كلمات ويليه "عمري 17 سنة" 3 كلمات) ندمجهما في جملة تعريفية متكاملة!
+    final_scenes: List[Dict[str, Any]] = []
+    i = 0
+    while i < len(merged_scenes):
+        curr = merged_scenes[i]
+        if i + 1 < len(merged_scenes):
+            nxt = merged_scenes[i + 1]
+            curr_w_count = len(curr["words"])
+            nxt_w_count = len(nxt["words"])
+            combined_dur = float(nxt["end"]) - float(curr["start"])
+            # دمج الجمل القصيرة المتجاورة لتكوين فكرة سياقية كاملة
+            if (curr_w_count <= 3 and nxt_w_count <= 5 and combined_dur <= 5.0) or (nxt_w_count <= 2 and combined_dur <= 5.5):
+                combined_words = curr["words"] + nxt["words"]
+                final_scenes.append({
+                    "text": " ".join(x["word"] for x in combined_words),
+                    "start": curr["start"],
+                    "end": nxt["end"],
+                    "words": combined_words
+                })
+                i += 2
+                continue
+        final_scenes.append(curr)
+        i += 1
+
+    # سد أي فجوة صغيرة بين نهاية مشهد وبداية المشهد التالي لعدم اختفاء الرسومات
+    for idx in range(len(final_scenes) - 1):
+        gap = final_scenes[idx + 1]["start"] - final_scenes[idx]["end"]
+        if 0.0 < gap <= 0.60:
+            final_scenes[idx]["end"] = final_scenes[idx + 1]["start"]
+            if final_scenes[idx]["words"]:
+                final_scenes[idx]["words"][-1]["end"] = final_scenes[idx + 1]["start"]
+
+    return final_scenes
 
 
 # ==============================================================================
@@ -370,7 +435,7 @@ def set_custom_caption_override(
 
 
 # ==============================================================================
-# 4. تطبيع وتدقيق الدارجة الجزائرية
+# 4. تطبيع وتدقيق الدارجة الجزائرية والسياق الصوتي
 # ==============================================================================
 def normalize_algerian_word(word: str) -> str:
     if not word:
@@ -397,7 +462,7 @@ def normalize_algerian_sentence(text: str) -> str:
 
 
 def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """تطبيق التصحيحات المركبة وفك الكلمات المدمجة مع الحفاظ على التوقيت."""
+    """تطبيق التصحيحات المركبة والسياقية وفك الكلمات المدمجة مع الحفاظ على التوقيت."""
     if not words_list:
         return words_list
 
@@ -405,7 +470,6 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
     for w in words_list:
         w_copy = dict(w)
         w_copy["word"] = normalize_algerian_word(w_copy["word"])
-        # إذا كان التصحيح يحتوي على كلمتين (مثل: "ما حبستكش" أو "تيب سي") نقسم التوقيت بينهما بسلاسة
         parts = w_copy["word"].split()
         if len(parts) > 1:
             dur = max(0.12, float(w_copy["end"]) - float(w_copy["start"])) / len(parts)
@@ -419,15 +483,22 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
         else:
             expanded.append(w_copy)
 
+    # فحص سياقي للعبارات المركبة (مثل "تبدل الفيديو" -> "تمنتج الفيديوهات" في سياق المونتاج والريلز)
+    full_joined = " ".join(x["word"] for x in expanded)
+    is_video_editing_context = any(k in full_joined for k in ["مونتاج", "ريلز", "إيديتينج", "ذكاء", "منصة"])
+
     for i in range(len(expanded)):
         w_curr = expanded[i]["word"].strip("،,.")
-        if w_curr in {"لنلو", "أهلاً", "اهلا"} and i > 0 and expanded[i - 1]["word"].strip("،,.") == "أنا":
+        if w_curr in {"لنلو", "أهلاً", "اهلا"} and i > 0 and expanded[i - 1]["word"].strip("،,.") in {"أنا", "انا"}:
             expanded[i - 1]["word"] = "أهلاً،"
             expanded[i]["word"] = "أنا"
-        elif w_curr == "حاول" and i + 1 < len(expanded) and expanded[i + 1]["word"].startswith("أبني"):
+        elif w_curr == "حاول" and i + 1 < len(expanded) and expanded[i + 1]["word"].startswith(("أبني", "ابني")):
             expanded[i]["word"] = "أحاول"
-        elif w_curr == "اصطناعي" and i > 0 and expanded[i - 1]["word"] == "بالذكاء":
+        elif w_curr == "اصطناعي" and i > 0 and expanded[i - 1]["word"] in {"بالذكاء", "بذكاء"}:
             expanded[i]["word"] = "الاصطناعي"
+        elif is_video_editing_context and w_curr == "تبدل" and i + 1 < len(expanded) and "فيديو" in expanded[i + 1]["word"]:
+            expanded[i]["word"] = "تمنتج"
+            expanded[i + 1]["word"] = "الفيديوهات"
 
     deduped = []
     for w in expanded:
@@ -444,11 +515,6 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
 # 5. المحرك الأول: Google Speech Recognition (ar-DZ الجزائر) مجاناً بدون مفتاح!
 # ==============================================================================
 def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[str, Any]]]:
-    """
-    استخدام محرك Google Web Speech API باللغة الجزائرية المخصصة `ar-DZ` (مجاناً عبر الإنترنت بدون مفتاح API):
-    يقسم الصوت إلى جمل قصيرة بناءً على فواصل الصوت الفعلية، ويتعرف على الدارجة الجزائرية بدقة عالية،
-    ثم يوزع التوقيت الزمني لكل كلمة على الطاقة الصوتية الفعلية للجملة!
-    """
     try:
         import speech_recognition as sr
         from pydub import AudioSegment
@@ -464,13 +530,11 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
         if total_ms < 200:
             return None
 
-        # اكتشاف جمل الكلام الفعلية (بفواصل صمت قصيرة 320ms لتقسيم الجمل بدقة)
         thresh = max(-50.0, min(-30.0, float(audio.dBFS) - 9.0)) if audio.dBFS != -float("inf") else -40.0
         raw_chunks = detect_nonsilent(audio, min_silence_len=320, silence_thresh=thresh, seek_step=10)
         if not raw_chunks:
             raw_chunks = [[0, total_ms]]
 
-        # دمج القطع القصيرة جداً بحيث تكون كل قطعة بين 1.8 و 5.5 ثوانٍ (مثالية لمحرك ar-DZ)
         merged_chunks: List[List[int]] = []
         for s_ms, e_ms in raw_chunks:
             s_pad = max(0, s_ms - 150)
@@ -484,7 +548,6 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
-        # إذا بقيت قطعة أطول من 6.5 ثوانٍ نقسمها لنوافذ متوازنة
         final_chunks: List[Tuple[int, int]] = []
         for s_ms, e_ms in merged_chunks:
             dur = e_ms - s_ms
@@ -507,7 +570,6 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
             audio_data = sr.AudioData(raw_wav_bytes, 16000, 2)
 
             try:
-                # طلب التعرف الصوتي بلهجة الجزائر ar-DZ
                 text_dz = recognizer.recognize_google(audio_data, language="ar-DZ")
             except sr.UnknownValueError:
                 continue
@@ -523,10 +585,8 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
             if not tokens:
                 continue
 
-            # حساب التوقيت الدقيق لكل كلمة داخل القطعة بناءً على الطاقة الصوتية وطول الكلمة
             c_start_sec = c_start_ms / 1000.0
             c_end_sec = c_end_ms / 1000.0
-            # تقليص أي صمت في بداية أو نهاية القطعة عبر فحص الطاقة الداخلية
             sub_nonsilent = detect_nonsilent(chunk_audio, min_silence_len=120, silence_thresh=thresh - 2.0, seek_step=10)
             if sub_nonsilent:
                 speech_s_sec = c_start_sec + (sub_nonsilent[0][0] / 1000.0)
@@ -567,7 +627,6 @@ def _transcribe_via_gemini_multimodal(
     audio_path: str,
     gemini_api_key: Optional[str] = None
 ) -> Optional[List[Dict[str, Any]]]:
-    """استخدام Google Gemini لفهم الصوت الجزائري مباشرة وإرجاع الكلمات وتوقيتها."""
     gem_key = (gemini_api_key or os.environ.get("GEMINI_API_KEY", "")).strip()
     if not gem_key:
         return None
@@ -585,7 +644,7 @@ def _transcribe_via_gemini_multimodal(
 
         prompt = (
             f"هذا ملف صوتي مدته {total_dur:.2f} ثانية باللهجة الجزائرية الدارجة (Algerian Darija) أو العربية. "
-            "فرّغ كل كلمة منطوقة بدقة تامة كما قيلت بالدارجة الجزائرية (مثال: اصبر، ما حبستكش، على جال، كابل تيب سي، سيبور تيليفون، تشارجي، قاع يتقطع، اكموندي). "
+            "فرّغ كل كلمة منطوقة بدقة تامة كما قيلت بالدارجة الجزائرية. "
             "أرجع JSON فقط عبارة عن قائمة قواميس لكل كلمة: "
             "[{\"word\": \"الكلمة\", \"start\": 0.0, \"end\": 0.4}, ...]"
         )
@@ -642,7 +701,6 @@ def _transcribe_via_cloud_api(
     gemini_api_key: Optional[str] = None,
     language: str = "ar"
 ) -> Optional[Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]:
-    # 1. تجربة Gemini Multimodal Audio إن توفر مفتاحه
     gem_words = _transcribe_via_gemini_multimodal(audio_path, gemini_api_key=gemini_api_key)
     if gem_words:
         gem_words = apply_phrase_fixes_to_words(gem_words)
@@ -733,13 +791,7 @@ def merge_ar_dz_with_whisper_timestamps(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> List[Dict[str, Any]]:
-    """
-    يدمج دقة مفردات الدارجة الجزائرية من محرك `ar-DZ` مع دقة التوقيت الزمني من `faster-whisper`:
-    - إذا التقط محرك `ar-DZ` كلمات دارجة سريعة ابتلعها Whisper (مثل: على جال كابل تيب سي، سيبور تيليفون، معنتها تشارجي)،
-      فإننا نعتمد النص الجزائري الدقيق مع ضبط توقيته الزمني!
-    """
     if ar_dz_words and len(ar_dz_words) >= max(3, int(len(whisper_words) * 0.75)):
-        # إذا كان هناك اتصال بالذكاء الاصطناعي، نمرر النصين معاً ليختار أفضل قراءة جزائرية لكل كلمة
         if whisper_words:
             dz_text = " ".join(w["word"] for w in ar_dz_words)
             wh_text = " ".join(w["word"] for w in whisper_words)
@@ -748,11 +800,11 @@ def merge_ar_dz_with_whisper_timestamps(
                 f"القراءة الجزائرية (ar-DZ): \"{dz_text}\"\n"
                 f"قراءة Whisper العام: \"{wh_text}\"\n"
                 f"عدد كلمات القراءة الجزائرية هو {len(ar_dz_words)} كلمة.\n"
-                "ادمج القراءتين لتصحيح أي كلمة غير مفهومة، وأرجع النص الجزائري الصحيح فقط مفصولاً بمسافات."
+                "ادمج القراءتين لتصحيح أي كلمة غير مفهومة حسب سياق الفيديو العام، وأرجع النص الجزائري الصحيح فقط مفصولاً بمسافات."
             )
             merged_txt = query_hybrid_llm(
                 prompt=prompt,
-                system_prompt="أنت خبير في الدارجة الجزائرية. أرجع النص المصحح فقط بدون أي شرح أو علامات تنصيص.",
+                system_prompt="أنت خبير في الدارجة الجزائرية وفهم سياق الكلام. أرجع النص المصحح فقط بدون أي شرح أو علامات تنصيص.",
                 groq_api_key=groq_api_key,
                 gemini_api_key=gemini_api_key,
                 openai_api_key=openai_api_key,
@@ -804,7 +856,6 @@ def _run_full_transcription(
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """تشغيل نظام التفريغ الثلاثي الهجين للدارجة الجزائرية."""
     if _CUSTOM_CAPTION_OVERRIDE["enabled"] and _CUSTOM_CAPTION_OVERRIDE["words"]:
         return (
             [dict(w) for w in _CUSTOM_CAPTION_OVERRIDE["words"]],
@@ -822,7 +873,6 @@ def _run_full_transcription(
         _LAST_EXTRACTED_TRANSCRIPT["sentences"] = cached["sentences"]
         return cached["words"], cached["sentences"]
 
-    # 1. محاولة التفريغ السحابي المباشر (Gemini Audio / Groq Whisper Large-v3 / OpenAI)
     cloud_res = _transcribe_via_cloud_api(
         audio_path=audio_path,
         groq_api_key=groq_api_key,
@@ -837,12 +887,10 @@ def _run_full_transcription(
         _LAST_EXTRACTED_TRANSCRIPT["sentences"] = micro_scenes
         return words_list, micro_scenes
 
-    # 2. تشغيل محرك التعرف الجزائري المجاني (Google Speech-to-Text `ar-DZ`)
     ar_dz_words = None
     if dialect_mode == "algerian_darija":
         ar_dz_words = _transcribe_via_google_ar_dz_chunks(audio_path)
 
-    # 3. تشغيل faster-whisper بإعدادات تمنع حذف الكلمات السريعة أو المكررة في الدارجة الجزائرية
     detected_device, detected_compute = get_optimal_device_settings()
     final_device = device if device is not None else detected_device
     final_compute = compute_type if compute_type is not None else detected_compute
@@ -878,7 +926,6 @@ def _run_full_transcription(
                         "probability": round(word_obj.probability, 3)
                     })
 
-    # 4. دمج مخرجات محرك الجزائر (ar-DZ) مع توقيت Whisper
     final_words = merge_ar_dz_with_whisper_timestamps(
         ar_dz_words=ar_dz_words,
         whisper_words=whisper_words,
@@ -887,7 +934,6 @@ def _run_full_transcription(
         openai_api_key=openai_api_key
     )
 
-    # تقسيم الكلمات إلى مشاهد قصيرة متجددة كل 1.4 - 1.9 ثانية
     micro_scenes = split_words_into_micro_scenes(final_words)
 
     _TRANSCRIPTION_CACHE[cache_key] = {

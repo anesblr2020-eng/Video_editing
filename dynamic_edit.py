@@ -1,10 +1,10 @@
 """
-dynamic_edit.py - وحدة المونتاج الديناميكي، دمج المشاهد الرسومية، مشاهد B-Roll، والمخرج الذكي الشامل
-=======================================================================================================
-تنفذ هذه الوحدة أوامر "مخطط المخرج الشامل (Master Director Plan)" الصادرة من المحلل الذكي:
+dynamic_edit.py - وحدة المونتاج الديناميكي، دمج المشاهد الرسومية السياقية، مشاهد B-Roll، والمخرج الذكي الشامل
+=================================================================================================================
+تنفذ هذه الوحدة أوامر "مخطط المخرج الشامل (Master Director Plan)" الصادرة من المخ السياقي:
+- تقسم الكلام إلى جمل وأفكار سياقية متكاملة (وليس كلمة بكلمة).
 - تستورد 3 إلى 4 مشاهد B-Roll حقيقية خالية من حقوق الملكية في اللحظات المناسبة لدعم المحتوى.
 - تتنقل بين أنماط التراكب بذكاء: الشاشة الكاملة للموشن جرافيك، مقاطع B-Roll الواقعية، البطاقات العلوية، واللقطات الصافية.
-- تدمج الكابشن الكاريوكي المتزامن وشارات الموشن جرافيك فوق مشاهد الـ B-Roll مع استمرار صوت المتحدث.
 """
 
 import sys
@@ -19,7 +19,8 @@ if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import PIL.ImageDraw
-_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
+if not hasattr(PIL.ImageDraw.ImageDraw, "_true_orig_rounded_rect"):
+    PIL.ImageDraw.ImageDraw._true_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
     try:
@@ -34,7 +35,9 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
         if y_max - y_min < 1:
             y_max = y_min + 1
         safe_r = max(0, min(int(radius), int((x_max - x_min) // 2), int((y_max - y_min) // 2)))
-        return _orig_rounded_rect(self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners)
+        return PIL.ImageDraw.ImageDraw._true_orig_rounded_rect(
+            self, [(x_min, y_min), (x_max, y_max)], radius=safe_r, fill=fill, outline=outline, width=width, corners=corners
+        )
     except Exception:
         pass
 
@@ -255,13 +258,6 @@ def _execute_master_director_pipeline(
     caption_mode: str = "bottom_modern",
     **kwargs
 ) -> Tuple[str, Dict[str, Any]]:
-    """
-    تنفيذ أوامر مخطط المخرج الشامل الصادرة من المحلل الذكي:
-    - قص الصمت الطبيعي.
-    - استخراج الكلمات وتوليد مخطط المخرج الشامل.
-    - جلب ودمج 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية في اللحظات المناسبة.
-    - رندرة الإطارات إطاراً بإطار مع الكابشن الكاريوكي وشارات الموشن جرافيك.
-    """
     base_dir = os.path.dirname(os.path.abspath(output_path))
     temp_dir = os.path.join(base_dir, "temp")
     stock_dir = os.path.join(temp_dir, "stock_videos")
@@ -286,7 +282,7 @@ def _execute_master_director_pipeline(
             openai_api_key=openai_api_key,
             progress_callback=progress_callback
         )
-        return out, {"director_plan_scenes": 12}
+        return out, {"director_plan_scenes": 6}
 
     from moviepy.editor import concatenate_videoclips
 
@@ -307,7 +303,7 @@ def _execute_master_director_pipeline(
         )
         transcribe_source = getattr(base_clip, "filename", input_path) or input_path
 
-        update_progress(0.25, "2/5: تفريغ الكلام بدقة وتوليد مخطط المخرج متعدد الأنماط المكانية...")
+        update_progress(0.25, "2/5: تفريغ الكلام وتشغيل المخ السياقي لتوليد مخطط المخرج...")
         word_data = transcribe_audio(
             audio_path=transcribe_source,
             model_size=whisper_model,
@@ -317,7 +313,12 @@ def _execute_master_director_pipeline(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        micro_scenes = split_words_into_micro_scenes(word_data, max_words_per_scene=4, max_duration_per_scene=2.0)
+        micro_scenes = split_words_into_micro_scenes(
+            word_data,
+            max_words_per_scene=8,
+            max_duration_per_scene=4.2,
+            min_words_per_scene=4
+        )
         video_duration = float(base_clip.duration)
         video_w, video_h = base_clip.size
 
@@ -338,19 +339,17 @@ def _execute_master_director_pipeline(
         else:
             master_plan = micro_scenes
 
-        # استيراد وتجهيز مشاهد الـ B-Roll المختارة تلقائياً (3 إلى 4 مشاهد)
         broll_scenes_count = sum(1 for sc in master_plan if sc.get("layout_mode") == "stock_broll")
         update_progress(0.42, f"3/5: جلب {broll_scenes_count} مشاهد B-Roll حقيقية خالية من حقوق الملكية من الإنترنت...")
 
         current_time = 0.0
         for sc in master_plan:
             s_start = max(0.0, float(sc.get("start", 0.0)))
-            s_end = min(video_duration, float(sc.get("end", s_start + 1.8)))
+            s_end = min(video_duration, float(sc.get("end", s_start + 2.5)))
             dur = max(0.2, s_end - s_start)
             z_factor = float(sc.get("zoom_factor", 1.12))
             layout_mode = sc.get("layout_mode", "top_overlay")
 
-            # إذا كانت هناك فجوة قبل المشهد نملؤها بالمقطع الأصلي
             if s_start > current_time + 0.04:
                 sentence_clips.append(base_clip.subclip(current_time, s_start))
 
@@ -406,7 +405,7 @@ def _execute_master_director_pipeline(
             for t_name in MOTION_THEMES.keys()
         }
 
-        update_progress(0.65, f"4/5: تصيير الموشن جرافيك والكابشن فوق المشاهد (شاشة كاملة، B-Roll، وبطاقات)...")
+        update_progress(0.65, "4/5: تصيير الموشن جرافيك السياقي والكابشن فوق المشاهد...")
 
         def _master_frame_filter(get_frame, t: float) -> np.ndarray:
             raw_frame = get_frame(t)
@@ -438,7 +437,7 @@ def _execute_master_director_pipeline(
             logger=None
         )
 
-        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} لقطة مخرجة و {broll_scenes_count} مشاهد B-Roll)! ")
+        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} مشاهد سياقية و {broll_scenes_count} مشاهد B-Roll)! ")
         return output_path, {
             "director_scenes": len(master_plan),
             "broll_scenes_count": broll_scenes_count,
