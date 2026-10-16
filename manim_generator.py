@@ -252,7 +252,8 @@ def generate_manim_motion_graphics(
     groq_api_key: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
     openai_api_key: Optional[str] = None,
-    progress_callback: Optional[Callable[[float, str], None]] = None
+    progress_callback: Optional[Callable[[float, str], None]] = None,
+    **kwargs
 ) -> str:
     """
     تنفيذ مسار الموشن جرافيك الهندسي (Manim + Hybrid AI) مع تراكب الكابشن العربي/الدارجة:
@@ -406,8 +407,19 @@ def generate_manim_motion_graphics(
         return output_path
 
     except Exception as err:
-        logger.error(f"خطأ أثناء توليد موشن جرافيك Manim: {str(err)}", exc_info=True)
-        raise err
+        logger.warning(f"تراجع تلقائي لمحرك الفيكتور الفائق (PyCairo + VisionOS) بسبب: {str(err)}")
+        from motion_text import create_kinetic_typography_video
+        return create_kinetic_typography_video(
+            input_path=input_path,
+            output_path=output_path,
+            whisper_model=whisper_model,
+            ollama_model=ollama_model,
+            dialect_mode=dialect_mode,
+            groq_api_key=groq_api_key,
+            gemini_api_key=gemini_api_key,
+            openai_api_key=openai_api_key,
+            progress_callback=progress_callback
+        )
 
     finally:
         for cc in caption_clips:
