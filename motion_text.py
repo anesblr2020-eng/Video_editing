@@ -234,6 +234,26 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
     return f_def
 
 
+def get_fitted_arabic_font(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    max_width: int,
+    initial_font_size: int,
+    min_font_size: int = 14,
+    bold: bool = True
+) -> Tuple[ImageFont.FreeTypeFont, int, int]:
+    """تصغير حجم الخط تلقائياً لضمان ملاءمة النص داخل حدود البطاقة بدون أي خروج أو تجاوز."""
+    size = int(initial_font_size)
+    min_size = int(min_font_size)
+    f_obj = get_arabic_font(size, bold=bold)
+    tw, th = measure_arabic_text(draw, str(text), f_obj)
+    while tw > max_width and size > min_size:
+        size -= 2
+        f_obj = get_arabic_font(size, bold=bold)
+        tw, th = measure_arabic_text(draw, str(text), f_obj)
+    return f_obj, tw, th
+
+
 # ==============================================================================
 # 2. الثيمات اللونية السينمائية المتقدمة (Pro Studio Color Palettes)
 # ==============================================================================
@@ -1220,8 +1240,7 @@ def render_single_scene_canvas(
     # 1. شارة العنوان العلوية بأسلوب Apple Dynamic Pill
     draw = ImageDraw.Draw(img, "RGBA")
     s_badge = 0.85 + 0.15 * _staggered_spring(scene_progress, delay=0.02, duration=0.40)
-    badge_font = get_arabic_font(max(24, int(min(width, height) * 0.032)), bold=True)
-    btw, bth = measure_arabic_text(draw, badge_label, badge_font)
+    badge_font, btw, bth = get_fitted_arabic_font(draw, badge_label, max_width=int(width * 0.74), initial_font_size=max(22, int(min(width, height) * 0.032)), bold=True)
     bp_w = min(int(width * 0.88), btw + 80)
     bp_h = max(52, bth + 24)
     bp_y = int(height * 0.052 - 20 * (1.0 - s_badge))
@@ -1324,14 +1343,14 @@ def render_single_scene_canvas(
     kpi_val = str(scene_meta.get("kpi_value") or fallback_val)
     kpi_lbl = str(scene_meta.get("kpi_label") or fallback_lbl)
 
-    kpi_val_font = get_arabic_font(max(30, int(min(width, height) * 0.042)), bold=True)
-    kpi_lbl_font = get_arabic_font(max(20, int(min(width, height) * 0.025)), bold=True)
-
     rcx = (rx1 + rx2) // 2
+    kpi_val_font, kvw, kvh = get_fitted_arabic_font(draw, kpi_val, max_width=int(sub_w * 0.85), initial_font_size=max(28, int(min(width, height) * 0.040)), min_font_size=16, bold=True)
+    kpi_lbl_font, klw, klh = get_fitted_arabic_font(draw, kpi_lbl, max_width=int(sub_w * 0.85), initial_font_size=max(18, int(min(width, height) * 0.024)), min_font_size=13, bold=True)
+
     draw_arabic_text(draw, (rcx, ry1 + int(sub_h * 0.38)), kpi_val, font=kpi_val_font, fill=(*theme["primary"], 255), stroke_width=2, stroke_fill=(0, 0, 0, 220))
     draw_arabic_text(draw, (rcx, ry1 + int(sub_h * 0.74)), kpi_lbl, font=kpi_lbl_font, fill=(215, 225, 245, 240))
 
-    # ب) البطاقة اليسرى: بطاقة المفهوم السياقي (Contextual Concept Card - لا تكرر الكلمات المنطوقة!)
+    # ب) البطاقة اليسرى: بطاقة المفهوم السياقي (Contextual Concept Card)
     lx1 = cx - gap // 2 - sub_w
     lx2 = lx1 + sub_w
     ly1 = int(sub_y1 + 22 * (1.0 - s_sub_left))
@@ -1349,8 +1368,8 @@ def render_single_scene_canvas(
     )
     draw = ImageDraw.Draw(img, "RGBA")
     lcx = (lx1 + lx2) // 2
-    feat_font = get_arabic_font(max(22, int(min(width, height) * 0.030)), bold=True)
     clean_concept = re.sub(r"^[،,.\s!؟:؛-]+|[،,.\s!؟:؛-]+$", "", str(concept_title)).strip() or "فكرة محورية"
+    feat_font, ftw, fth = get_fitted_arabic_font(draw, clean_concept, max_width=int(sub_w * 0.85), initial_font_size=max(22, int(min(width, height) * 0.030)), min_font_size=14, bold=True)
     draw_arabic_text(draw, (lcx, ly1 + int(sub_h * 0.38)), clean_concept, font=feat_font, fill=(255, 255, 255, 250), stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
     # شريط طاقة متحرك أنيق داخل البطاقة اليسرى
@@ -1647,8 +1666,7 @@ def render_master_directed_video_frame(
         y_slide_offset = int(-95 * (1.0 - spring_in))
 
         badge_title = sc.get("badge_label", sc.get("concept_title", "ميزة حصرية"))
-        title_font = get_arabic_font(max(24, int(min(w, h) * 0.033)), bold=True)
-        tw, th = measure_arabic_text(draw, badge_title, title_font)
+        title_font, tw, th = get_fitted_arabic_font(draw, badge_title, max_width=int(w * 0.65), initial_font_size=max(22, int(min(w, h) * 0.032)), min_font_size=14, bold=True)
 
         icon_box = max(44, th + 18)
         pill_h = max(54, th + 24)
@@ -1697,9 +1715,8 @@ def render_master_directed_video_frame(
 
     elif layout_mode == "lower_third":
         spring_in = _spring_physics(min(1.0, (t - sc["start"]) / 0.32), stiffness=210.0, damping=15.0)
-        l3_font = get_arabic_font(max(24, int(min(w, h) * 0.033)), bold=True)
         l3_txt = sc.get("badge_label", "ميزة حصرية")
-        tw, th = measure_arabic_text(draw, l3_txt, l3_font)
+        l3_font, tw, th = get_fitted_arabic_font(draw, l3_txt, max_width=int(w * 0.78), initial_font_size=max(22, int(min(w, h) * 0.032)), min_font_size=14, bold=True)
         bar_w = min(int(w * 0.88), tw + 74)
         bar_h = max(50, th + 24)
         by1 = int(h * 0.86 + 60 * (1.0 - spring_in))

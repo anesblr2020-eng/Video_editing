@@ -322,70 +322,88 @@ def query_hybrid_llm(
 # ==============================================================================
 # 2. المخ السياقي الشامل (Pass 1 & Pass 2 Contextual & Narrative Brain)
 # ==============================================================================
-def extract_global_video_context(full_transcript: str) -> Dict[str, Any]:
-    """
-    المرحلة الأولى من مخ التحليل السياقي:
-    يقرأ النص الكامل للفيديو من أوله لآخره ليفهم "القصة الكلية والسياق العام" قبل تحليل أي جملة،
-    ويستخرج الكيانات المحورية (المجال، اسم المتحدث، العمر، اسم المنصة أو المنتج، المشكلة، والحل).
-    """
+def extract_clean_keywords(text: str, max_words: int = 3) -> list:
+    stop_words = {
+        'في', 'من', 'على', 'إلى', 'عن', 'مع', 'هذا', 'هذه', 'هاد', 'هادي', 'ذلك', 'تلك', 'التي', 'الذي', 'الذين',
+        'هو', 'هي', 'هم', 'نحن', 'أنا', 'انا', 'انت', 'أنتم', 'كان', 'كانت', 'يكون', 'ما', 'لا', 'لم', 'لن',
+        'قد', 'كل', 'بعض', 'غير', 'جدا', 'بزاف', 'قاع', 'برك', 'راه', 'راهي', 'باش', 'كي', 'كيف', 'وين', 'واش',
+        'كاين', 'كاينين', 'ناس', 'خاوتنا', 'اليوم', 'هنا', 'هكذا', 'واحد', 'زوج', 'شوية', 'حاجة', 'شفت', 'سمعت'
+    }
+    words = [w.strip('،,.!؟?()[]-') for w in text.split() if w.strip('،,.!؟?()[]-')]
+    content_words = [w for w in words if w.lower() not in stop_words and len(w) > 2]
+    return content_words[:max_words]
+
+
+def extract_global_video_context(full_transcript: str) -> dict:
     t = (full_transcript or "").strip()
     t_low = t.lower()
 
-    # 1. استخراج الأرقام السياقية من النص الكلي
-    age_match = re.search(r"(?:عمري|عمره|سن)\s*(\d+)", t_low)
-    founder_age = int(age_match.group(1)) if age_match else None
+    domain_scores = {
+        "ecommerce": 0,
+        "social_media": 0,
+        "tech_software": 0,
+        "education": 0,
+        "business": 0,
+        "general": 1
+    }
+
+    ecom_kw = ["كابل", "شاحن", "شحن", "تشارجي", "منتج", "سلعة", "سيبور", "حامل", "متجر", "شراء", "سعر", "سومة", "توصيل", "ولاية", "باب الدار", "كواليتي", "أصلي", "اصلي", "اكموندي", "اطلب", "متانة", "قماش", "يتقطع", "بري", "ضمان", "تخفيض", "عرض", "علبة", "باكي"]
+    social_kw = ["انستغرام", "انستقرام", "تيك توك", "ريلز", "شورتس", "فيسبوك", "يوتيوب", "متابعين", "مشاهدات", "تفاعل", "ريتش", "خوارزمية", "نشر", "محتوى", "صانع", "صناع", "كاميرا", "تصوير", "اكسبلور", "ستوري", "بايو", "فيديو وطلع", "فيديوهات"]
+    tech_kw = ["برمجة", "كود", "تطبيق", "منصة", "موقع", "سحابي", "ذكاء اصطناعي", "سيرفر", "ديفلوبر", "سوفتوير", "api", "ai"]
+    edu_kw = ["نصيحة", "نصائح", "تعلم", "دراسة", "معلومة", "فائدة", "كيفاش", "خطوات", "أسرار", "طريقة", "تحسين", "مهارة", "فكرة", "انتبه", "ركز"]
+    biz_kw = ["بزنس", "مشروع", "دراهم", "فلوس", "عمل حر", "فريلانس", "تسويق", "مبيعات", "استثمار", "أرباح", "تجارة", "خدمة", "عملاء", "شركة", "وظيفة"]
+
+    for kw in ecom_kw:
+        if kw in t_low:
+            domain_scores["ecommerce"] += (3 if kw in ["كابل", "شاحن", "توصيل", "اكموندي", "سيبور", "سلعة"] else 1)
+    for kw in social_kw:
+        if kw in t_low:
+            domain_scores["social_media"] += (3 if kw in ["انستغرام", "انستقرام", "ريلز", "تيك توك", "ريتش", "اكسبلور"] else 1)
+    for kw in tech_kw:
+        if kw in t_low:
+            domain_scores["tech_software"] += (3 if kw in ["برمجة", "كود", "تطبيق", "سحابي", "ذكاء اصطناعي"] else 1)
+    for kw in edu_kw:
+        if kw in t_low:
+            domain_scores["education"] += 2
+    for kw in biz_kw:
+        if kw in t_low:
+            domain_scores["business"] += 2
+
+    best_domain = max(domain_scores, key=domain_scores.get)
+    if domain_scores[best_domain] <= 1:
+        best_domain = "general"
+
+    domain_labels = {
+        "ecommerce": "إعلان وترويج منتج تجاري",
+        "social_media": "صناعة المحتوى وشبكات التواصل",
+        "tech_software": "تطوير وتقنية وأنظمة ذكية",
+        "education": "نصائح ومعلومات تعليمية",
+        "business": "أعمال وتجارة وخدمات",
+        "general": "محتوى عام وتفاعلي"
+    }
 
     wilaya_match = re.search(r"(\d+)\s*ولاي", t_low)
-    wilayas_count = int(wilaya_match.group(1)) if wilaya_match else None
+    wilayas_count = int(wilaya_match.group(1)) if wilaya_match else (58 if ("ولاية" in t_low or "ولايات" in t_low) else None)
 
-    all_nums = [int(m) for m in re.findall(r"(?:^|[^\d])(\d+)(?:$|[^\d])", t)]
+    age_match = re.search(r"(?:عمري|عمره|في\s+عمري)\s*(\d+)", t_low)
+    founder_age = int(age_match.group(1)) if age_match else None
 
-    # 2. استخراج اسم المتحدث واسم المنصة/المنتج
-    name_match = re.search(r"(?:أنا|انا|اسمي)\s+([أ-يa-zA-Z]+)", t)
-    speaker_name = name_match.group(1).strip("،,.") if name_match else None
-    if speaker_name in {"عمري", "قاعد", "أحاول", "احاول", "نبني", "أبني"}:
-        speaker_name = None
+    speaker_name = None
+    name_match = re.search(r"(?:اسمي|معكم)\s+([أ-يa-zA-Z]+)", t)
+    if name_match:
+        cand = name_match.group(1).strip("،,.")
+        if cand not in ["بزاف", "ناس", "اليوم", "هنا", "في", "واحد", "خاوتي"]:
+            speaker_name = cand
 
-    brand_name = None
-    if any(w in t_low for w in ["فيديو إيديتينج", "فيديو ايديتينج", "فيديو ايديتنج", "video editing"]):
-        brand_name = "Video Editing"
-    else:
-        brand_m = re.search(r"(?:اسم\s+المنصة|واسم\s+المنصة|اسمها|منصة)\s+([أ-يa-zA-Z]+\s*[أ-يa-zA-Z]*)", t)
-        if brand_m:
-            cand = brand_m.group(1).strip("،,.")
-            if not any(x in cand for x in ["تعمل", "بالذكاء", "تمنتج"]):
-                brand_name = cand
-
-    # 3. تحديد المجال السردي الكلي للفيديو (Global Narrative Domain)
-    is_founder_story = any(w in t_low for w in ["أبني", "ابني", "منصة", "عمري", "مشروع", "برمجة", "تطبيق"]) and any(
-        w in t_low for w in ["ذكاء", "مونتاج", "ريلز", "فيديو", "منصة"]
-    )
-    is_ecommerce_ad = any(w in t_low for w in ["كابل", "سيبور", "ولاية", "اكموندي", "توصيل", "يتقطع", "سلعة", "تشارجي"])
-
-    if is_founder_story:
-        domain = "tech_founder_story"
-        domain_label_ar = "قصة مؤسس وبناء منصة تقنية بالذكاء الاصطناعي"
-        default_metric_num = founder_age if founder_age is not None else (all_nums[0] if all_nums else 100)
-    elif is_ecommerce_ad:
-        domain = "ecommerce_product_ad"
-        domain_label_ar = "إعلان منتج عملي وتجارة إلكترونية"
-        default_metric_num = wilayas_count if wilayas_count is not None else (all_nums[0] if all_nums else 58)
-    else:
-        domain = "general_creator_content"
-        domain_label_ar = "محتوى تقني وإبداعي"
-        default_metric_num = all_nums[0] if all_nums else 100
+    all_nums = [int(m) for m in re.findall(r"(?:^|[^\d])(\d+)(?:$|[^\d])", t) if 0 < int(m) < 1000]
 
     return {
-        "domain": domain,
-        "domain_label_ar": domain_label_ar,
+        "domain": best_domain,
+        "domain_label_ar": domain_labels[best_domain],
         "speaker_name": speaker_name,
         "founder_age": founder_age,
         "wilayas_count": wilayas_count,
-        "brand_name": brand_name,
-        "default_metric_num": default_metric_num,
-        "has_ai_theme": any(w in t_low for w in ["ذكاء", "اصطناعي", "أوتوماتيكي", "اوتوماتيكي", "تلقائي"]),
-        "has_video_editing_theme": any(w in t_low for w in ["مونتاج", "تمنتج", "فيديو", "إيديتينج", "ريلز"]),
-        "has_time_problem": any(w in t_low for w in ["وقت", "ما عندها", "مشغول", "كل يوم"]),
+        "all_numbers": all_nums,
         "full_transcript": t
     }
 
@@ -394,36 +412,21 @@ def analyze_scene_with_context(
     scene_text: str,
     scene_index: int,
     total_scenes: int,
-    global_ctx: Dict[str, Any],
+    global_ctx: dict,
     prev_scene_text: str = "",
     next_scene_text: str = "",
-    prev_scene_type: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    تحليل مشهد كامل في ضوء:
-    1. السياق الكلي للفيديو (`global_ctx`).
-    2. معنى الجملة الكاملة وعلاقتها بالجملة السابقة واللاحقة (`prev_scene_text`, `next_scene_text`).
-    3. موقع المشهد في القصة السردية (البداية التعريفية -> تطوير الفكرة -> المشكلة -> الحل -> الخاتمة).
-    لا يكرر الكلمات المنطوقة حرفياً في البطاقات أبداً، بل يستنتج المفهوم السياقي والمؤشر الرقمي المناسب!
-    """
+    prev_scene_type: str = None
+) -> dict:
     t = scene_text.strip()
     t_low = t.lower()
-    prev_low = (prev_scene_text or "").lower()
-    next_low = (next_scene_text or "").lower()
-    window_context = f"{prev_low} | {t_low} | {next_low}"
-
-    domain = global_ctx.get("domain", "general_creator_content")
-    speaker_name = global_ctx.get("speaker_name") or "المؤسس"
+    domain = global_ctx.get("domain", "general")
+    wilayas = global_ctx.get("wilayas_count") or 58
     founder_age = global_ctx.get("founder_age")
-    brand_name = global_ctx.get("brand_name") or "Video Editing"
+    speaker_name = global_ctx.get("speaker_name")
 
     num_match = re.search(r"(?:^|[^\d])(\d+)(?:$|[^\d])", t)
     local_num = int(num_match.group(1)) if num_match else None
-    target_num = local_num if local_num is not None else int(global_ctx.get("default_metric_num", 100))
 
-    # -------------------------------------------------------------------------
-    # الفهم السياقي الشامل لمعنى الجملة الكاملة (Contextual Intent Detection)
-    # -------------------------------------------------------------------------
     chosen_type = None
     badge_label = ""
     concept_title = ""
@@ -431,191 +434,198 @@ def analyze_scene_with_context(
     kpi_value = ""
     kpi_label = ""
 
-    is_intro_greeting = any(w in t_low for w in ["أهلاً", "اهلا", "سلام", "مرحبا", "أنا أنس", "انا انس", "اسمي"])
-    has_age_mention = any(w in t_low for w in ["عمري", "عمره", "سنة", "سنين"]) or (local_num == 17)
-    is_building_platform = any(w in t_low for w in ["أبني", "ابني", "أحاول", "احاول", "منصة تعمل", "مشروع", "أطور", "برمجة"])
-    is_ai_automation = any(w in t_low for w in ["ذكاء", "اصطناعي", "أوتوماتيكي", "اوتوماتيكي", "تلقائي", "خوارزمية"])
-    is_time_pain_point = any(w in t_low for w in ["وقت", "ما عندها", "أغلب الناس", "اغلب الناس", "مشغولة", "ساعات"])
-    is_video_editing_action = any(w in t_low for w in ["مونتاج", "تمنتج", "الفيديوهات", "تبدل الفيديو", "قص", "تحرير"])
-    is_reels_publishing = any(w in t_low for w in ["ريلز", "تيك توك", "شورتس", "ترفع", "كل يوم", "نشر", "سوشيال"])
-    is_brand_reveal = any(w in t_low for w in ["اسم المنصة", "واسم المنصة", "إيديتينج", "ايديتنج", "editing"]) or (
-        scene_index == total_scenes - 1 and any(w in t_low for w in ["منصة", "المنصة", "فيديو"])
-    )
-
-    # 1. حالة ختام الفيديو وإعلان اسم المنصة (Brand Finale)
-    if is_brand_reveal and scene_index >= max(1, total_scenes - 2):
-        chosen_type = "brand_finale"
-        badge_label = f"الإطلاق الرسمي • منصة {brand_name}"
-        concept_title = f"منصة {brand_name}"
-        concept_subtitle = "الجيل الجديد للمونتاج الذكي"
-        kpi_value = "AI Studio"
-        kpi_label = "جاهزة لصناع المحتوى"
-
-    # 2. حالة التعريف الشخصي بالمؤسس والعمر في بداية القصة (Founder Identity & Age Milestone)
-    elif (is_intro_greeting and has_age_mention) or (scene_index == 0 and is_intro_greeting):
-        age_val = local_num or founder_age or 17
-        target_num = age_val
-        chosen_type = "creator_profile"
-        badge_label = f"تعريف بالمؤسس • {speaker_name} ({age_val} سنة)"
-        concept_title = f"المؤسس الشاب {speaker_name}"
-        concept_subtitle = "شغف مبكر ببناء تقنيات المستقبل"
-        kpi_value = f"{age_val} عاماً"
-        kpi_label = "انطلاقة ريادية مبكرة"
-
-    # 3. حالة ذكر العمر أو محطة الإنجاز الرقمية بشكل مستقل (Age / Milestone Counter)
-    elif has_age_mention:
-        age_val = local_num or founder_age or 17
-        target_num = age_val
+    # Personal Age or Name ONLY if explicitly stated in this scene or global context
+    has_age_explicit = any(w in t_low for w in ["عمري", "عمره", "في عمري"]) and (local_num or founder_age)
+    if has_age_explicit:
+        age_val = local_num or founder_age
         chosen_type = "age_number_counter"
-        badge_label = f"محطة طموح • بعمر {age_val} سنة فقط"
-        concept_title = "طموح يتجاوز العمر"
-        concept_subtitle = f"بناء أنظمة ذكية بعمر {age_val} عاماً"
+        badge_label = f"محطة طموح • عمر {age_val} سنة"
+        concept_title = "طموح وإنجاز مبكر"
+        concept_subtitle = f"تطور وإبداع بعمر {age_val} عاماً"
         kpi_value = f"{age_val} سنة"
-        kpi_label = "عمر المؤسس والمطور"
+        kpi_label = "محطة العمر"
 
-    # 4. حالة مشكلة ضيق الوقت لدى صناع المحتوى ("لأن أغلب الناس ما عندها وقت تمنتج...")
-    elif is_time_pain_point:
-        chosen_type = "time_warp_clock"
-        badge_label = "المشكلة • ضيق الوقت واستنزاف الجهد"
-        concept_title = "تحدي ضيق الوقت"
-        concept_subtitle = "المونتاج اليدوي يستغرق ساعات طويلة"
-        kpi_value = "10x أسرع"
-        kpi_label = "توفير وقت صناع المحتوى"
+    # Domain-specific logic
+    elif domain == "ecommerce":
+        if any(w in t_low for w in ["توصيل", "ولاية", "ولايات", "باب الدار", "شحن"]):
+            target_w = local_num or wilayas
+            chosen_type = "delivery_express"
+            badge_label = f"شحن وتوصيل • متوفر لجميع {target_w} ولاية"
+            concept_title = "توصيل سريع ومضمون"
+            concept_subtitle = f"توصيل سريع حتى باب المنزل عبر {target_w} ولاية"
+            kpi_value = f"{target_w} ولاية"
+            kpi_label = "تغطية وطنية شاملة"
 
-    # 5. حالة الذكاء الاصطناعي والأتمتة ("تعمل مونتاج بالذكاء الاصطناعي بشكل أوتوماتيكي")
-    elif is_ai_automation:
-        if prev_scene_type == "ai_neural_brain" and is_video_editing_action:
-            chosen_type = "video_montage_studio"
-            badge_label = "أتمتة المونتاج • تحرير ذكي بالكامل"
-            concept_title = "محرك المونتاج الآلي"
-            concept_subtitle = "قص وتركيب المشاهد بدون تدخل يدوي"
-            kpi_value = "100% آلي"
-            kpi_label = "تحرير ذكي بالـ AI"
-        else:
-            chosen_type = "ai_neural_brain"
-            badge_label = "التقنية • محرك الذكاء الاصطناعي الأوتوماتيكي"
-            concept_title = "أتمتة بالذكاء الاصطناعي"
-            concept_subtitle = "معالجة ذكية للصوت والصورة والسياق"
-            kpi_value = "100% تلقائي"
-            kpi_label = "يعمل بالذكاء الاصطناعي"
+        elif any(w in t_low for w in ["سيبور", "ستاند", "حامل", "تيليفون", "تتفرج", "هاتف"]):
+            chosen_type = "reels_smartphone"
+            badge_label = "تصميم ذكي • حامل هاتف مدمج ومريح"
+            concept_title = "حامل هاتف مدمج"
+            concept_subtitle = "اشحن وتصفح هاتفك بكل راحة وثبات"
+            kpi_value = "2 في 1"
+            kpi_label = "شاحن وحامل معاً"
 
-    # 6. حالة بناء وتطوير المنصة ("وقاعد أحاول أبني منصة تعمل...")
-    elif is_building_platform:
-        chosen_type = "platform_builder"
-        badge_label = "المشروع • هندسة وبناء منصة ذكية"
-        concept_title = "تطوير منصة متكاملة"
-        concept_subtitle = "برمجة بنية سحابية لأتمتة الفيديو"
-        kpi_value = "Full-Stack"
-        kpi_label = "تطوير وبناء المنصة"
+        elif any(w in t_low for w in ["قماش", "يتقطع", "متانة", "ما تخافش", "صحيح", "متين"]):
+            chosen_type = "ecommerce_showcase"
+            badge_label = "متانة فائقة • تغليف قماشي ضد القطع"
+            concept_title = "مقاوم للقطع والتلف"
+            concept_subtitle = "تغليف قماشي قوي مصمم للاستخدام اليومي"
+            kpi_value = "100% متين"
+            kpi_label = "حماية واعتمادية"
 
-    # 7. حالة نشر الريلز والمحتوى اليومي ("وترفع ريلز كل يوم")
-    elif is_reels_publishing:
-        chosen_type = "reels_smartphone"
-        badge_label = "النتيجة • صناعة ونشر الريلز يومياً"
-        concept_title = "نشر الريلز بانتظام"
-        concept_subtitle = "حضور يومي مستمر على منصات التواصل"
-        kpi_value = "يومياً"
-        kpi_label = "إنتاج ونشر مستمر"
+        elif any(w in t_low for w in ["شحن سريع", "تشارجي", "كابل", "سريع", "fast"]):
+            chosen_type = "ecommerce_showcase"
+            badge_label = "كفاءة عالية • شحن فائق السرعة"
+            concept_title = "شحن سريع وآمن"
+            concept_subtitle = "نقل طاقة مستقر يحافظ على بطارية جهازك"
+            kpi_value = "Fast Charge"
+            kpi_label = "سرعة وأمان"
 
-    # 8. حالة عملية المونتاج وتحرير الفيديوهات ("تمنتج الفيديوهات...")
-    elif is_video_editing_action:
-        chosen_type = "video_montage_studio"
-        badge_label = "الحل العملي • أستوديو المونتاج الذكي"
-        concept_title = "صناعة وتحرير الفيديو"
-        concept_subtitle = "تحويل التسجيلات الخام إلى فيديو احترافي"
-        kpi_value = "4K 60FPS"
-        kpi_label = "جودة إخراج سينمائية"
+        elif any(w in t_low for w in ["خصائص", "ميزات", "مميزات", "ثلاث", "3"]):
+            chosen_type = "growth_analytics"
+            badge_label = "مواصفات ممتازة • ثلاث خصائص في منتج واحد"
+            concept_title = "مزايا استثنائية متكاملة"
+            concept_subtitle = "ثلاث وظائف عملية تجمع الراحة والأداء"
+            kpi_value = "3 في 1"
+            kpi_label = "خصائص مدمجة"
 
-    # 9. حالات إعلانات المنتجات والتجارة الإلكترونية (الكابل، التوصيل 58 ولاية، المتانة)
-    elif any(w in t_low for w in ["توصيل", "ولاية", "58", "باب الدار"]):
-        w_num = local_num or global_ctx.get("wilayas_count") or 58
-        target_num = w_num
-        chosen_type = "delivery_express"
-        badge_label = f"تغطية شاملة • توصيل سريع {w_num} ولاية"
-        concept_title = "توصيل لباب المنزل"
-        concept_subtitle = f"شحن سريع ومضمون عبر {w_num} ولاية"
-        kpi_value = f"{w_num} ولاية"
-        kpi_label = "تغطية التوصيل الوطني"
+        elif any(w in t_low for w in ["سعر", "سومة", "بري", "اقتصادي", "عرض", "تخفيض"]):
+            chosen_type = "ecommerce_showcase"
+            badge_label = "قيمة مثالية • أفضل جودة بأفضل سعر"
+            concept_title = "سعر اقتصادي مناسب"
+            concept_subtitle = "وفر نقودك مع أفضل أداء وسعر في السوق"
+            kpi_value = "أفضل سعر"
+            kpi_label = "توفير وجودة"
 
-    elif any(w in t_low for w in ["سيبور", "ستاند", "حامل", "تيليفون", "تتفرج"]):
-        chosen_type = "reels_smartphone"
-        badge_label = "تصميم ذكي • حامل هاتف مدمج ومريح"
-        concept_title = "حامل هاتف مدمج"
-        concept_subtitle = "اشحن هاتفك وشاهد محتواك بكل راحة"
-        kpi_value = "2 في 1"
-        kpi_label = "شاحن وحامل هاتف"
-
-    elif any(w in t_low for w in ["كابل", "شحن", "تشارجي", "قماش", "يتقطع", "اصبر", "اكموندي", "اطلب"]):
-        chosen_type = "ecommerce_showcase"
-        if scene_index >= total_scenes - 2 and any(w in t_low for w in ["اكموندي", "اطلب", "رابط"]):
-            badge_label = "اطلب الآن • الكمية محدودة والدفع عند الاستلام"
-            concept_title = "اطلب منتجك الآن"
-            concept_subtitle = "متوفر للطلب الفوري عبر الرابط"
+        elif any(w in t_low for w in ["اكموندي", "اطلب", "رابط", "اسفل", "الطلب", "كمية"]) or (scene_index == total_scenes - 1):
+            chosen_type = "brand_finale"
+            badge_label = "اطلب الآن • الدفع عند الاستلام وباب الدار"
+            concept_title = "طلب سهل ومضمون"
+            concept_subtitle = "اضغط على الرابط أسفل الفيديو واطلب فوراً"
             kpi_value = "متوفر الآن"
             kpi_label = "الدفع عند الاستلام"
-        elif any(w in t_low for w in ["قماش", "يتقطع"]):
-            badge_label = "متانة فائقة • مغلف بالقماش ضد القطع"
-            concept_title = "مقاوم للقطع والتلف"
-            concept_subtitle = "تغليف قماشي متين من جميع الجهات"
-            kpi_value = "100% متين"
-            kpi_label = "حماية ضد القطع"
-        else:
-            badge_label = "ابتكار عملي • شحن فائق السرعة والجودة"
-            concept_title = "أداء شحن استثنائي"
-            concept_subtitle = "مصمم للاستخدام اليومي المكثف"
-            kpi_value = "Fast Charge"
-            kpi_label = "كفاءة وجودة عالية"
 
-    # 10. استنتاج سياقي ذكي من الجملة السابقة واللاحقة إذا كانت الجملة رابطة
-    if not chosen_type:
-        if "منصة" in window_context and ("اسم" in window_context or scene_index == total_scenes - 1):
+        elif scene_index == 0 or any(w in t_low for w in ["دقيقة", "وقتك", "اصبر", "شوف"]):
+            chosen_type = "ecommerce_showcase"
+            kws = ' '.join(extract_clean_keywords(scene_text)) or "منتج مميز"
+            badge_label = f"منتج مميز • {kws}"
+            concept_title = "ابتكار عملي مفيد"
+            concept_subtitle = "حل مبتكر يسهل استخدامك اليومي"
+            kpi_value = "Top Pick"
+            kpi_label = "اختيار موصى به"
+
+        else:
+            kws = ' '.join(extract_clean_keywords(scene_text)) or "ميزة عملية"
+            chosen_type = "ecommerce_showcase"
+            badge_label = f"ميزة استثنائية • {kws}"
+            concept_title = kws
+            concept_subtitle = "مواصفات تضمن راحتك وكفاءة استخدامك"
+            kpi_value = "Premium"
+            kpi_label = "مواصفات ممتازة"
+
+    elif domain == "social_media":
+        if any(w in t_low for w in ["يعانيوا", "مشكل", "مشكلة", "صعيب", "ما ينجحش", "ضعيف", "تراجع"]):
+            chosen_type = "growth_analytics"
+            badge_label = "صناع المحتوى • المشاكل والتحديات الشائعة"
+            concept_title = "تحديات تفاعل المحتوى"
+            concept_subtitle = "صعوبة زيادة المشاهدات والوصول إلى جمهور جديد"
+            kpi_value = "Reach Problem"
+            kpi_label = "تحليل التفاعل"
+
+        elif any(w in t_low for w in ["انستغرام", "انستقرام", "تيك توك", "ريلز", "متابعين", "تفاعل", "ريتش", "اكسبلور"]):
+            chosen_type = "reels_smartphone"
+            badge_label = "خوارزمية المحتوى • الوصول والتفاعل العالي"
+            concept_title = "تطوير تفاعل الريلز"
+            concept_subtitle = "أسرار مضاعفة المشاهدات والتفاعل في المنصة"
+            kpi_value = "Instagram"
+            kpi_label = "انتشار أوسع"
+
+        elif any(w in t_low for w in ["فيديو", "نشر", "طلع", "نزل", "ستوري", "يومياً"]):
+            chosen_type = "reels_smartphone"
+            badge_label = "استراتيجية النشر • رفع ونشر الفيديوهات"
+            concept_title = "نشر محتوى مستمر"
+            concept_subtitle = "الاستمرارية في النشر هي مفتاح النجاح والوصول"
+            kpi_value = "Viral Video"
+            kpi_label = "معدل الوصول"
+
+        elif scene_index == 0:
+            chosen_type = "reels_smartphone"
+            badge_label = "صناعة المحتوى • نصيحة هامة لليوم"
+            concept_title = "تطوير المحتوى الرقمي"
+            concept_subtitle = "خطوات عملية لكل صانع محتوى يبحث عن النمو"
+            kpi_value = "Creator Tips"
+            kpi_label = "نصائح النمو"
+
+        elif scene_index == total_scenes - 1 or any(w in t_low for w in ["تابع", "اشترك", "حفظ", "شارك"]):
             chosen_type = "brand_finale"
-            badge_label = f"منصة {brand_name} • مستقبل المونتاج الذكي"
-            concept_title = f"منصة {brand_name}"
-            concept_subtitle = "أتمتة كاملة لصناعة المحتوى"
-            kpi_value = "AI Studio"
-            kpi_label = "الحل المتكامل للمونتاج"
-        elif "وقت" in window_context or "أغلب" in window_context:
-            chosen_type = "time_warp_clock"
-            badge_label = "اختصار الوقت • وداعاً لساعات المونتاج الطويلة"
-            concept_title = "توفير الوقت والجهد"
-            concept_subtitle = "حل ذكي لمن لا يملك وقتاً للمونتاج"
-            kpi_value = "10x أسرع"
-            kpi_label = "إنجاز فوري للفيديوهات"
-        elif "ذكاء" in window_context or "أوتوماتيكي" in window_context:
-            chosen_type = "ai_neural_brain"
-            badge_label = "تقنية متقدمة • معالجة بالذكاء الاصطناعي"
-            concept_title = "ذكاء اصطناعي متكامل"
-            concept_subtitle = "يفهم السياق ويحرر الفيديو تلقائياً"
-            kpi_value = "AI Core"
-            kpi_label = "محرك تحليل ذكي"
-        else:
-            narrative_cycle = [
-                ("creator_profile", "رؤية المبدع • انطلاقة المشروع", "رؤية تقنية طموحة", "ابتكار حلول ذكية لصناع المحتوى", "100%", "شغف وابتكار"),
-                ("platform_builder", "هندسة النظام • تطوير المنصة", "بناء المنصة الذكية", "تطوير أدوات الجيل الجديد", "Cloud AI", "بنية تقنية حديثة"),
-                ("video_montage_studio", "أستوديو التحرير • مونتاج احترافي", "أتمتة شريط المونتاج", "إخراج بصري متكامل بالذكاء الاصطناعي", "4K Pro", "جودة الأستوديو"),
-                ("growth_analytics", "مؤشر الأداء • نمو وانتشار", "مضاعفة الإنتاجية", "نتائج أسرع وانتشار أوسع للمحتوى", "+300%", "نمو التفاعل"),
-                ("reels_smartphone", "صناعة الريلز • محتوى يومي تفاعلي", "انتشار المحتوى اليومي", "تجهيز الفيديوهات القصيرة بلمسة واحدة", "يومياً", "نشر مستمر"),
-                ("brand_finale", f"منصة {brand_name} • الإطلاق الرسمي", f"منصة {brand_name}", "مستقبل صناعة الفيديو بالذكاء الاصطناعي", "AI Pro", "منصة الجيل الجديد")
-            ]
-            pick = narrative_cycle[scene_index % len(narrative_cycle)]
-            if pick[0] == prev_scene_type:
-                pick = narrative_cycle[(scene_index + 1) % len(narrative_cycle)]
-            chosen_type, badge_label, concept_title, concept_subtitle, kpi_value, kpi_label = pick
+            badge_label = "تفاعل ومتابعة • انضم لمزيد من النصائح"
+            concept_title = "شارك وتابع المحتوى"
+            concept_subtitle = "احفظ الفيديو للمراجعة وتابع الحساب للجديد"
+            kpi_value = "Follow"
+            kpi_label = "محتوى يومي"
 
-    # منع تكرار نفس رسمة الفيكتور في مشهدين متتاليين للحفاظ على التنوع البصري مع بقاء المعنى السياقي
+        else:
+            kws = ' '.join(extract_clean_keywords(scene_text)) or "نصيحة للمحتوى"
+            chosen_type = "growth_analytics"
+            badge_label = f"إضاءة رقمية • {kws}"
+            concept_title = kws
+            concept_subtitle = "طرق تحسين الأداء والتفاعل على حسابك"
+            kpi_value = "Reach"
+            kpi_label = "مؤشر التفاعل"
+
+    elif domain == "tech_software":
+        if any(w in t_low for w in ["ذكاء اصطناعي", "ai", "أتمتة", "تلقائي", "خوارزمية"]):
+            chosen_type = "ai_neural_brain"
+            badge_label = "التقنية الذكية • أتمتة بالذكاء الاصطناعي"
+            concept_title = "أنظمة الذكاء الاصطناعي"
+            concept_subtitle = "معالجة ذكية وسريعة توفر الجهد والوقت"
+            kpi_value = "AI Core"
+            kpi_label = "تقنية المستقبل"
+
+        elif any(w in t_low for w in ["كود", "برمجة", "تطبيق", "منصة", "موقع"]):
+            chosen_type = "platform_builder"
+            badge_label = "هندسة البرمجيات • تطوير وبناء المنصة"
+            concept_title = "بنية تقنية حديثة"
+            concept_subtitle = "تطوير أنظمة سحابية وتطبيقات متكاملة"
+            kpi_value = "Full-Stack"
+            kpi_label = "تطوير وبرمجة"
+
+        elif any(w in t_low for w in ["مونتاج", "تحرير", "إيديتينج", "editing"]):
+            chosen_type = "video_montage_studio"
+            badge_label = "أستوديو التحرير • مونتاج متقدم"
+            concept_title = "تحرير الفيديو الذكي"
+            concept_subtitle = "أدوات متطورة لقص وتركيب الفيديوهات"
+            kpi_value = "4K Studio"
+            kpi_label = "جودة إخراج"
+
+        else:
+            kws = ' '.join(extract_clean_keywords(scene_text)) or "حلول برمجية"
+            chosen_type = "platform_builder"
+            badge_label = f"ابتكار تقني • {kws}"
+            concept_title = kws
+            concept_subtitle = "حلول رقمية متقدمة لتسريع وتسهيل الأعمال"
+            kpi_value = "Tech Pro"
+            kpi_label = "حلول متقدمة"
+
+    else:
+        kws = ' '.join(extract_clean_keywords(scene_text)) or "معلومة مهمة"
+        chosen_type = "growth_analytics" if (scene_index % 2 == 0) else "reels_smartphone"
+        badge_label = f"إضاءة معرفية • {kws}"
+        concept_title = kws
+        concept_subtitle = "فكرة محورية وشرح مبسط للفائدة"
+        kpi_value = "Pro Tips"
+        kpi_label = "معلومة قيمة"
+
     if chosen_type == prev_scene_type and total_scenes > 1:
-        contextual_alternates = {
-            "creator_profile": "age_number_counter",
-            "age_number_counter": "platform_builder",
-            "platform_builder": "ai_neural_brain",
-            "ai_neural_brain": "video_montage_studio",
-            "video_montage_studio": "reels_smartphone",
-            "time_warp_clock": "growth_analytics",
-            "reels_smartphone": "brand_finale" if scene_index == total_scenes - 1 else "growth_analytics",
-            "ecommerce_showcase": "delivery_express"
+        alternates = {
+            "ecommerce_showcase": "delivery_express" if domain == "ecommerce" else "growth_analytics",
+            "delivery_express": "reels_smartphone",
+            "reels_smartphone": "growth_analytics",
+            "growth_analytics": "reels_smartphone",
+            "ai_neural_brain": "platform_builder",
+            "platform_builder": "growth_analytics",
+            "time_warp_clock": "ecommerce_showcase"
         }
-        chosen_type = contextual_alternates.get(chosen_type, chosen_type)
+        chosen_type = alternates.get(chosen_type, chosen_type)
 
     return {
         "scene_type": chosen_type,
@@ -625,24 +635,18 @@ def analyze_scene_with_context(
         "concept_subtitle": concept_subtitle,
         "kpi_value": kpi_value,
         "kpi_label": kpi_label,
-        "target_number": target_num
+        "target_number": local_num or (wilayas if domain == "ecommerce" else 100)
     }
 
 
 def analyze_contextual_storyboard(
-    scenes: List[Dict[str, Any]],
+    scenes: list,
     full_transcript: str = "",
-    groq_api_key: Optional[str] = None,
-    gemini_api_key: Optional[str] = None,
-    openai_api_key: Optional[str] = None,
+    groq_api_key: str = None,
+    gemini_api_key: str = None,
+    openai_api_key: str = None,
     ollama_model: str = "llama3"
-) -> List[Dict[str, Any]]:
-    """
-    مخ التخطيط السردي والسياقي الكامل (Contextual Storyboard Brain):
-    1. يستخرج السياق العام للفيديو (`extract_global_video_context`).
-    2. يحلل كل مشهد سياقياً (بربطه بالجملة السابقة واللاحقة والهدف العام للفيديو).
-    3. إن توفر اتصال بـ LLM، يطلب منه تحسين العناوين السياقية ومؤشرات الـ KPI مع فحصها وضمان عدم تكرار نص الكابشن أبداً.
-    """
+) -> list:
     if not scenes:
         return []
 
@@ -655,7 +659,7 @@ def analyze_contextual_storyboard(
     theme_keys = list(MOTION_THEMES.keys())
     transitions = ["whip_left", "zoom_portal", "whip_up", "diagonal_wipe"]
 
-    enriched_scenes: List[Dict[str, Any]] = []
+    enriched_scenes = []
     prev_type = None
 
     for idx, sc in enumerate(scenes):
@@ -683,7 +687,7 @@ def analyze_contextual_storyboard(
         entry["global_domain"] = global_ctx["domain"]
         enriched_scenes.append(entry)
 
-    # محاولة إثراء إضافية عبر LLM السحابي/المحلي لفهم السياق العميق إن توفر
+    # Optional cloud LLM refinement if API keys are available
     try:
         scenes_Input_summary = "\n".join(
             f"{i+1}. [{s['start']:.1f}s - {s['end']:.1f}s]: \"{s['text']}\""
@@ -691,25 +695,22 @@ def analyze_contextual_storyboard(
         )
         llm_prompt = (
             f"النص الكامل للفيديو: \"{full_transcript}\"\n"
-            f"السياق العام المكتشف: {global_ctx['domain_label_ar']}\n\n"
-            f"المشاهد المقسمة حسب الجمل المعنوية:\n{scenes_Input_summary}\n\n"
-            "بصفتك مخرج موشن جرافيك محترف يفهم سياق الفيديو الكامل ولا يكرر الكلمات حرفياً:\n"
-            "لكل مشهد، أعطني JSON Array يحتوي كائناً لكل مشهد بالمفاتيح التالية فقط:\n"
-            "- scene_type: واحد من [creator_profile, age_number_counter, platform_builder, ai_neural_brain, video_montage_studio, time_warp_clock, reels_smartphone, growth_analytics, ecommerce_showcase, delivery_express, brand_finale]\n"
-            "- badge_label: عنوان سياقي جذاب للشارة العلوية (3 إلى 5 كلمات تشرح الفكرة ولا تكرر نص المتحدث حرفياً)\n"
-            "- concept_title: مفهوم المشهد المختصر للبطاقة اليسرى (كلمتان إلى 3 كلمات تعبر عن المعنى الضمني)\n"
-            "- kpi_value: رقم أو مؤشر قصير معبر للبطاقة اليمنى (مثل '17 عاماً'، '100% آلي'، '10x أسرع'، 'يومياً'، 'AI Studio')\n"
-            "- kpi_label: وصف المؤشر في البطاقة اليمنى (كلمتان إلى 3 كلمات)\n"
-            "أرجع JSON Array صالحاً فقط بدون أي نص إضافي."
+            f"المجال الحقيقي للفيديو: {global_ctx['domain_label_ar']}\n\n"
+            f"المشاهد:\n{scenes_Input_summary}\n\n"
+            "أنت مخرج فني موشن جرافيك فائق الدقة. مهمتك تحسين العناوين لتكون 100% مطابقة لكلام المتحدث في هذا الفيديو فقط.\n"
+            "شروط صارمة:\n"
+            "1. ممنوع نهائياً اختراع أي اسم مؤسس أو عمر أو مجال فيديو إيديتينج ما لم يكن مذكوراً في النص حرفياً.\n"
+            "2. إذا كان الفيديو لمنتج (مثل كابل)، فكل المشاهد يجب أن تعبر عن المنتج وخصائصه وتوصيله.\n"
+            "3. أرجع JSON Array فقط بالمفاتيح: scene_type, badge_label, concept_title, kpi_value, kpi_label."
         )
         ai_raw = query_hybrid_llm(
             prompt=llm_prompt,
-            system_prompt="أنت مخرج فني (Art Director) خبير في الموشن جرافيك السياقي. أرجع JSON Array فقط.",
+            system_prompt="أنت مخرج موشن جرافيك دقيق لا يختلق أي معلومة غير موجودة في النص. أرجع JSON فقط.",
             groq_api_key=groq_api_key,
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key,
             ollama_model=ollama_model,
-            temperature=0.2,
+            temperature=0.1,
             max_tokens=900
         )
         if ai_raw:
@@ -717,10 +718,10 @@ def analyze_contextual_storyboard(
             if m:
                 parsed = json.loads(m.group(0))
                 valid_types = {
-                    "creator_profile", "age_number_counter", "platform_builder",
-                    "ai_neural_brain", "video_montage_studio", "time_warp_clock",
-                    "reels_smartphone", "growth_analytics", "ecommerce_showcase",
-                    "delivery_express", "brand_finale"
+                    "ecommerce_showcase", "delivery_express", "reels_smartphone",
+                    "growth_analytics", "time_warp_clock", "ai_neural_brain",
+                    "platform_builder", "video_montage_studio", "creator_profile",
+                    "age_number_counter", "brand_finale"
                 }
                 if isinstance(parsed, list) and len(parsed) == len(enriched_scenes):
                     for idx, item in enumerate(parsed):
@@ -728,23 +729,25 @@ def analyze_contextual_storyboard(
                             continue
                         st_cand = str(item.get("scene_type", "")).strip()
                         if st_cand in valid_types:
-                            enriched_scenes[idx]["scene_type"] = st_cand
+                            # Do not let LLM hallucinate creator_profile if no founder
+                            if st_cand in ["creator_profile", "age_number_counter"] and not global_ctx.get("founder_age"):
+                                pass
+                            else:
+                                enriched_scenes[idx]["scene_type"] = st_cand
                         bl_cand = str(item.get("badge_label", "")).strip()
-                        if len(bl_cand) >= 5:
+                        if len(bl_cand) >= 5 and "17" not in bl_cand and "أنس" not in bl_cand:
                             enriched_scenes[idx]["badge_label"] = bl_cand
                         ct_cand = str(item.get("concept_title", "")).strip()
-                        # التأكد من أن عنوان المفهوم لا ينسخ أول كلمتين حرفياً من النص المنطوق
-                        raw_first_two = " ".join(enriched_scenes[idx]["text"].split()[:2])
-                        if len(ct_cand) >= 4 and ct_cand != raw_first_two:
+                        if len(ct_cand) >= 3 and "أنس" not in ct_cand:
                             enriched_scenes[idx]["concept_title"] = ct_cand
                             enriched_scenes[idx]["short_title"] = ct_cand
                         kv_cand = str(item.get("kpi_value", "")).strip()
                         kl_cand = str(item.get("kpi_label", "")).strip()
-                        if kv_cand and kl_cand and "58" not in kv_cand:
+                        if kv_cand and kl_cand and "17" not in kv_cand:
                             enriched_scenes[idx]["kpi_value"] = kv_cand
                             enriched_scenes[idx]["kpi_label"] = kl_cand
     except Exception as e:
-        logger.debug(f"استخدام المخ السياقي المدمج مباشرة: {e}")
+        logger.debug(f"استخدام المعالج السياقي المدمج: {e}")
 
     return enriched_scenes
 
@@ -928,12 +931,20 @@ def generate_master_director_plan(
     num_scenes = len(contextual_scenes)
     master_plan = []
 
+    global_domain = contextual_scenes[0].get("global_domain", "general") if contextual_scenes else "general"
     broll_candidate_indices = []
     for idx, sc in enumerate(contextual_scenes):
         t_low = str(sc.get("text", "")).lower()
         if 0 < idx < num_scenes - 1:
-            if any(w in t_low for w in ["مونتاج", "تمنتج", "فيديو", "إيديتينج", "وقت", "ساعة", "ريلز", "تيك توك", "أبني", "منصة", "حاسوب", "ذكاء"]):
-                broll_candidate_indices.append(idx)
+            if global_domain == "ecommerce":
+                if any(w in t_low for w in ["كابل", "شاحن", "سيبور", "تشارجي", "تتفرج", "قماش", "يتقطع", "متانة", "توصيل", "منتج", "سلعة"]):
+                    broll_candidate_indices.append(idx)
+            elif global_domain == "social_media":
+                if any(w in t_low for w in ["انستغرام", "ريلز", "تيك توك", "فيديو", "كاميرا", "تصوير", "تفاعل", "متابعين"]):
+                    broll_candidate_indices.append(idx)
+            else:
+                if any(w in t_low for w in ["تطبيق", "منصة", "برمجة", "ذكاء", "فيديو", "تقنية", "شاشة", "هاتف"]):
+                    broll_candidate_indices.append(idx)
 
     selected_broll_indices = set()
     if enable_stock_broll and broll_candidate_indices:
@@ -957,7 +968,7 @@ def generate_master_director_plan(
         s_start = max(0.0, float(sc.get("start", 0.0)))
         s_end = min(total_duration, float(sc.get("end", s_start + 2.5)))
 
-        scene_type = sc.get("scene_type", "video_montage_studio")
+        scene_type = sc.get("scene_type", "ecommerce_showcase" if global_domain == "ecommerce" else ("reels_smartphone" if global_domain == "social_media" else "growth_analytics"))
         stock_category = map_scene_to_stock_category(scene_type, s_text)
 
         if idx in selected_broll_indices:
