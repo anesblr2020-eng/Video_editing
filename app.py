@@ -344,7 +344,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك السياقي</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">مخ تحليل سياقي يفهم معنى الجمل • معالجة مستمرة في الخلفية لا تتوقف عند الخروج من كروم • حماية قصوى للذاكرة (Zero-OOM)</div>',
+    '<div class="sub-title">محرك كوريغرافيا ذاتي التعلم (Clean SaaS & Split-Screen Stage 30fps) • يفهم السياق والدارجة بلا بتر • يعمل في الخلفية</div>',
     unsafe_allow_html=True
 )
 st.markdown(

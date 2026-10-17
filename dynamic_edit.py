@@ -359,7 +359,7 @@ def _execute_master_director_pipeline(
         bg_cache: Dict[str, np.ndarray] = {}
         force_free_ram()
 
-        fps = 24
+        fps = 30
         frame_bytes_len = video_w * video_h * 3
         total_frames = max(1, int(round(video_duration * fps)))
 
@@ -380,7 +380,7 @@ def _execute_master_director_pipeline(
             "-map", "0:v:0", "-map", "1:a:0?",
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
             "-x264-params", "rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0",
-            "-crf", "24", "-pix_fmt", "yuv420p", "-threads", "1",
+            "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "1",
             "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "16000",
             "-movflags", "+faststart", "-shortest",
             output_path

@@ -25,6 +25,7 @@ import math
 import base64
 import logging
 from typing import List, Dict, Any, Optional, Tuple
+
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -132,6 +133,64 @@ PHRASE_LEVEL_FIXES = [
     (r"المتوفرس\s+على", "راه متوفر"),
     (r"أكموان\s+من", "اكموندي من"),
 ]
+
+
+# ==============================================================================
+# 1.5 محرك إصلاح الكلمات المبتورة صوتياً والسياقية (Anti-Truncation Morphological Repair)
+# ==============================================================================
+CONTEXTUAL_BROKEN_WORD_REPAIRS = [
+    (r"(?<!\w)في\s+المونت(?!\w)", "في المونتاج"),
+    (r"(?<!\w)المونت\s+الان(?!\w)", "المونتاج لأن"),
+    (r"(?<!\w)المونت(?!\w)", "المونتاج"),
+    (r"(?<!\w)الان\s+أغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
+    (r"(?<!\w)الان\s+اغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
+    (r"(?<!\w)تصور\s+للفيديوهات(?!\w)", "تصور الفيديوهات"),
+    (r"(?<!\w)التواصل\s+الاج(?!\w)", "التواصل الاجتماعي"),
+    (r"(?<!\w)مواقع\s+التواصل\s+الاج(?!\w)", "مواقع التواصل الاجتماعي"),
+    (r"(?<!\w)الاج(?!\w)", "الاجتماعي"),
+    (r"(?<!\w)المسؤوله\s+على\s+اللي(?!\w)", "المسؤولة على المونتاج"),
+    (r"(?<!\w)صورته\s+ذكاء\s+الاصطناعي(?!\w)", "صوت وصورة بالذكاء الاصطناعي"),
+    (r"(?<!\w)منت\s+الفيديو(?!\w)", "تمنتج الفيديو"),
+    (r"(?<!\w)ومونتاج\s+احت\s+ولا(?!\w)", "ومونتاج احترافي"),
+    (r"(?<!\w)ومونتاج\s+احت(?!\w)", "ومونتاج احترافي"),
+    (r"(?<!\w)مونتاج\s+احت(?!\w)", "مونتاج احترافي"),
+    (r"(?<!\w)من\s+دقيقه(?!\w)", "أقل من دقيقة"),
+    (r"(?<!\w)قص\s+تعديل\s+الفيديو(?!\w)", "قص وتعديل الفيديو"),
+]
+
+SINGLE_TRUNCATED_TOKEN_MAP = {
+    "المونت": "المونتاج",
+    "الاج": "الاجتماعي",
+    "منت": "تمنتج",
+    "احت": "احترافي",
+    "الانتاجيه": "الإنتاجية",
+    "المسؤوله": "المسؤولة",
+    "دقيقه": "دقيقة",
+    "للفيديوهات": "الفيديوهات",
+}
+
+def repair_truncated_words_and_sentences(words_list):
+    if not words_list:
+        return []
+    repaired = [dict(w) for w in words_list]
+    for i, w_obj in enumerate(repaired):
+        raw_w = str(w_obj.get("word", "")).strip()
+        clean_w = raw_w.strip("،,.!؟?")
+        if clean_w in SINGLE_TRUNCATED_TOKEN_MAP:
+            repaired[i]["word"] = SINGLE_TRUNCATED_TOKEN_MAP[clean_w]
+        if clean_w in {"الان", "الآن"} and i + 1 < len(repaired):
+            nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if nxt_w in {"أغلب", "اغلب", "كثير", "بزاف", "الناس"}:
+                repaired[i]["word"] = "لأن"
+        if clean_w in {"صورته", "صورتك"} and i + 1 < len(repaired):
+            nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if "ذكاء" in nxt_w or "اصطناعي" in nxt_w:
+                repaired[i]["word"] = "صوت وصورة"
+        if clean_w == "ولا" and i > 0:
+            prev_w = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
+            if prev_w == "احترافي":
+                repaired[i]["word"] = ""
+    return [w for w in repaired if str(w.get("word", "")).strip()]
 
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
@@ -442,6 +501,8 @@ def normalize_algerian_sentence(text: str) -> str:
         out = re.sub(rf"(?<!\w){re.escape(wrong)}(?!\w)", right, out)
     for pattern, replacement in PHRASE_LEVEL_FIXES:
         out = re.sub(pattern, replacement, out)
+    for pattern, replacement in CONTEXTUAL_BROKEN_WORD_REPAIRS:
+        out = re.sub(pattern, replacement, out)
     return out
 
 
@@ -484,7 +545,23 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
             deduped[-1]["word"] = w["word"]
         else:
             deduped.append(w)
-    return ensure_word_timestamp_continuity(deduped)
+    repaired = repair_truncated_words_and_sentences(deduped)
+    # Re-expand any multi-word repairs (like 'صوت وصورة') while preserving timestamps
+    final_expanded = []
+    for w in repaired:
+        parts = str(w.get("word", "")).split()
+        if len(parts) > 1:
+            dur = max(0.12, float(w["end"]) - float(w["start"])) / len(parts)
+            for idx, p in enumerate(parts):
+                final_expanded.append({
+                    "word": p,
+                    "start": round(float(w["start"]) + idx * dur, 3),
+                    "end": round(float(w["start"]) + (idx + 1) * dur, 3),
+                    "probability": w.get("probability", 0.96)
+                })
+        else:
+            final_expanded.append(w)
+    return ensure_word_timestamp_continuity(final_expanded)
 
 
 # ==============================================================================
@@ -531,18 +608,24 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
+        # تقسيم المقاطع الطويلة عند أهدأ نقطة صمت بين الكلمات (Acoustic Valley Splitting) لمنع بتر أي كلمة في المنتصف!
         final_chunks: List[Tuple[int, int]] = []
         for s_ms, e_ms in merged_chunks:
-            dur = e_ms - s_ms
-            if dur <= 6500:
-                final_chunks.append((s_ms, e_ms))
-            else:
-                num_splits = int(math.ceil(dur / 4500.0))
-                step = dur // num_splits
-                for k in range(num_splits):
-                    cs = s_ms + k * step
-                    ce = e_ms if k == num_splits - 1 else s_ms + (k + 1) * step
-                    final_chunks.append((cs, ce))
+            cur_s = s_ms
+            while (e_ms - cur_s) > 7200:
+                search_start = cur_s + 3400
+                search_end = min(e_ms - 1200, cur_s + 6400)
+                best_split = cur_s + 4800
+                min_rms = float("inf")
+                for probe_ms in range(search_start, search_end, 25):
+                    win_slice = audio[probe_ms:probe_ms + 50]
+                    if win_slice.rms < min_rms:
+                        min_rms = win_slice.rms
+                        best_split = probe_ms + 25
+                final_chunks.append((cur_s, min(e_ms, best_split + 40)))
+                cur_s = max(cur_s + 1000, best_split - 40)
+            if e_ms - cur_s >= 180:
+                final_chunks.append((cur_s, e_ms))
 
         recognizer = sr.Recognizer()
         all_words: List[Dict[str, Any]] = []
