@@ -1,14 +1,30 @@
 """
-app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، الموشن جرافيك، واستيراد مشاهد B-Roll الحقيقية
-=============================================================================================
+app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، الموشن جرافيك السياقي، والعمل المستمر في الخلفية
+====================================================================================================
 التحديثات الجوهرية:
-1. استيراد مشاهد B-Roll واقعية خالية من حقوق الملكية (No Copyright / CC0) من الإنترنت تلقائياً (3 إلى 4 مشاهد متناسقة مع الكلام لكسر الملل دون إزعاج).
-2. عقل المخرج الشامل (Master Director) الذي يوزع اللقطات مكانياً وزمنياً بدقة متناهية (شاشة كاملة، B-roll، علوي، سفلي، ولقطات صافية).
-3. قص صمت طبيعي ككلام الإنسان (يحمي مخارج الحروف وأواخر الكلمات) + محرر كابشن تفاعلي لجميع الأنماط.
+1. محرك العمل المستمر في الخلفية وحفظ الجلسة التلقائي (`PersistentBackgroundJobManager` مدمج بالكامل):
+   - يستمر السيرفر في رندرة الفيديو حتى لو خرج المستخدم من متصفح Google Chrome أو أغلق شاشة الهاتف أو انقطع الإنترنت!
+   - بمجرد عودة المستخدم وفتح الموقع مرة أخرى، يسترجع النظام تلقائياً شريط التقدم الحي أو يعرض الفيديو المكتمل الجاهز للتحميل فوراً!
+2. حماية الذاكرة القصوى (Zero-OOM Upload & Streaming Engine):
+   - حفظ الفيديوهات المرفوعة (55MB و100MB+) بالتدفق المجزأ (512KB Chunks) بدون نسخها في الـ RAM (`getvalue()`)،
+     وتطبيعها فورياً عبر FFmpeg أحادي الخيط مع تحرير ذاكرة نظام التشغيل (`glibc malloc_trim`).
+3. مخ التحليل السياقي والسردي ذو المرحلتين (`Two-Pass Contextual & Narrative Brain`) + استيراد مشاهد B-Roll خالية من حقوق الملكية.
 """
 
 import sys
 import os
+import gc
+import json
+import time
+import ctypes
+import shutil
+import hashlib
+import inspect
+import logging
+import importlib
+import threading
+import traceback
+from typing import Dict, Any, Optional, Callable
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -18,13 +34,209 @@ import PIL.Image
 if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
-import shutil
-import time
-import hashlib
 import streamlit as st
+import streamlit.components.v1 as components
 
-import importlib
-for _m in ["auto_cut", "transcriber", "stock_video_finder", "motion_text", "smart_analyzer", "dynamic_edit", "manim_generator"]:
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
+
+
+# ==============================================================================
+# 0. محرك تحرير الذاكرة والعمل المستمر في الخلفية (Persistent Background Engine)
+# ==============================================================================
+def force_free_ram():
+    """
+    تحرير الذاكرة العشوائية في بايثون وإجبار نظام لينكس (glibc) على إرجاع الصفحات المحررة
+    فوراً إلى نظام التشغيل لمنع تجاوز حد 1GB RAM على Streamlit Cloud.
+    """
+    try:
+        gc.collect()
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
+
+class PersistentBackgroundJobManager:
+    """
+    مدير المهام الخلفية المستقل عن جلسة المتصفح (WebSocket-Independent Job Manager).
+    يعمل في Thread مستقل على السيرفر ويحفظ الحالة في الذاكرة وعلى القرص الصلب معاً،
+    بحيث لا يتوقف أبداً عند الخروج من Google Chrome أو انقطاع الإنترنت!
+    """
+
+    def __init__(self, state_file_path: str):
+        self.state_file_path = state_file_path
+        self._lock = threading.Lock()
+        self._worker_thread: Optional[threading.Thread] = None
+        self._state: Dict[str, Any] = self._load_state_from_disk()
+
+    def _default_state(self) -> Dict[str, Any]:
+        return {
+            "job_id": None,
+            "status": "idle",  # idle | running | completed | failed
+            "progress": 0.0,
+            "status_text": "",
+            "error_message": None,
+            "started_at": 0.0,
+            "updated_at": 0.0,
+            "input_path": None,
+            "output_path": None,
+            "selected_style": None,
+            "caption_mode": "bottom_modern",
+            "file_hash": None,
+            "media_analysis": None,
+            "caption_words": [],
+            "caption_sentences": [],
+            "eff_params": {}
+        }
+
+    def _load_state_from_disk(self) -> Dict[str, Any]:
+        if os.path.exists(self.state_file_path):
+            try:
+                with open(self.state_file_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    base = self._default_state()
+                    base.update(data)
+                    if base.get("status") == "running":
+                        out_p = base.get("output_path")
+                        if out_p and os.path.exists(out_p) and os.path.getsize(out_p) > 10240:
+                            base["status"] = "completed"
+                            base["progress"] = 1.0
+                            base["status_text"] = "اكتمل إنتاج الفيديو في الخلفية بنجاح!"
+                        elif time.time() - float(base.get("updated_at", 0.0)) > 600:
+                            base["status"] = "idle"
+                    return base
+            except Exception as e:
+                logger.warning(f"تعذر قراءة ملف حالة الخلفية: {e}")
+        return self._default_state()
+
+    def _save_state_to_disk_unlocked(self):
+        try:
+            os.makedirs(os.path.dirname(os.path.abspath(self.state_file_path)), exist_ok=True)
+            tmp_path = self.state_file_path + ".tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                json.dump(self._state, f, ensure_ascii=False, indent=2)
+            os.replace(tmp_path, self.state_file_path)
+        except Exception as e:
+            logger.debug(f"ملاحظة أثناء حفظ حالة المهمة على القرص: {e}")
+
+    def get_state(self) -> Dict[str, Any]:
+        with self._lock:
+            if self._state.get("status") == "running":
+                if self._worker_thread is None or not self._worker_thread.is_alive():
+                    out_p = self._state.get("output_path")
+                    if out_p and os.path.exists(out_p) and os.path.getsize(out_p) > 10240:
+                        self._state["status"] = "completed"
+                        self._state["progress"] = 1.0
+                        self._state["status_text"] = "اكتمل إنتاج الفيديو بنجاح!"
+                        self._save_state_to_disk_unlocked()
+            return dict(self._state)
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return bool(
+                self._state.get("status") == "running"
+                and self._worker_thread is not None
+                and self._worker_thread.is_alive()
+            )
+
+    def update_progress(self, percent: float, text: str):
+        with self._lock:
+            self._state["progress"] = round(min(1.0, max(0.0, float(percent))), 3)
+            self._state["status_text"] = str(text)
+            self._state["updated_at"] = time.time()
+            self._save_state_to_disk_unlocked()
+
+    def clear_job(self) -> bool:
+        with self._lock:
+            if self._worker_thread is not None and self._worker_thread.is_alive():
+                return False
+            self._state = self._default_state()
+            self._save_state_to_disk_unlocked()
+            return True
+
+    def start_job(
+        self,
+        runner_func: Callable[..., str],
+        runner_kwargs: Dict[str, Any],
+        job_meta: Dict[str, Any],
+        cleanup_func: Optional[Callable[[], None]] = None
+    ) -> str:
+        with self._lock:
+            if self._worker_thread is not None and self._worker_thread.is_alive():
+                return str(self._state.get("job_id", "active"))
+
+            job_id = f"job_{int(time.time())}"
+            self._state = self._default_state()
+            self._state.update({
+                "job_id": job_id,
+                "status": "running",
+                "progress": 0.02,
+                "status_text": "🚀 بدأت المعالجة في الخلفية... يمكنك الخروج من المتصفح والعودة لاحقاً بأمان!",
+                "error_message": None,
+                "started_at": time.time(),
+                "updated_at": time.time(),
+                "input_path": job_meta.get("input_path"),
+                "output_path": job_meta.get("output_path"),
+                "selected_style": job_meta.get("selected_style"),
+                "caption_mode": job_meta.get("caption_mode", "bottom_modern"),
+                "file_hash": job_meta.get("file_hash"),
+                "media_analysis": job_meta.get("media_analysis"),
+                "eff_params": job_meta.get("eff_params", {})
+            })
+            self._save_state_to_disk_unlocked()
+
+        def _background_target():
+            try:
+                force_free_ram()
+                kwargs_copy = dict(runner_kwargs)
+                kwargs_copy["progress_cb"] = self.update_progress
+
+                final_out_path = runner_func(**kwargs_copy)
+
+                from transcriber import get_last_extracted_transcript
+                words_ext, sents_ext = get_last_extracted_transcript()
+
+                with self._lock:
+                    self._state["status"] = "completed"
+                    self._state["progress"] = 1.0
+                    self._state["status_text"] = "🎉 اكتمل إنتاج ورندرة الفيديو في الخلفية بنجاح!"
+                    self._state["output_path"] = final_out_path
+                    self._state["caption_words"] = words_ext
+                    self._state["caption_sentences"] = sents_ext
+                    self._state["updated_at"] = time.time()
+                    self._save_state_to_disk_unlocked()
+
+            except Exception as err:
+                logger.error(f"خطأ في المهمة الخلفية: {err}\n{traceback.format_exc()}")
+                with self._lock:
+                    self._state["status"] = "failed"
+                    self._state["error_message"] = str(err)
+                    self._state["status_text"] = f"❌ توقفت المعالجة بسبب خطأ: {str(err)}"
+                    self._state["updated_at"] = time.time()
+                    self._save_state_to_disk_unlocked()
+            finally:
+                if cleanup_func is not None:
+                    try:
+                        cleanup_func()
+                    except Exception:
+                        pass
+                force_free_ram()
+
+        self._worker_thread = threading.Thread(target=_background_target, name=f"StudioWorker_{job_id}", daemon=True)
+        self._worker_thread.start()
+        return job_id
+
+
+for _m in [
+    "auto_cut",
+    "transcriber",
+    "stock_video_finder",
+    "motion_text",
+    "smart_analyzer",
+    "dynamic_edit",
+    "manim_generator"
+]:
     if _m in sys.modules:
         try:
             importlib.reload(sys.modules[_m])
@@ -51,9 +263,19 @@ OUTPUTS_DIR = os.path.join(BASE_DIR, "outputs")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 ICONS_DIR = os.path.join(BASE_DIR, "assets", "icons")
 FONTS_DIR = os.path.join(BASE_DIR, "assets", "fonts")
+STATE_FILE_PATH = os.path.join(OUTPUTS_DIR, "persistent_job_state.json")
 
 for directory in [INPUTS_DIR, OUTPUTS_DIR, TEMP_DIR, ICONS_DIR, FONTS_DIR]:
     os.makedirs(directory, exist_ok=True)
+
+
+@st.cache_resource
+def get_cached_job_manager():
+    """مدير مهام خلفي مشترك على مستوى السيرفر يبقى نشطاً حتى لو أُغلق المتصفح أو تغيرت الجلسة."""
+    return PersistentBackgroundJobManager(STATE_FILE_PATH)
+
+
+job_manager = get_cached_job_manager()
 
 
 def cleanup_temp_directory(temp_path: str = TEMP_DIR):
@@ -67,10 +289,11 @@ def cleanup_temp_directory(temp_path: str = TEMP_DIR):
                     shutil.rmtree(file_path)
             except Exception:
                 pass
+    force_free_ram()
 
 
 st.set_page_config(
-    page_title="استوديو المونتاج والموشن جرافيك ومشاهد B-Roll الذكي",
+    page_title="استوديو المونتاج والموشن جرافيك الذكي (يعمل في الخلفية)",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -88,10 +311,20 @@ st.markdown("""
         margin-bottom: 0.2rem;
     }
     .sub-title {
-        font-size: 1.08rem;
+        font-size: 1.05rem;
         text-align: center;
         color: #94A3B8;
-        margin-bottom: 1.6rem;
+        margin-bottom: 1.4rem;
+    }
+    .bg-shield-banner {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(2, 132, 199, 0.16));
+        border: 1px solid rgba(16, 185, 129, 0.45);
+        border-radius: 12px;
+        padding: 12px 18px;
+        text-align: center;
+        color: #E2E8F0;
+        margin-bottom: 1.2rem;
+        font-size: 0.98rem;
     }
     .stButton>button {
         width: 100%;
@@ -109,14 +342,62 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك ومشاهد B-Roll الحقيقية</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك السياقي</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">تحليل دقيق للفيديو • استيراد 3-4 مشاهد B-Roll خالية من حقوق الملكية من الإنترنت • موشن جرافيك متعدد الأبعاد • قص صمت طبيعي</div>',
+    '<div class="sub-title">مخ تحليل سياقي يفهم معنى الجمل • معالجة مستمرة في الخلفية لا تتوقف عند الخروج من كروم • حماية قصوى للذاكرة (Zero-OOM)</div>',
+    unsafe_allow_html=True
+)
+st.markdown(
+    '<div class="bg-shield-banner">🛡️ <b>ميزة العمل المستمر في الخلفية مفعّلة:</b> بعد الضغط على زر البدء، يستمر السيرفر في رندرة الفيديو حتى لو خرجت من متصفح <b>Google Chrome</b> أو انقطع الإنترنت، وعند عودتك ستجد الفيديو جاهزاً أمامك تلقائياً!</div>',
     unsafe_allow_html=True
 )
 
+components.html(
+    """
+    <script>
+    (async function() {
+        try {
+            if ('wakeLock' in navigator) {
+                await navigator.wakeLock.request('screen');
+                document.addEventListener('visibilitychange', async () => {
+                    if (document.visibilityState === 'visible') {
+                        try { await navigator.wakeLock.request('screen'); } catch(e) {}
+                    }
+                });
+            }
+        } catch (err) {}
+    })();
+    </script>
+    """,
+    height=0
+)
+
+
 # ==============================================================================
-# 3. الشريط الجانبي
+# 1. استرجاع الحالة التلقائي عند العودة للمتصفح (Auto-Resume from Background Job)
+# ==============================================================================
+bg_state = job_manager.get_state()
+
+if bg_state.get("status") == "completed":
+    saved_out = bg_state.get("output_path")
+    if saved_out and os.path.exists(saved_out) and os.path.getsize(saved_out) > 10240:
+        st.session_state["processed_result_path"] = saved_out
+        if bg_state.get("selected_style"):
+            st.session_state["processed_style"] = bg_state["selected_style"]
+        if bg_state.get("caption_words"):
+            st.session_state["caption_words"] = bg_state["caption_words"]
+        if bg_state.get("caption_sentences"):
+            st.session_state["caption_sentences"] = bg_state["caption_sentences"]
+        if bg_state.get("eff_params"):
+            st.session_state["eff_params"] = bg_state["eff_params"]
+        if bg_state.get("input_path") and os.path.exists(bg_state["input_path"]):
+            st.session_state["restored_input_path"] = bg_state["input_path"]
+        if bg_state.get("media_analysis"):
+            st.session_state["restored_media_analysis"] = bg_state["media_analysis"]
+
+
+# ==============================================================================
+# 2. الشريط الجانبي
 # ==============================================================================
 with st.sidebar:
     st.header("⚙️ الإعدادات الذكية والاتصال")
@@ -166,25 +447,25 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🎚️ إعدادات قص الصمت الطبيعي والموديلات")
     if auto_optimize:
-        st.caption("✅ **القص البشري الطبيعي مفعّل:** عتبة آمنة (250ms) تحمي بدايات ونهايات الكلمات.")
+        st.caption("✅ **القص البشري الطبيعي + حماية الذاكرة مفعّلة:** عتبة آمنة (250ms) تحمي مخارج الحروف.")
         silence_threshold = -42.0
-        chunk_size = 10
+        chunk_size = 20
         padding_ms = 250
-        whisper_model_choice = "small"
+        whisper_model_choice = "base"
     else:
         silence_threshold = st.slider("عتبة الصمت (dBFS)", min_value=-60.0, max_value=-20.0, value=-42.0, step=1.0)
-        chunk_size = st.slider("دقة الفحص (Chunk Size ms)", min_value=5, max_value=50, value=10, step=5)
+        chunk_size = st.slider("دقة الفحص (Chunk Size ms)", min_value=10, max_value=50, value=20, step=5)
         padding_ms = st.slider("هامش حماية الكلام الطبيعي (ms)", min_value=150, max_value=450, value=250, step=10)
         whisper_model_choice = st.selectbox(
             "حجم نموذج Whisper المحلي:",
-            options=["tiny", "base", "small", "medium", "large-v3"],
-            index=2
+            options=["tiny", "base", "small"],
+            index=1
         )
 
     ollama_model_choice = st.text_input("نموذج Ollama المحلي:", value="llama3")
     manim_quality_choice = st.selectbox(
         "دقة رندرة الموشن الهندسي (Manim):",
-        options=["-qh (1080p عالية)", "-qm (720p متوسطة)", "-ql (480p سريعة)"],
+        options=["-qm (720p متوازنة وآمنة للذاكرة)", "-ql (480p فائقة السرعة)", "-qh (1080p عالية)"],
         index=0
     )
     manim_flag = manim_quality_choice.split()[0]
@@ -198,8 +479,7 @@ with st.sidebar:
             "🚫 بدون كابشن إضافي (فقط مونتاج ذكي وبادجات - مثالي إذا كان الفيديو مصوراً بنصوص)",
             "🔝 كابشن أعلى الشاشة (Top Safe Zone)"
         ],
-        index=0,
-        help="اختر 'بدون كابشن إضافي' لمنع تكرار أو تداخل النصوص إذا كان الفيديو المسجل يحتوي نصوصاً مسبقاً."
+        index=0
     )
     if "بدون كابشن" in cap_choice:
         eff_caption_mode = "none"
@@ -210,7 +490,7 @@ with st.sidebar:
 
 
 # ==============================================================================
-# 4. دالة تشغيل المسارات الموحدة
+# 3. دالة تشغيل المسارات الموحدة
 # ==============================================================================
 STYLE_OPTIONS = [
     "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
@@ -223,30 +503,7 @@ STYLE_OPTIONS = [
 ]
 
 
-import importlib
-import inspect
-
-
-def _reload_studio_modules():
-    """إعادة تحميل وحدات الاستوديو من القرص لضمان عدم استخدام نسخ قديمة مخبأة في ذاكرة Streamlit Cloud."""
-    for mod_name in [
-        "auto_cut",
-        "transcriber",
-        "stock_video_finder",
-        "motion_text",
-        "smart_analyzer",
-        "dynamic_edit",
-        "manim_generator"
-    ]:
-        if mod_name in sys.modules:
-            try:
-                importlib.reload(sys.modules[mod_name])
-            except Exception:
-                pass
-
-
 def _safe_call(func, **kwargs):
-    """استدعاء آمن للدوال يفحص المعاملات المدعومة تلقائياً لمنع خطأ unexpected keyword argument."""
     try:
         sig = inspect.signature(func)
         has_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
@@ -284,7 +541,7 @@ def run_selected_pipeline(
     force_caption_overlay_on_cut_mode: bool = False,
     caption_mode: str = "bottom_modern"
 ) -> str:
-    _reload_studio_modules()
+    force_free_ram()
 
     if style_name == STYLE_OPTIONS[0]:
         from dynamic_edit import apply_smart_director_all_in_one
@@ -426,7 +683,36 @@ def run_selected_pipeline(
 
 
 # ==============================================================================
-# 5. جسم الصفحة: رفع ملف ومحرر الإعدادات
+# 4. مراقب المهمة الخلفية الحي (Live Background Job Tracker)
+# ==============================================================================
+if job_manager.is_running():
+    st.info(
+        "🔄 **جاري معالجة ورندرة الفيديو في الخلفية الآن!**\n\n"
+        "يمكنك إغلاق متصفح Google Chrome أو قفل شاشة الهاتف أو الذهاب لأي تطبيق آخر، وعندما تعود وتفتح هذه الصفحة ستجد الفيديو جاهزاً تلقائياً."
+    )
+    live_prog_bar = st.progress(0.0)
+    live_status_txt = st.empty()
+
+    while job_manager.is_running():
+        st_now = job_manager.get_state()
+        p_val = float(st_now.get("progress", 0.05))
+        s_txt = st_now.get("status_text", "جاري المعالجة في الخلفية...")
+        live_prog_bar.progress(min(1.0, max(0.0, p_val)))
+        live_status_txt.markdown(f"### ⏳ {s_txt}")
+        time.sleep(1.0)
+
+    final_st = job_manager.get_state()
+    if final_st.get("status") == "completed":
+        live_prog_bar.progress(1.0)
+        live_status_txt.success("🎉 اكتمل إنتاج الفيديو في الخلفية بنجاح! جاري عرض النتيجة...")
+        time.sleep(0.4)
+        st.rerun()
+    elif final_st.get("status") == "failed":
+        st.error(f"❌ حدث خطأ أثناء المعالجة في الخلفية: {final_st.get('error_message')}")
+
+
+# ==============================================================================
+# 5. جسم الصفحة: رفع ملف ومحرر الإعدادات (باستهلاك ذاكرة صفري للرفع!)
 # ==============================================================================
 col1, col2 = st.columns([1.08, 1.0], gap="large")
 
@@ -434,12 +720,13 @@ with col1:
     st.subheader("1. رفع الفيديو أو الملف الصوتي / تسجيل مباشر")
 
     tab_upload, tab_record = st.tabs([
-        "📁 رفع فيديو أو صوت (بجميع الصيغ)",
+        "📁 رفع فيديو أو صوت (بجميع الصيغ - يدعم 55MB+)",
         "🎙️ تسجيل صوتي مباشر من المايكروفون"
     ])
 
-    raw_media_bytes = None
+    uploaded_stream_obj = None
     raw_media_name = None
+    raw_media_size = 0
 
     with tab_upload:
         allow_any_ext = st.checkbox("🔓 السماح برفع أي ملف بدون تقييد المتصفح", value=False)
@@ -448,38 +735,45 @@ with col1:
             type=None if allow_any_ext else ALL_SUPPORTED_EXTENSIONS
         )
         if uploaded_file is not None:
-            raw_media_bytes = uploaded_file.getvalue()
+            uploaded_stream_obj = uploaded_file
             raw_media_name = uploaded_file.name
+            raw_media_size = getattr(uploaded_file, "size", 0)
 
     with tab_record:
         st.caption("سجّل صوتك مباشرة بالدارجة الجزائرية أو العربية:")
         if hasattr(st, "audio_input"):
             recorded_audio = st.audio_input("اضغط للتسجيل الصوتي المباشر")
             if recorded_audio is not None:
-                raw_media_bytes = recorded_audio.getvalue()
-                raw_media_name = f"voice_record_{int(time.time())}.wav"
+                uploaded_stream_obj = recorded_audio
+                raw_media_name = f"voice_record_{getattr(recorded_audio, 'size', 0)}.wav"
+                raw_media_size = getattr(recorded_audio, "size", 0)
         else:
             st.info("يرجى استخدام تبويب رفع الملفات لرفع تسجيلك الصوتي.")
 
-    active_input_path = None
-    media_analysis = None
+    active_input_path = st.session_state.get("restored_input_path")
+    media_analysis = st.session_state.get("restored_media_analysis")
 
-    if raw_media_bytes and raw_media_name:
-        file_hash = hashlib.md5(raw_media_bytes[:65536] + str(len(raw_media_bytes)).encode()).hexdigest()[:10]
-        safe_ext = os.path.splitext(raw_media_name)[1].lower() or ".wav"
+    if uploaded_stream_obj is not None and raw_media_name:
+        file_hash = hashlib.md5(f"{raw_media_name}_{raw_media_size}".encode()).hexdigest()[:10]
+        safe_ext = os.path.splitext(raw_media_name)[1].lower() or ".mp4"
         saved_input_path = os.path.join(INPUTS_DIR, f"media_{file_hash}{safe_ext}")
+        norm_candidate_path = os.path.join(INPUTS_DIR, f"norm_media_{file_hash}{safe_ext}")
 
         if st.session_state.get("last_file_hash") != file_hash:
             clear_custom_caption_override()
             st.session_state["last_file_hash"] = file_hash
-            st.session_state.pop("processed_result_path", None)
 
-        if not os.path.exists(saved_input_path):
-            with open(saved_input_path, "wb") as f:
-                f.write(raw_media_bytes)
+        if not os.path.exists(norm_candidate_path) and not os.path.exists(saved_input_path):
+            uploaded_stream_obj.seek(0)
+            with open(saved_input_path, "wb") as out_f:
+                shutil.copyfileobj(uploaded_stream_obj, out_f, length=524288)
+            force_free_ram()
 
-        playable_path, is_vid = ensure_playable_audio_or_video(saved_input_path, INPUTS_DIR)
+        source_to_prepare = norm_candidate_path if os.path.exists(norm_candidate_path) else saved_input_path
+        with st.spinner("⚡ جاري تهيئة وضغط الفيديو لحماية ذاكرة السيرفر..."):
+            playable_path, is_vid = ensure_playable_audio_or_video(source_to_prepare, INPUTS_DIR)
         active_input_path = playable_path
+        st.session_state["restored_input_path"] = active_input_path
 
         cache_analysis_key = f"analysis_{file_hash}"
         if cache_analysis_key not in st.session_state:
@@ -490,11 +784,14 @@ with col1:
                     gemini_api_key=gemini_api_key,
                     openai_api_key=openai_api_key
                 )
+            force_free_ram()
         media_analysis = st.session_state[cache_analysis_key]
+        st.session_state["restored_media_analysis"] = media_analysis
 
+    if active_input_path and os.path.exists(active_input_path) and media_analysis:
         st.success(
-            f"✅ **تم استلام وتجهيز الملف بنجاح!** ({media_analysis['media_type_ar']} | "
-            f"المدة: `{media_analysis['duration_sec']} ثانية` | الحجم: `{media_analysis['file_size_mb']} MB`)"
+            f"✅ **الملف جاهز للمعالجة الآمنة!** ({media_analysis['media_type_ar']} | "
+            f"المدة: `{media_analysis['duration_sec']} ثانية` | حجم العمل الرشيق: `{media_analysis['file_size_mb']} MB`)"
         )
 
         if media_analysis["has_video"]:
@@ -528,8 +825,9 @@ with col2:
     if selected_style == STYLE_OPTIONS[0]:
         st.info(
             "🧠 **النمط التلقائي الشامل (Smart Director All-in-One):**\n"
+            "- **مخ تحليل سياقي:** يفهم القصة الكاملة للفيديو ومعنى الجمل المترابطة.\n"
             "- **استيراد 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية** في اللحظات المناسبة لكسر الملل.\n"
-            "- **تنقل ذكي بين الأنماط:** شاشة موشن جرافيك كاملة للمفاهيم، بطاقات علوية، شارات سفلية، ولقطات صافية لراحة العين."
+            "- **يعمل في الخلفية:** يمكنك الخروج من كروم والعودة لاحقاً لتجد الفيديو جاهزاً."
         )
     elif selected_style == STYLE_OPTIONS[1]:
         st.info("🛍️ **إعلانات المنتجات والتجارة الإلكترونية:** خطاف Hook 0-3s، إبراز المشكلة، ميزات المنتج، شارات الثقة (58 ولاية / دفع عند الاستلام)، ولافتة الشراء CTA.")
@@ -539,7 +837,7 @@ with col2:
     elif selected_style == STYLE_OPTIONS[2]:
         st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات زجاجية علوية ومشاهد B-Roll واقعية وكابشن بالثلث السفلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك نصي احترافي:** خلفيات أستوديو متعددة الثيمات ورسومات متجددة مع كابشن كاريوكي.")
+        st.info("🚀 **موشن جرافيك نصي احترافي موجه بالسياق:** بطاقات Bento زجاجية ورسومات فيكتور تعبر عن الفكرة الكاملة للجملة.")
     elif selected_style == STYLE_OPTIONS[4]:
         st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
@@ -548,11 +846,15 @@ with col2:
         st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري.")
 
     st.markdown("<br>", unsafe_allow_html=True)
-    start_btn = st.button("🚀 بدء صناعة ومونتاج الفيديو (Start Processing)", use_container_width=True)
+    start_btn = st.button(
+        "🚀 بدء صناعة ومونتاج الفيديو في الخلفية (Start Processing)",
+        use_container_width=True,
+        disabled=job_manager.is_running()
+    )
 
 
 # ==============================================================================
-# 6. تنفيذ المعالجة
+# 6. إطلاق المعالجة في الخلفية (Background Daemon Execution)
 # ==============================================================================
 if start_btn:
     if active_input_path is None or not os.path.exists(active_input_path):
@@ -578,63 +880,65 @@ if start_btn:
         output_file_name = f"studio_output_{timestamp_prefix}{target_ext}"
         output_file_path = os.path.join(OUTPUTS_DIR, output_file_name)
 
-        progress_bar = st.progress(0.0)
-        status_text = st.empty()
+        eff_params_dict = {
+            "silence_thresh": eff_silence_thresh,
+            "padding_ms": eff_padding_ms,
+            "chunk_size": eff_chunk_size,
+            "whisper_model": eff_whisper_model
+        }
 
-        def update_ui_progress(percent: float, text: str):
-            progress_bar.progress(min(1.0, max(0.0, float(percent))))
-            status_text.markdown(f"**⏳ الحالة الجارية:** {text}")
-
-        try:
-            with st.spinner("🎬 جاري تشغيل عقل المخرج الذكي الشامل..."):
-                processed_path = run_selected_pipeline(
-                    style_name=selected_style,
-                    input_path=active_input_path,
-                    output_path=output_file_path,
-                    media_analysis=media_analysis,
-                    eff_silence_thresh=eff_silence_thresh,
-                    eff_padding_ms=eff_padding_ms,
-                    eff_chunk_size=eff_chunk_size,
-                    eff_whisper_model=eff_whisper_model,
-                    ollama_model=ollama_model_choice,
-                    manim_quality=manim_flag,
-                    dialect=dialect_mode,
-                    pexels_key=pexels_api_key,
-                    groq_key=groq_api_key,
-                    gemini_key=gemini_api_key,
-                    openai_key=openai_api_key,
-                    product_hook=product_custom_hook,
-                    product_cta=product_custom_cta,
-                    progress_cb=update_ui_progress,
-                    caption_mode=eff_caption_mode
-                )
-
-                words_extracted, sentences_extracted = get_last_extracted_transcript()
-                st.session_state["processed_result_path"] = processed_path
-                st.session_state["processed_style"] = selected_style
-                st.session_state["caption_words"] = words_extracted
-                st.session_state["caption_sentences"] = sentences_extracted
-                st.session_state["eff_params"] = {
-                    "silence_thresh": eff_silence_thresh,
-                    "padding_ms": eff_padding_ms,
-                    "chunk_size": eff_chunk_size,
-                    "whisper_model": eff_whisper_model
-                }
-
-        except Exception as err:
-            st.error(f"❌ حدث خطأ أثناء المعالجة: {str(err)}")
-        finally:
-            cleanup_temp_directory(TEMP_DIR)
-            update_ui_progress(1.0, "اكتملت المعالجة بنجاح!")
+        job_manager.start_job(
+            runner_func=run_selected_pipeline,
+            runner_kwargs={
+                "style_name": selected_style,
+                "input_path": active_input_path,
+                "output_path": output_file_path,
+                "media_analysis": media_analysis,
+                "eff_silence_thresh": eff_silence_thresh,
+                "eff_padding_ms": eff_padding_ms,
+                "eff_chunk_size": eff_chunk_size,
+                "eff_whisper_model": eff_whisper_model,
+                "ollama_model": ollama_model_choice,
+                "manim_quality": manim_flag,
+                "dialect": dialect_mode,
+                "pexels_key": pexels_api_key,
+                "groq_key": groq_api_key,
+                "gemini_key": gemini_api_key,
+                "openai_key": openai_api_key,
+                "product_hook": product_custom_hook,
+                "product_cta": product_custom_cta,
+                "caption_mode": eff_caption_mode
+            },
+            job_meta={
+                "input_path": active_input_path,
+                "output_path": output_file_path,
+                "selected_style": selected_style,
+                "caption_mode": eff_caption_mode,
+                "file_hash": st.session_state.get("last_file_hash"),
+                "media_analysis": media_analysis,
+                "eff_params": eff_params_dict
+            },
+            cleanup_func=lambda: cleanup_temp_directory(TEMP_DIR)
+        )
+        st.rerun()
 
 
 # ==============================================================================
-# 7. عرض النتيجة النهائية ومحرر الكابشن التفاعلي
+# 7. عرض النتيجة النهائية (المحفوظة تلقائياً حتى بعد إغلاق المتصفح) ومحرر الكابشن
 # ==============================================================================
 result_path = st.session_state.get("processed_result_path")
 if result_path and os.path.exists(result_path):
     st.markdown("---")
-    st.success("🎉 **الفيديو الجاهز للعرض والتحميل (مع مشاهد B-Roll والموشن جرافيك):**")
+    hdr_col1, hdr_col2 = st.columns([3.2, 1.0])
+    with hdr_col1:
+        st.success("🎉 **الفيديو الجاهز للعرض والتحميل (محفوظ تلقائياً في الخلفية):**")
+    with hdr_col2:
+        if st.button("🗑️ بدء مشروع جديد / مسح المحفوظ"):
+            job_manager.clear_job()
+            st.session_state.pop("processed_result_path", None)
+            st.session_state.pop("restored_input_path", None)
+            st.session_state.pop("restored_media_analysis", None)
+            st.rerun()
 
     res_col1, res_col2 = st.columns([1.0, 1.15], gap="large")
 
@@ -658,7 +962,7 @@ if result_path and os.path.exists(result_path):
 
     with res_col2:
         st.markdown("### ✏️ تعديل الكابشن والنصوص في الفيديو")
-        st.caption("عدّل أي كلمة أو جملة ثم اضغط زر التحديث ليتم تعديل الكابشن في الفيديو فوراً.")
+        st.caption("عدّل أي كلمة أو جملة ثم اضغط زر التحديث ليتم تعديل الكابشن في الخلفية فوراً.")
 
         current_words = st.session_state.get("caption_words", [])
         current_sentences = st.session_state.get("caption_sentences", [])
@@ -686,7 +990,7 @@ if result_path and os.path.exists(result_path):
                         updated_s["text"] = new_s_text
                         edited_sentences_list.append(updated_s)
 
-                    apply_sent_btn = st.form_submit_button("🔄 تطبيق تعديلات الجمل وتحديث الفيديو فوراً")
+                    apply_sent_btn = st.form_submit_button("🔄 تطبيق تعديلات الجمل وتحديث الفيديو في الخلفية")
 
                 if apply_sent_btn and active_input_path:
                     new_w, new_s = set_custom_caption_override(custom_sentences=edited_sentences_list)
@@ -694,46 +998,47 @@ if result_path and os.path.exists(result_path):
                     st.session_state["caption_sentences"] = new_s
 
                     params = st.session_state.get("eff_params", {
-                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 10, "whisper_model": "small"
+                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 20, "whisper_model": "base"
                     })
                     new_out_path = os.path.join(OUTPUTS_DIR, f"edited_captions_{int(time.time())}.mp4")
-                    prog_edit = st.progress(0.0)
-                    stat_edit = st.empty()
+                    chosen_style = st.session_state.get("processed_style", selected_style)
+                    force_cap = (chosen_style == STYLE_OPTIONS[6])
 
-                    def _edit_cb(p: float, txt: str):
-                        prog_edit.progress(min(1.0, max(0.0, float(p))))
-                        stat_edit.markdown(f"**⏳ جاري تحديث الفيديو بالكابشن الجديد:** {txt}")
-
-                    try:
-                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو..."):
-                            chosen_style = st.session_state.get("processed_style", selected_style)
-                            force_cap = (chosen_style == STYLE_OPTIONS[6])
-                            updated_video_path = run_selected_pipeline(
-                                style_name=chosen_style,
-                                input_path=active_input_path,
-                                output_path=new_out_path,
-                                media_analysis=media_analysis,
-                                eff_silence_thresh=params["silence_thresh"],
-                                eff_padding_ms=params["padding_ms"],
-                                eff_chunk_size=params["chunk_size"],
-                                eff_whisper_model=params["whisper_model"],
-                                ollama_model=ollama_model_choice,
-                                manim_quality=manim_flag,
-                                dialect=dialect_mode,
-                                pexels_key=pexels_api_key,
-                                groq_key=groq_api_key,
-                                gemini_key=gemini_api_key,
-                                openai_key=openai_api_key,
-                                product_hook=product_custom_hook,
-                                product_cta=product_custom_cta,
-                                progress_cb=_edit_cb,
-                                force_caption_overlay_on_cut_mode=force_cap,
-                                caption_mode=eff_caption_mode
-                            )
-                            st.session_state["processed_result_path"] = updated_video_path
-                            st.rerun()
-                    finally:
-                        cleanup_temp_directory(TEMP_DIR)
+                    job_manager.start_job(
+                        runner_func=run_selected_pipeline,
+                        runner_kwargs={
+                            "style_name": chosen_style,
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "media_analysis": media_analysis,
+                            "eff_silence_thresh": params["silence_thresh"],
+                            "eff_padding_ms": params["padding_ms"],
+                            "eff_chunk_size": params["chunk_size"],
+                            "eff_whisper_model": params["whisper_model"],
+                            "ollama_model": ollama_model_choice,
+                            "manim_quality": manim_flag,
+                            "dialect": dialect_mode,
+                            "pexels_key": pexels_api_key,
+                            "groq_key": groq_api_key,
+                            "gemini_key": gemini_api_key,
+                            "openai_key": openai_api_key,
+                            "product_hook": product_custom_hook,
+                            "product_cta": product_custom_cta,
+                            "force_caption_overlay_on_cut_mode": force_cap,
+                            "caption_mode": eff_caption_mode
+                        },
+                        job_meta={
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "selected_style": chosen_style,
+                            "caption_mode": eff_caption_mode,
+                            "file_hash": st.session_state.get("last_file_hash"),
+                            "media_analysis": media_analysis,
+                            "eff_params": params
+                        },
+                        cleanup_func=lambda: cleanup_temp_directory(TEMP_DIR)
+                    )
+                    st.rerun()
 
         with edit_tab_words:
             if not current_words:
@@ -756,7 +1061,7 @@ if result_path and os.path.exists(result_path):
                                 "end": round(max(new_w_start + 0.08, new_w_end), 3)
                             })
 
-                    apply_words_btn = st.form_submit_button("🔄 تطبيق تعديلات الكلمات وتحديث الفيديو فوراً")
+                    apply_words_btn = st.form_submit_button("🔄 تطبيق تعديلات الكلمات وتحديث الفيديو في الخلفية")
 
                 if apply_words_btn and active_input_path:
                     new_w, new_s = set_custom_caption_override(custom_words=edited_words_list)
@@ -764,43 +1069,44 @@ if result_path and os.path.exists(result_path):
                     st.session_state["caption_sentences"] = new_s
 
                     params = st.session_state.get("eff_params", {
-                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 10, "whisper_model": "small"
+                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 20, "whisper_model": "base"
                     })
                     new_out_path = os.path.join(OUTPUTS_DIR, f"edited_words_{int(time.time())}.mp4")
-                    prog_edit2 = st.progress(0.0)
-                    stat_edit2 = st.empty()
+                    chosen_style = st.session_state.get("processed_style", selected_style)
+                    force_cap = (chosen_style == STYLE_OPTIONS[6])
 
-                    def _edit_cb2(p: float, txt: str):
-                        prog_edit2.progress(min(1.0, max(0.0, float(p))))
-                        stat_edit2.markdown(f"**⏳ جاري تحديث الفيديو بالكابشن الجديد:** {txt}")
-
-                    try:
-                        with st.spinner("✨ جاري تحديث الكابشن وإعادة إنتاج الفيديو..."):
-                            chosen_style = st.session_state.get("processed_style", selected_style)
-                            force_cap = (chosen_style == STYLE_OPTIONS[6])
-                            updated_video_path = run_selected_pipeline(
-                                style_name=chosen_style,
-                                input_path=active_input_path,
-                                output_path=new_out_path,
-                                media_analysis=media_analysis,
-                                eff_silence_thresh=params["silence_thresh"],
-                                eff_padding_ms=params["padding_ms"],
-                                eff_chunk_size=params["chunk_size"],
-                                eff_whisper_model=params["whisper_model"],
-                                ollama_model=ollama_model_choice,
-                                manim_quality=manim_flag,
-                                dialect=dialect_mode,
-                                pexels_key=pexels_api_key,
-                                groq_key=groq_api_key,
-                                gemini_key=gemini_api_key,
-                                openai_key=openai_api_key,
-                                product_hook=product_custom_hook,
-                                product_cta=product_custom_cta,
-                                progress_cb=_edit_cb2,
-                                force_caption_overlay_on_cut_mode=force_cap,
-                                caption_mode=eff_caption_mode
-                            )
-                            st.session_state["processed_result_path"] = updated_video_path
-                            st.rerun()
-                    finally:
-                        cleanup_temp_directory(TEMP_DIR)
+                    job_manager.start_job(
+                        runner_func=run_selected_pipeline,
+                        runner_kwargs={
+                            "style_name": chosen_style,
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "media_analysis": media_analysis,
+                            "eff_silence_thresh": params["silence_thresh"],
+                            "eff_padding_ms": params["padding_ms"],
+                            "eff_chunk_size": params["chunk_size"],
+                            "eff_whisper_model": params["whisper_model"],
+                            "ollama_model": ollama_model_choice,
+                            "manim_quality": manim_flag,
+                            "dialect": dialect_mode,
+                            "pexels_key": pexels_api_key,
+                            "groq_key": groq_api_key,
+                            "gemini_key": gemini_api_key,
+                            "openai_key": openai_api_key,
+                            "product_hook": product_custom_hook,
+                            "product_cta": product_custom_cta,
+                            "force_caption_overlay_on_cut_mode": force_cap,
+                            "caption_mode": eff_caption_mode
+                        },
+                        job_meta={
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "selected_style": chosen_style,
+                            "caption_mode": eff_caption_mode,
+                            "file_hash": st.session_state.get("last_file_hash"),
+                            "media_analysis": media_analysis,
+                            "eff_params": params
+                        },
+                        cleanup_func=lambda: cleanup_temp_directory(TEMP_DIR)
+                    )
+                    st.rerun()

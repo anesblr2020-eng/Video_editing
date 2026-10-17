@@ -14,6 +14,8 @@ smart_analyzer.py - عقل المخرج الذكي الشامل ومحرك ال�
 
 import sys
 import os
+import gc
+import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -763,70 +765,86 @@ def analyze_media_file(
     file_size_mb = round(os.path.getsize(file_path) / (1024 * 1024), 2)
 
     has_video_stream = False
-    width, height, fps = 1080, 1920, 24
-    visual_motion_score = 0.0
+    width, height, fps = 720, 1280, 24
+    visual_motion_score = 8.0
     video_duration = 0.0
 
+    # فحص خصائص الفيديو والصوت عبر FFmpeg مباشرة بدون تحميل الفيديو في الـ RAM
     if ext in SUPPORTED_VIDEO_EXTENSIONS:
         try:
-            from moviepy.editor import VideoFileClip
-            clip = VideoFileClip(file_path)
-            if clip.w and clip.h and clip.duration and clip.duration > 0.1:
-                frame0 = clip.get_frame(0)
-                if frame0 is not None and frame0.size > 0:
-                    has_video_stream = True
-                    width, height = int(clip.w), int(clip.h)
-                    fps = int(clip.fps) if clip.fps and clip.fps > 1 else 24
-                    video_duration = float(clip.duration)
-
-                    sample_times = np.linspace(0.1, max(0.2, video_duration - 0.1), min(10, max(2, int(video_duration))))
-                    prev_small = None
-                    diffs = []
-                    for t in sample_times:
-                        frm = clip.get_frame(t)
-                        small = frm[::8, ::8].astype(np.float32)
-                        if prev_small is not None and small.shape == prev_small.shape:
-                            diffs.append(float(np.mean(np.abs(small - prev_small))))
-                        prev_small = small
-                    if diffs:
-                        visual_motion_score = round(float(np.mean(diffs)), 2)
-            clip.close()
+            res = subprocess.run(
+                ["ffmpeg", "-i", file_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10
+            )
+            info_txt = res.stderr or ""
+            if "Video:" in info_txt:
+                has_video_stream = True
+                m_res = re.search(r"(\d{2,5})x(\d{2,5})", info_txt)
+                if m_res:
+                    width, height = int(m_res.group(1)), int(m_res.group(2))
+                m_fps = re.search(r"(\d+(?:\.\d+)?)\s*fps", info_txt)
+                if m_fps:
+                    fps = max(15, min(60, int(round(float(m_fps.group(1))))))
+            m_dur = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", info_txt)
+            if m_dur:
+                video_duration = round(int(m_dur.group(1)) * 3600 + int(m_dur.group(2)) * 60 + float(m_dur.group(3)), 2)
         except Exception:
-            has_video_stream = False
+            pass
 
     duration_sec = video_duration
-    mean_dbfs = -28.0
-    max_dbfs = -6.0
+    mean_dbfs = -26.0
+    max_dbfs = -4.0
     noise_floor_dbfs = -48.0
     optimal_silence_thresh = -42.0
-    silence_ratio = 0.18
+    silence_ratio = 0.16
     optimal_padding_ms = 250
 
+    sample_wav = file_path + f"_probe_{os.getpid()}.wav"
     try:
-        from pydub import AudioSegment
-        audio = AudioSegment.from_file(file_path)
-        duration_sec = round(len(audio) / 1000.0, 2)
-        if duration_sec > 0 and audio.dBFS != -float("inf"):
-            mean_dbfs = round(float(audio.dBFS), 1)
-            max_dbfs = round(float(audio.max_dBFS), 1)
-
-            step_ms = 100
-            chunk_levels = [
-                c.dBFS for c in audio[::step_ms]
-                if c.dBFS != -float("inf") and c.dBFS > -85.0
-            ]
-            if chunk_levels:
-                p15 = float(np.percentile(chunk_levels, 15))
-                p85 = float(np.percentile(chunk_levels, 85))
-                noise_floor_dbfs = round(p15, 1)
-
-                raw_thresh = p15 + 0.18 * (p85 - p15)
-                optimal_silence_thresh = round(max(-54.0, min(-32.0, raw_thresh, mean_dbfs - 11.0)), 1)
-                silent_chunks = sum(1 for lvl in chunk_levels if lvl < optimal_silence_thresh)
-                silence_ratio = round(silent_chunks / max(1, len(chunk_levels)), 2)
-                optimal_padding_ms = 260 if silence_ratio > 0.25 else 240
+        import wave
+        subprocess.run(
+            ["ffmpeg", "-y", "-t", "35", "-i", file_path, "-vn", "-acodec", "pcm_s16le", "-ar", "8000", "-ac", "1", sample_wav],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=25
+        )
+        if os.path.exists(sample_wav) and os.path.getsize(sample_wav) > 512:
+            with wave.open(sample_wav, "rb") as wf:
+                n_frames = wf.getnframes()
+                raw_b = wf.readframes(n_frames)
+            samples = np.frombuffer(raw_b, dtype=np.int16).astype(np.float32)
+            del raw_b
+            if duration_sec <= 0.1 and len(samples) > 0:
+                duration_sec = round(len(samples) / 8000.0, 2)
+            win = 800  # 100ms at 8kHz
+            n_w = len(samples) // win
+            if n_w > 2:
+                arr = samples[:n_w * win].reshape((n_w, win))
+                rms = np.sqrt(np.mean(arr * arr, axis=1) + 1e-9)
+                dbfs = 20.0 * np.log10(np.maximum(rms / 32768.0, 1e-7))
+                valid = dbfs[dbfs > -85.0]
+                if len(valid) > 0:
+                    mean_dbfs = round(float(np.mean(valid)), 1)
+                    max_dbfs = round(float(np.max(valid)), 1)
+                    p15 = float(np.percentile(valid, 15))
+                    p85 = float(np.percentile(valid, 85))
+                    noise_floor_dbfs = round(p15, 1)
+                    raw_thresh = p15 + 0.18 * (p85 - p15)
+                    optimal_silence_thresh = round(max(-54.0, min(-32.0, raw_thresh, mean_dbfs - 11.0)), 1)
+                    silent_chunks = int(np.sum(valid < optimal_silence_thresh))
+                    silence_ratio = round(silent_chunks / max(1, len(valid)), 2)
+                    optimal_padding_ms = 260 if silence_ratio > 0.25 else 240
+            del samples
     except Exception:
         pass
+    finally:
+        if os.path.exists(sample_wav):
+            try:
+                os.remove(sample_wav)
+            except Exception:
+                pass
+        gc.collect()
 
     ai_info = detect_best_ai_provider(
         groq_api_key=groq_api_key,
@@ -842,7 +860,7 @@ def analyze_media_file(
     except Exception:
         pass
 
-    optimal_whisper_model = "medium" if has_cuda else "small"
+    optimal_whisper_model = "medium" if has_cuda else "base"
     is_vertical = (height >= width)
 
     return {
@@ -850,7 +868,7 @@ def analyze_media_file(
         "file_size_mb": file_size_mb,
         "has_video": has_video_stream,
         "media_type_ar": "فيديو مع صوت 🎬" if has_video_stream else "تسجيل / ملف صوتي فقط 🎙️",
-        "duration_sec": duration_sec,
+        "duration_sec": max(0.5, duration_sec),
         "width": width,
         "height": height,
         "fps": fps,
@@ -863,11 +881,11 @@ def analyze_media_file(
         "visual_motion_score": visual_motion_score,
         "optimal_silence_threshold": optimal_silence_thresh,
         "optimal_padding_ms": optimal_padding_ms,
-        "optimal_chunk_size": 10,
+        "optimal_chunk_size": 20,
         "optimal_whisper_model": optimal_whisper_model,
         "ai_provider_info": ai_info,
         "criteria_reasons": [
-            f"تم تفعيل مخ التحليل السياقي والسردي (Contextual Narrative Brain) لفهم معنى الجمل الكاملة والرسالة العامة للفيديو.",
+            f"تم تفعيل مخ التحليل السياقي والسردي (Contextual Narrative Brain) مع حماية الذاكرة القصوى (Streaming Pipe Engine) للفيديوهات الكبيرة.",
             f"تم ضبط عتبة السكوت الطبيعية عند ({optimal_silence_thresh} dBFS) وهامش حماية مخارج الحروف ({optimal_padding_ms}ms)."
         ]
     }

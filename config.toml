@@ -1,0 +1,11 @@
+[server]
+maxUploadSize = 200
+maxMessageSize = 200
+fileWatcherType = "none"
+enableXsrfProtection = false
+
+[runner]
+fastReruns = true
+
+[browser]
+gatherUsageStats = false

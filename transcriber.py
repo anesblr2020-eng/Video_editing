@@ -11,6 +11,9 @@ transcriber.py - محرك التفريغ الصوتي الثلاثي الهجي�
 
 import sys
 import os
+import gc
+import ctypes
+import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -26,6 +29,13 @@ import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
+
+def _force_free_ram():
+    try:
+        _force_free_ram()
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
 
 try:
     from smart_analyzer import query_hybrid_llm
@@ -523,9 +533,16 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
         logger.debug(f"مكتبة speech_recognition غير متوفرة ({e}).")
         return None
 
+    temp_16k = audio_path + "_16k_mono.wav"
     try:
-        audio = AudioSegment.from_file(audio_path)
-        audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+        subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-threads", "1", "-i", audio_path, "-vn", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1", "-threads", "1", temp_16k],
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60
+        )
+        if os.path.exists(temp_16k) and os.path.getsize(temp_16k) > 512:
+            audio = AudioSegment.from_wav(temp_16k)
+        else:
+            audio = AudioSegment.from_file(audio_path).set_frame_rate(16000).set_channels(1).set_sample_width(2)
         total_ms = len(audio)
         if total_ms < 200:
             return None
@@ -616,6 +633,13 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
 
     except Exception as e:
         logger.warning(f"ملاحظة في محرك ar-DZ: {e}")
+    finally:
+        if os.path.exists(temp_16k):
+            try:
+                os.remove(temp_16k)
+            except Exception:
+                pass
+        _force_free_ram()
 
     return None
 
@@ -895,36 +919,61 @@ def _run_full_transcription(
     final_device = device if device is not None else detected_device
     final_compute = compute_type if compute_type is not None else detected_compute
 
-    model = _get_or_load_whisper_model(model_size, final_device, final_compute)
-    target_language = None if (language == "auto" or not language) else language
+    # إذا نجح محرك الجزائر السحابي المجاني (ar-DZ) على بيئة CPU المحدودة (مثل Streamlit Cloud)، نعتمد نتائجه مباشرة دون تحميل نموذج Whisper في الـ RAM!
+    if ar_dz_words and len(ar_dz_words) >= 3 and final_device == "cpu":
+        final_words = apply_phrase_fixes_to_words(ar_dz_words)
+        micro_scenes = split_words_into_micro_scenes(final_words)
+        if len(_TRANSCRIPTION_CACHE) > 2:
+            _TRANSCRIPTION_CACHE.clear()
+        _TRANSCRIPTION_CACHE[cache_key] = {"words": final_words, "sentences": micro_scenes}
+        _LAST_EXTRACTED_TRANSCRIPT["words"] = final_words
+        _LAST_EXTRACTED_TRANSCRIPT["sentences"] = micro_scenes
+        _force_free_ram()
+        return final_words, micro_scenes
 
-    segments, info = model.transcribe(
-        audio_path,
-        word_timestamps=True,
-        language=target_language,
-        initial_prompt=ALGERIAN_DARIJA_INITIAL_PROMPT,
-        beam_size=5,
-        best_of=5,
-        condition_on_previous_text=False,
-        compression_ratio_threshold=3.2,
-        log_prob_threshold=-1.6,
-        no_speech_threshold=0.85,
-        vad_filter=vad_filter,
-        vad_parameters=dict(threshold=0.25, min_speech_duration_ms=100, min_silence_duration_ms=650, speech_pad_ms=350)
-    )
+    # على المعالج المركزي (CPU / Streamlit Cloud) نستخدم الموديل الرشيق base لتوفير 350MB من الـ RAM لمنع خطأ OOM في المرحلة 5
+    eff_model_size = "base" if (final_device == "cpu" and model_size in ("small", "medium", "large-v3", "auto")) else model_size
 
     whisper_words: List[Dict[str, Any]] = []
-    for seg in segments:
-        if seg.words:
-            for word_obj in seg.words:
-                cleaned_word = normalize_algerian_word(word_obj.word)
-                if cleaned_word:
-                    whisper_words.append({
-                        "word": cleaned_word,
-                        "start": round(word_obj.start, 3),
-                        "end": round(word_obj.end, 3),
-                        "probability": round(word_obj.probability, 3)
-                    })
+    try:
+        model = _get_or_load_whisper_model(eff_model_size, final_device, final_compute)
+        target_language = None if (language == "auto" or not language) else language
+
+        segments, info = model.transcribe(
+            audio_path,
+            word_timestamps=True,
+            language=target_language,
+            initial_prompt=ALGERIAN_DARIJA_INITIAL_PROMPT,
+            beam_size=2 if final_device == "cpu" else 5,
+            best_of=2 if final_device == "cpu" else 5,
+            condition_on_previous_text=False,
+            compression_ratio_threshold=3.2,
+            log_prob_threshold=-1.6,
+            no_speech_threshold=0.85,
+            vad_filter=vad_filter,
+            vad_parameters=dict(threshold=0.25, min_speech_duration_ms=100, min_silence_duration_ms=650, speech_pad_ms=350)
+        )
+
+        for seg in segments:
+            if seg.words:
+                for word_obj in seg.words:
+                    cleaned_word = normalize_algerian_word(word_obj.word)
+                    if cleaned_word:
+                        whisper_words.append({
+                            "word": cleaned_word,
+                            "start": round(word_obj.start, 3),
+                            "end": round(word_obj.end, 3),
+                            "probability": round(word_obj.probability, 3)
+                        })
+
+        del segments
+        del model
+        _WHISPER_MODEL_CACHE.clear()
+        _force_free_ram()
+    except Exception as wh_err:
+        logger.warning(f"Whisper local fallback notice: {wh_err}")
+        _WHISPER_MODEL_CACHE.clear()
+        _force_free_ram()
 
     final_words = merge_ar_dz_with_whisper_timestamps(
         ar_dz_words=ar_dz_words,

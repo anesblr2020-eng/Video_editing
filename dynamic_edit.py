@@ -1,14 +1,20 @@
 """
 dynamic_edit.py - وحدة المونتاج الديناميكي، دمج المشاهد الرسومية السياقية، مشاهد B-Roll، والمخرج الذكي الشامل
 =================================================================================================================
-تنفذ هذه الوحدة أوامر "مخطط المخرج الشامل (Master Director Plan)" الصادرة من المخ السياقي:
-- تقسم الكلام إلى جمل وأفكار سياقية متكاملة (وليس كلمة بكلمة).
-- تستورد 3 إلى 4 مشاهد B-Roll حقيقية خالية من حقوق الملكية في اللحظات المناسبة لدعم المحتوى.
-- تتنقل بين أنماط التراكب بذكاء: الشاشة الكاملة للموشن جرافيك، مقاطع B-Roll الواقعية، البطاقات العلوية، واللقطات الصافية.
+معمارية التدفق المباشر باستهلاك ذاكرة ثابت O(1) (Zero-OOM FFmpeg Streaming Pipe Engine for Streamlit Cloud):
+- تعالج الفيديوهات بحجم 55MB و100MB+ دون تجاوز حدود ذاكرة Streamlit Cloud (1GB RAM) على الإطلاق!
+- المرحلة 1 تقص الصمت وتطبّع الدقة إلى 960p qHD (24fps) مباشرة عبر عملية `ffmpeg` أصلية أحادية الخيط خارج ذاكرة بايثون.
+- المرحلة 5 تقرأ الفيديو إطاراً بإطار عبر أنبوب `ffmpeg` مباشر أحادي الخيط (`-threads 1` قبل `-i`)، وتطبق الزوم والموشن جرافيك السياقي وB-Roll،
+  وتضخ الإطار فوراً إلى أنبوب التشفير `ffmpeg` (`-preset ultrafast -tune zerolatency -x264-params rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0 -threads 1`)
+  مع تحرير الذاكرة الفوري لنظام التشغيل (`glibc malloc_trim(0)`) كل 60 إطاراً!
 """
 
 import sys
 import os
+import gc
+import re
+import ctypes
+import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -48,7 +54,12 @@ from typing import List, Dict, Any, Tuple, Optional, Callable
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-from auto_cut import remove_silence, is_video_file
+from auto_cut import (
+    remove_silence,
+    is_video_file,
+    get_safe_working_resolution,
+    force_free_ram
+)
 from transcriber import transcribe_audio, transcribe_sentences, split_words_into_micro_scenes
 from motion_text import (
     get_arabic_font,
@@ -92,46 +103,8 @@ except ImportError:
         get_stock_broll_clip = getattr(_mod, "get_stock_broll_clip")
         process_broll_clip_for_timeline = getattr(_mod, "process_broll_clip_for_timeline")
     else:
-        _DIRECT_VIDEOS = {
-            'video_editor': ['https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-working-on-a-computer-43407-large.mp4'],
-            'ai_technology': ['https://assets.mixkit.co/videos/preview/mixkit-digital-animation-of-screens-with-data-41526-large.mp4'],
-            'busy_no_time': ['https://assets.mixkit.co/videos/preview/mixkit-sand-flowing-through-an-hourglass-42861-large.mp4'],
-            'smartphone_reels': ['https://assets.mixkit.co/videos/preview/mixkit-young-man-using-a-smartphone-in-the-city-43180-large.mp4'],
-            'developer_coding': ['https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-typing-on-a-laptop-keyboard-41315-large.mp4'],
-            'creator_studio': ['https://assets.mixkit.co/videos/preview/mixkit-man-working-with-headphones-on-in-an-office-43411-large.mp4']
-        }
-        def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 1080, height: int = 1920, pexels_api_key: Optional[str] = None, **kw) -> Optional[str]:
-            os.makedirs(cache_dir, exist_ok=True)
-            urls = _DIRECT_VIDEOS.get(category.lower(), _DIRECT_VIDEOS['video_editor'])
-            for u in urls:
-                uh = hashlib.md5(u.encode()).hexdigest()[:10]
-                dest = os.path.join(cache_dir, f"stock_{category}_{uh}.mp4")
-                if os.path.exists(dest) and os.path.getsize(dest) > 50000:
-                    return dest
-                try:
-                    r = requests.get(u, headers={'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=12)
-                    if r.status_code == 200:
-                        with open(dest, 'wb') as f:
-                            for ch in r.iter_content(131072):
-                                if ch:
-                                    f.write(ch)
-                        if os.path.exists(dest) and os.path.getsize(dest) > 50000:
-                            return dest
-                except Exception:
-                    pass
-            return None
-
-        def process_broll_clip_for_timeline(raw_video_path: str, target_duration: float, width: int, height: int, **kw):
-            from moviepy.editor import VideoFileClip, vfx
-            clip = VideoFileClip(raw_video_path).without_audio()
-            ow, oh = clip.size
-            sc = max(width / float(ow), height / float(oh))
-            nw, nh = int(ow * sc), int(oh * sc)
-            res = clip.resize((nw, nh))
-            cropped = res.crop(x1=max(0, (nw - width) // 2), y1=max(0, (nh - height) // 2), width=width, height=height)
-            if cropped.duration < target_duration:
-                return cropped.fx(vfx.loop, duration=target_duration)
-            return cropped.subclip(0, target_duration)
+        get_stock_broll_clip = None
+        process_broll_clip_for_timeline = None
 
 try:
     from smart_analyzer import (
@@ -200,52 +173,63 @@ def apply_zoom_in_crop(clip, zoom_factor: float = 1.15):
     return clip.crop(x1=x1, y1=y1, width=crop_w, height=crop_h).resize((w, h))
 
 
-def _build_base_video_from_audio_or_video(
-    media_path: str,
-    temp_dir: str,
-    silence_threshold: float,
-    chunk_size: int,
-    padding_ms: int
-) -> Tuple[Any, bool]:
-    from moviepy.editor import VideoFileClip, AudioFileClip, ImageClip
+def _zoom_frame_numpy(frame_rgb: np.ndarray, zoom_factor: float, target_w: int, target_h: int) -> np.ndarray:
+    fh, fw, _ = frame_rgb.shape
+    if zoom_factor <= 1.01 and fw == target_w and fh == target_h:
+        return frame_rgb
 
-    has_vid = is_video_file(media_path)
-    if has_vid:
-        jumpcut_temp_video = os.path.join(temp_dir, "temp_jumpcut_base.mp4")
-        remove_silence(
-            input_path=media_path,
-            output_path=jumpcut_temp_video,
-            silence_threshold=silence_threshold,
-            chunk_size=chunk_size,
-            padding_ms=max(220, padding_ms)
+    if zoom_factor > 1.01:
+        cw = max(16, int(fw / zoom_factor))
+        ch = max(16, int(fh / zoom_factor))
+        x1 = max(0, (fw - cw) // 2)
+        y1 = max(0, (fh - ch) // 2)
+        cropped = frame_rgb[y1:y1 + ch, x1:x1 + cw]
+        return np.array(Image.fromarray(cropped).resize((target_w, target_h), Image.Resampling.BILINEAR), dtype=np.uint8)
+
+    scale = max(target_w / float(fw), target_h / float(fh))
+    nw = max(target_w, int(round(fw * scale)))
+    nh = max(target_h, int(round(fh * scale)))
+    resized = np.array(Image.fromarray(frame_rgb).resize((nw, nh), Image.Resampling.BILINEAR), dtype=np.uint8)
+    x1 = max(0, (nw - target_w) // 2)
+    y1 = max(0, (nh - target_h) // 2)
+    return resized[y1:y1 + target_h, x1:x1 + target_w]
+
+
+def _probe_video_dimensions_and_duration(video_path: str) -> Tuple[int, int, float]:
+    w, h, dur = 540, 960, 10.0
+    try:
+        res = subprocess.run(
+            ["ffmpeg", "-threads", "1", "-i", video_path],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=10
         )
-        return VideoFileClip(jumpcut_temp_video), True
-    else:
-        jumpcut_temp_audio = os.path.join(temp_dir, "temp_jumpcut_base.mp3")
-        remove_silence(
-            input_path=media_path,
-            output_path=jumpcut_temp_audio,
-            silence_threshold=silence_threshold,
-            chunk_size=chunk_size,
-            padding_ms=max(220, padding_ms)
-        )
-        aud_clip = AudioFileClip(jumpcut_temp_audio)
-        bg_arr = create_studio_background(1080, 1920, theme_name="crimson_energy")
-        vid_clip = ImageClip(bg_arr).set_duration(aud_clip.duration).set_audio(aud_clip)
-        vid_clip.filename = jumpcut_temp_audio
-        return vid_clip, False
+        info = res.stderr or ""
+        m_res = re.search(r"Stream\s+#\d+:\d+.*Video:.*?(\d{2,5})x(\d{2,5})", info)
+        if not m_res:
+            m_res = re.search(r"(\d{3,5})x(\d{3,5})", info)
+        if m_res:
+            w, h = int(m_res.group(1)), int(m_res.group(2))
+        m_dur = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", info)
+        if m_dur:
+            dur = round(int(m_dur.group(1)) * 3600 + int(m_dur.group(2)) * 60 + float(m_dur.group(3)), 3)
+    except Exception:
+        pass
+    w, h = get_safe_working_resolution(w, h, max_dim=960)
+    return w, h, max(0.2, dur)
 
 
 # ==============================================================================
-# المحرك التنفيذي الموحد لأوامر مخطط المخرج الشامل مع دمج مشاهد B-Roll
+# المحرك التنفيذي الموحد عبر أنابيب FFmpeg المباشرة (O(1) Constant RAM Engine)
 # ==============================================================================
 def _execute_master_director_pipeline(
     input_path: str,
     output_path: str,
     silence_threshold: float = -42.0,
-    chunk_size: int = 10,
+    chunk_size: int = 20,
     padding_ms: int = 240,
-    whisper_model: str = "small",
+    whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",
     product_name_override: Optional[str] = None,
     cta_override: Optional[str] = None,
@@ -270,8 +254,9 @@ def _execute_master_director_pipeline(
         logger.info(f"Progress: {val*100:.1f}% - {msg}")
 
     if not is_video_file(input_path):
-        clean_audio = os.path.join(temp_dir, "temp_clean_audio.mp3")
+        clean_audio = os.path.join(temp_dir, f"temp_clean_audio_{os.getpid()}.mp3")
         remove_silence(input_path, clean_audio, silence_threshold=silence_threshold, padding_ms=padding_ms)
+        force_free_ram()
         out = create_kinetic_typography_video(
             input_path=clean_audio,
             output_path=output_path,
@@ -284,28 +269,40 @@ def _execute_master_director_pipeline(
         )
         return out, {"director_plan_scenes": 6}
 
-    from moviepy.editor import concatenate_videoclips
+    jumpcut_temp_video = os.path.join(temp_dir, f"temp_jumpcut_base_{os.getpid()}.mp4")
+    dec_proc = None
+    enc_proc = None
+    broll_proc_state: Dict[str, Any] = {"path": None, "proc": None}
 
-    base_clip = None
-    zoomed_base = None
-    final_video = None
-    sentence_clips = []
-    broll_clips_to_close = []
+    def _close_broll_pipe():
+        p = broll_proc_state.get("proc")
+        if p is not None:
+            try:
+                if p.stdout:
+                    p.stdout.close()
+                p.kill()
+            except Exception:
+                pass
+        broll_proc_state["proc"] = None
+        broll_proc_state["path"] = None
 
     try:
-        update_progress(0.10, "1/5: تحليل الإشارة الصوتية وإزالة السكوت الطويل بانسيابية طبيعية...")
-        base_clip, _ = _build_base_video_from_audio_or_video(
-            media_path=input_path,
-            temp_dir=temp_dir,
+        force_free_ram()
+        update_progress(0.10, "1/5: تحليل الإشارة الصوتية وقص السكوت الطويل عبر محرك FFmpeg السريع...")
+        remove_silence(
+            input_path=input_path,
+            output_path=jumpcut_temp_video,
             silence_threshold=silence_threshold,
             chunk_size=chunk_size,
-            padding_ms=padding_ms
+            padding_ms=max(220, padding_ms)
         )
-        transcribe_source = getattr(base_clip, "filename", input_path) or input_path
+        force_free_ram()
+
+        video_w, video_h, video_duration = _probe_video_dimensions_and_duration(jumpcut_temp_video)
 
         update_progress(0.25, "2/5: تفريغ الكلام وتشغيل المخ السياقي لتوليد مخطط المخرج...")
         word_data = transcribe_audio(
-            audio_path=transcribe_source,
+            audio_path=jumpcut_temp_video,
             model_size=whisper_model,
             language="ar",
             dialect_mode=dialect_mode,
@@ -319,8 +316,7 @@ def _execute_master_director_pipeline(
             max_duration_per_scene=4.2,
             min_words_per_scene=4
         )
-        video_duration = float(base_clip.duration)
-        video_w, video_h = base_clip.size
+        force_free_ram()
 
         if generate_master_director_plan is not None:
             master_plan = _safe_call(
@@ -340,79 +336,116 @@ def _execute_master_director_pipeline(
             master_plan = micro_scenes
 
         broll_scenes_count = sum(1 for sc in master_plan if sc.get("layout_mode") == "stock_broll")
-        update_progress(0.42, f"3/5: جلب {broll_scenes_count} مشاهد B-Roll حقيقية خالية من حقوق الملكية من الإنترنت...")
+        update_progress(0.42, f"3/5: تحضير {broll_scenes_count} مشاهد B-Roll حقيقية خالية من حقوق الملكية...")
 
-        current_time = 0.0
         for sc in master_plan:
-            s_start = max(0.0, float(sc.get("start", 0.0)))
-            s_end = min(video_duration, float(sc.get("end", s_start + 2.5)))
-            dur = max(0.2, s_end - s_start)
-            z_factor = float(sc.get("zoom_factor", 1.12))
-            layout_mode = sc.get("layout_mode", "top_overlay")
+            if sc.get("layout_mode") == "stock_broll" and enable_stock_broll and callable(get_stock_broll_clip):
+                try:
+                    cat = sc.get("stock_category", "video_editor")
+                    dur = max(0.5, float(sc.get("end", 2.5)) - float(sc.get("start", 0.0)))
+                    raw_broll = get_stock_broll_clip(
+                        category=cat,
+                        target_duration=dur,
+                        cache_dir=stock_dir,
+                        width=video_w,
+                        height=video_h,
+                        pexels_api_key=pexels_api_key
+                    )
+                    if raw_broll and os.path.exists(raw_broll):
+                        sc["broll_file_path"] = raw_broll
+                except Exception as b_err:
+                    logger.warning(f"تعذر تحميل مشهد B-Roll: {b_err}")
 
-            if s_start > current_time + 0.04:
-                sentence_clips.append(base_clip.subclip(current_time, s_start))
+        bg_cache: Dict[str, np.ndarray] = {}
+        force_free_ram()
 
-            if s_end > s_start + 0.04:
-                orig_sub = base_clip.subclip(s_start, s_end)
-                used_broll = False
-                if layout_mode == "stock_broll" and enable_stock_broll and callable(get_stock_broll_clip) and callable(process_broll_clip_for_timeline):
-                    try:
-                        cat = sc.get("stock_category", "video_editor")
-                        raw_broll = get_stock_broll_clip(
-                            category=cat,
-                            target_duration=dur,
-                            cache_dir=stock_dir,
-                            width=video_w,
-                            height=video_h,
-                            pexels_api_key=pexels_api_key
-                        )
-                        if raw_broll and os.path.exists(raw_broll):
-                            broll_processed = process_broll_clip_for_timeline(
-                                raw_video_path=raw_broll,
-                                target_duration=dur,
-                                width=video_w,
-                                height=video_h
-                            )
-                            if orig_sub.audio is not None:
-                                broll_processed = broll_processed.set_audio(orig_sub.audio)
-                            broll_clips_to_close.append(broll_processed)
-                            sentence_clips.append(broll_processed)
-                            used_broll = True
-                    except Exception as b_err:
-                        logger.warning(f"تعذر إدراج مشهد B-Roll، سيتم استخدام الكاميرا الأصلية: {b_err}")
+        fps = 24
+        frame_bytes_len = video_w * video_h * 3
+        total_frames = max(1, int(round(video_duration * fps)))
 
-                if not used_broll:
-                    chunk = orig_sub
-                    if z_factor > 1.01:
-                        chunk = apply_zoom_in_crop(chunk, zoom_factor=z_factor)
-                    sentence_clips.append(chunk)
+        update_progress(0.60, "4/5: بدء التدفق المباشر للإطارات (Zero-OOM FFmpeg Streaming Pipe)...")
 
-                current_time = s_end
+        dec_cmd = [
+            "ffmpeg", "-v", "error", "-threads", "1",
+            "-i", jumpcut_temp_video,
+            "-vf", f"scale={video_w}:{video_h},fps={fps}",
+            "-threads", "1",
+            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+        ]
+        enc_cmd = [
+            "ffmpeg", "-y", "-v", "error", "-threads", "1",
+            "-f", "rawvideo", "-vcodec", "rawvideo", "-pix_fmt", "rgb24",
+            "-s", f"{video_w}x{video_h}", "-r", str(fps), "-i", "-",
+            "-threads", "1", "-i", jumpcut_temp_video,
+            "-map", "0:v:0", "-map", "1:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-x264-params", "rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0",
+            "-crf", "24", "-pix_fmt", "yuv420p", "-threads", "1",
+            "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "16000",
+            "-movflags", "+faststart", "-shortest",
+            output_path
+        ]
 
-        if current_time < video_duration - 0.04:
-            sentence_clips.append(base_clip.subclip(current_time, video_duration))
+        dec_proc = subprocess.Popen(dec_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=frame_bytes_len)
+        enc_proc = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, bufsize=frame_bytes_len)
 
-        zoomed_base = concatenate_videoclips(sentence_clips, method="compose") if sentence_clips else base_clip
-        if base_clip.audio is not None and zoomed_base is not base_clip:
-            try:
-                zoomed_base = zoomed_base.set_audio(base_clip.audio.subclip(0, min(base_clip.audio.duration, zoomed_base.duration)))
-            except Exception:
-                pass
+        f_idx = 0
+        while True:
+            raw_bytes = dec_proc.stdout.read(frame_bytes_len)
+            if not raw_bytes or len(raw_bytes) < frame_bytes_len:
+                break
 
-        bg_cache = {
-            t_name: create_studio_background(video_w, video_h, theme_name=t_name)
-            for t_name in MOTION_THEMES.keys()
-        }
+            t_cur = f_idx / float(fps)
+            speaker_frame = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((video_h, video_w, 3)).copy()
+            del raw_bytes
 
-        update_progress(0.65, "4/5: تصيير الموشن جرافيك السياقي والكابشن فوق المشاهد...")
+            active_sc = None
+            for sc in master_plan:
+                if sc["start"] <= t_cur <= sc["end"]:
+                    active_sc = sc
+                    break
 
-        def _master_frame_filter(get_frame, t: float) -> np.ndarray:
-            raw_frame = get_frame(t)
-            return _safe_call(
+            used_broll_frame = False
+            base_frame = speaker_frame
+
+            if active_sc is not None and active_sc.get("layout_mode") == "stock_broll" and active_sc.get("broll_file_path"):
+                b_path = active_sc["broll_file_path"]
+                try:
+                    if broll_proc_state["path"] != b_path or broll_proc_state["proc"] is None:
+                        _close_broll_pipe()
+                        b_cmd = [
+                            "ffmpeg", "-v", "error", "-threads", "1",
+                            "-stream_loop", "-1",
+                            "-i", b_path,
+                            "-vf", f"scale={video_w}:{video_h}:force_original_aspect_ratio=increase,crop={video_w}:{video_h},fps={fps}",
+                            "-threads", "1",
+                            "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+                        ]
+                        broll_proc_state["proc"] = subprocess.Popen(b_cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=frame_bytes_len)
+                        broll_proc_state["path"] = b_path
+                    b_bytes = broll_proc_state["proc"].stdout.read(frame_bytes_len)
+                    if b_bytes and len(b_bytes) == frame_bytes_len:
+                        base_frame = np.frombuffer(b_bytes, dtype=np.uint8).reshape((video_h, video_w, 3)).copy()
+                        used_broll_frame = True
+                except Exception:
+                    _close_broll_pipe()
+                    used_broll_frame = False
+            else:
+                if broll_proc_state["proc"] is not None:
+                    _close_broll_pipe()
+
+            if not used_broll_frame:
+                z_factor = float(active_sc.get("zoom_factor", 1.0)) if active_sc else 1.0
+                if z_factor > 1.01:
+                    base_frame = _zoom_frame_numpy(speaker_frame, z_factor, video_w, video_h)
+
+            if len(bg_cache) > 1:
+                bg_cache.clear()
+
+            out_frame = _safe_call(
                 render_master_directed_video_frame,
-                base_frame_rgb=raw_frame,
-                t=t,
+                base_frame_rgb=base_frame,
+                t=t_cur,
                 total_duration=video_duration,
                 master_plan=master_plan,
                 words_data=word_data,
@@ -421,23 +454,28 @@ def _execute_master_director_pipeline(
                 caption_mode=caption_mode
             )
 
-        final_video = zoomed_base.fl(_master_frame_filter)
+            enc_proc.stdin.write(np.ascontiguousarray(out_frame, dtype=np.uint8).tobytes())
+            del out_frame, base_frame, speaker_frame
 
-        update_progress(0.85, "5/5: الرندرة النهائية وتصدير الفيديو المخرج بالكامل...")
-        temp_audio = os.path.join(temp_dir, "temp_master_audio.m4a")
-        final_video.write_videofile(
-            output_path,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            temp_audiofile=temp_audio,
-            remove_temp=True,
-            preset="medium",
-            threads=4,
-            logger=None
-        )
+            if f_idx % 24 == 0:
+                prog_ratio = min(0.98, 0.60 + 0.38 * (f_idx / float(max(1, total_frames))))
+                pct_done = min(99, int(round((f_idx / float(max(1, total_frames))) * 100)))
+                update_progress(prog_ratio, f"5/5: جاري رندرة الفيديو النهائي باستهلاك ذاكرة منخفض ({pct_done}%)...")
+            if f_idx % 60 == 0 and f_idx > 0:
+                force_free_ram()
 
-        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} مشاهد سياقية و {broll_scenes_count} مشاهد B-Roll)! ")
+            f_idx += 1
+
+        _close_broll_pipe()
+        if dec_proc and dec_proc.stdout:
+            dec_proc.stdout.close()
+        if enc_proc and enc_proc.stdin:
+            enc_proc.stdin.close()
+            enc_proc.wait(timeout=180)
+            enc_proc = None
+
+        force_free_ram()
+        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} مشاهد سياقية و {broll_scenes_count} مشاهد B-Roll)!")
         return output_path, {
             "director_scenes": len(master_plan),
             "broll_scenes_count": broll_scenes_count,
@@ -449,26 +487,23 @@ def _execute_master_director_pipeline(
         raise err
 
     finally:
-        for c in sentence_clips:
+        _close_broll_pipe()
+        for p in (dec_proc, enc_proc):
+            if p is not None:
+                try:
+                    if getattr(p, "stdin", None):
+                        p.stdin.close()
+                    if getattr(p, "stdout", None):
+                        p.stdout.close()
+                    p.kill()
+                except Exception:
+                    pass
+        if os.path.exists(jumpcut_temp_video):
             try:
-                c.close()
+                os.remove(jumpcut_temp_video)
             except Exception:
                 pass
-        for bc in broll_clips_to_close:
-            try:
-                bc.close()
-            except Exception:
-                pass
-        if base_clip is not None:
-            try:
-                base_clip.close()
-            except Exception:
-                pass
-        if final_video is not None:
-            try:
-                final_video.close()
-            except Exception:
-                pass
+        force_free_ram()
 
 
 # ==============================================================================
@@ -481,7 +516,7 @@ def apply_product_ad_mode(
     cta_override: Optional[str] = None,
     silence_threshold: float = -42.0,
     padding_ms: int = 240,
-    whisper_model: str = "small",
+    whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",
     pexels_api_key: Optional[str] = None,
     groq_api_key: Optional[str] = None,
@@ -514,9 +549,9 @@ def apply_motion_overlay_on_video(
     input_path: str,
     output_path: str,
     silence_threshold: float = -42.0,
-    chunk_size: int = 10,
+    chunk_size: int = 20,
     padding_ms: int = 250,
-    whisper_model: str = "small",
+    whisper_model: str = "base",
     ollama_model: str = "llama3",
     dialect_mode: str = "algerian_darija",
     pexels_api_key: Optional[str] = None,
@@ -566,7 +601,7 @@ def apply_smart_director_all_in_one(
         output_path=output_path,
         silence_threshold=-42.0,
         padding_ms=250,
-        whisper_model=whisper_model or "small",
+        whisper_model=whisper_model or "base",
         dialect_mode=dialect_mode,
         enable_stock_broll=True,
         pexels_api_key=pexels_api_key,
@@ -582,10 +617,10 @@ def apply_dynamic_edit(
     input_path: str,
     output_path: str,
     silence_threshold: float = -42.0,
-    chunk_size: int = 10,
+    chunk_size: int = 20,
     padding_ms: int = 250,
     zoom_factor: float = 1.15,
-    whisper_model: str = "small",
+    whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",
     pexels_api_key: Optional[str] = None,
     groq_api_key: Optional[str] = None,

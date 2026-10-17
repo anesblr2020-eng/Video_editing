@@ -1,8 +1,11 @@
 # ==============================================================================
-# AI Video Automation - Royalty-Free Stock Video Finder & B-Roll Pipeline
+# AI Video Automation - Royalty-Free Stock Video Finder & Low-RAM B-Roll Pipeline
 # ==============================================================================
 import sys
 import os
+import gc
+import ctypes
+import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -18,6 +21,15 @@ import requests
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def _free_ram():
+    try:
+        gc.collect()
+        ctypes.CDLL("libc.so.6").malloc_trim(0)
+    except Exception:
+        pass
+
 
 CURATED_DIRECT_STOCK_VIDEOS = {
     'video_editor': [
@@ -46,6 +58,7 @@ CURATED_DIRECT_STOCK_VIDEOS = {
     ]
 }
 
+
 def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
     type_map = {
         'time_warp_clock': 'busy_no_time',
@@ -54,6 +67,7 @@ def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
         'reels_smartphone': 'smartphone_reels',
         'platform_builder': 'developer_coding',
         'creator_profile': 'creator_studio',
+        'age_number_counter': 'creator_studio',
         'brand_finale': 'creator_studio',
         'video_montage_studio': 'video_editor',
         'audio_waveform': 'video_editor',
@@ -75,20 +89,27 @@ def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
         return 'creator_studio'
     return 'video_editor'
 
-def download_video_file(url: str, output_path: str, timeout: int = 15) -> bool:
+
+def download_video_file(url: str, output_path: str, timeout: int = 12) -> bool:
     try:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         resp = requests.get(url, headers=headers, stream=True, timeout=timeout)
         if resp.status_code == 200:
+            max_bytes = 15 * 1024 * 1024  # سقف 15MB لأي مقطع B-Roll لمنع امتلاء الذاكرة
+            written = 0
             with open(output_path, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=131072):
                     if chunk:
                         f.write(chunk)
-            if os.path.exists(output_path) and os.path.getsize(output_path) > 50000:
+                        written += len(chunk)
+                        if written > max_bytes:
+                            break
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 40000:
                 return True
     except Exception as e:
         logger.debug(f'Download failed: {e}')
     return False
+
 
 def fetch_pexels_stock_video(query: str, api_key: str, cache_dir: str, orientation: str = 'portrait') -> Optional[str]:
     if not api_key:
@@ -101,65 +122,86 @@ def fetch_pexels_stock_video(query: str, api_key: str, cache_dir: str, orientati
         if resp.status_code == 200:
             videos = resp.json().get('videos', [])
             for vid in videos:
-                files = vid.get('video_files', [])
+                files = [f for f in vid.get('video_files', []) if f.get('link') and f.get('file_type') == 'video/mp4']
+                # اختيار النسخة الخفيفة SD/HD (بعرض قريب من 540px) وتجنب ملفات 4K UHD الثقيلة التي تسقط ذاكرة السيرفر!
+                files.sort(key=lambda x: abs(int(x.get('width') or 720) - 540))
                 for f_info in files:
                     link = f_info.get('link')
-                    if link and f_info.get('file_type') == 'video/mp4':
-                        q_hash = hashlib.md5((query + link).encode()).hexdigest()[:10]
-                        dest = os.path.join(cache_dir, f'pexels_{q_hash}.mp4')
-                        if os.path.exists(dest) and os.path.getsize(dest) > 50000:
-                            return dest
-                        if download_video_file(link, dest):
-                            return dest
+                    q_hash = hashlib.md5((query + link).encode()).hexdigest()[:10]
+                    dest = os.path.join(cache_dir, f'pexels_{q_hash}.mp4')
+                    if os.path.exists(dest) and os.path.getsize(dest) > 40000:
+                        return dest
+                    if download_video_file(link, dest):
+                        return dest
     except Exception as e:
         logger.warning(f'Pexels API exception: {e}')
     return None
 
-def generate_procedural_broll_clip(category: str, output_path: str, width: int = 1080, height: int = 1920, duration: float = 3.0) -> str:
-    from moviepy.editor import VideoClip
+
+def generate_procedural_broll_clip(category: str, output_path: str, width: int = 540, height: int = 960, duration: float = 3.0) -> str:
     import numpy as np
     from PIL import Image, ImageDraw
 
+    width = max(2, width - (width % 2))
+    height = max(2, height - (height % 2))
+    fps = 24
+    total_frames = max(12, int(round(min(4.0, duration) * fps)))
+
     def make_frame(t: float) -> np.ndarray:
-        img = Image.new('RGB', (width, height), (10, 16, 32))
+        img = Image.new("RGB", (width, height), (10, 16, 32))
         draw = ImageDraw.Draw(img)
         cx = width // 2
         cy = height // 2
 
-        for y in range(0, height, 4):
-            ratio = float(y) / height
-            r = int(14 + 18 * ratio)
-            g = int(22 + 32 * ratio)
-            b = int(48 + 40 * ratio)
-            draw.line([(0, y), (width, y)], fill=(r, g, b), width=4)
-
-        if category in ('developer_coding', 'video_editor'):
-            for row in range(12):
-                ry = int(height * 0.22) + row * 85
-                rw = int(width * (0.35 + 0.5 * math.sin(t * 3.0 + row)))
+        if category in ("developer_coding", "video_editor"):
+            for row in range(10):
+                ry = int(height * 0.22) + row * int(height * 0.055)
+                rw = max(20, int(width * (0.35 + 0.45 * abs(math.sin(t * 3.0 + row)))))
                 col = (56, 189, 248) if row % 3 == 0 else (255, 220, 0)
-                draw.rounded_rectangle([(int(width * 0.12), ry), (int(width * 0.12) + rw, ry + 32)], radius=8, fill=col)
-        elif category == 'ai_technology':
-            for i in range(16):
-                ang = math.radians(i * 22.5 + t * 45)
+                draw.rounded_rectangle([(int(width * 0.12), ry), (int(width * 0.12) + rw, ry + 24)], radius=8, fill=col)
+        elif category == "ai_technology":
+            for i in range(12):
+                ang = math.radians(i * 30.0 + t * 45)
                 dr = int(min(width, height) * 0.35 * (0.8 + 0.2 * math.sin(t * 4 + i)))
                 dx = cx + int(dr * math.cos(ang))
                 dy = cy + int(dr * math.sin(ang))
                 draw.line([(cx, cy), (dx, dy)], fill=(0, 245, 212), width=3)
-                draw.ellipse([(dx - 12, dy - 12), (dx + 12, dy + 12)], fill=(255, 220, 0))
+                draw.ellipse([(dx - 10, dy - 10), (dx + 10, dy + 10)], fill=(255, 220, 0))
         else:
             for ring in range(4):
-                rr = int(min(width, height) * (0.18 + ring * 0.12 + 0.03 * math.sin(t * 4 + ring)))
+                rr = int(min(width, height) * (0.18 + ring * 0.10 + 0.03 * math.sin(t * 4 + ring)))
                 draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=(255, 220, 0), width=4)
 
-        return np.array(img)
+        return np.array(img, dtype=np.uint8)
 
-    clip = VideoClip(make_frame, duration=duration)
-    clip.write_videofile(output_path, fps=24, codec='libx264', audio=False, preset='ultrafast', threads=2, logger=None)
-    clip.close()
+    cmd = [
+        "ffmpeg", "-y", "-v", "error", "-threads", "1",
+        "-f", "rawvideo", "-vcodec", "rawvideo", "-pix_fmt", "rgb24",
+        "-s", f"{width}x{height}", "-r", str(fps), "-i", "-",
+        "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+        "-x264-params", "rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0",
+        "-crf", "25", "-pix_fmt", "yuv420p", "-threads", "1",
+        output_path
+    ]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        for fi in range(total_frames):
+            frm = make_frame(fi / float(fps))
+            proc.stdin.write(frm.tobytes())
+        proc.stdin.close()
+        proc.wait(timeout=30)
+    finally:
+        try:
+            if proc.stdin:
+                proc.stdin.close()
+            proc.kill()
+        except Exception:
+            pass
+        _free_ram()
     return output_path
 
-def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 1080, height: int = 1920, pexels_api_key: Optional[str] = None) -> str:
+
+def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None) -> str:
     os.makedirs(cache_dir, exist_ok=True)
     cat_key = category.lower()
     is_portrait = (height >= width)
@@ -183,7 +225,7 @@ def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, 
     for url in direct_candidates:
         u_hash = hashlib.md5(url.encode()).hexdigest()[:10]
         cached_file = os.path.join(cache_dir, f'stock_{cat_key}_{u_hash}.mp4')
-        if os.path.exists(cached_file) and os.path.getsize(cached_file) > 50000:
+        if os.path.exists(cached_file) and os.path.getsize(cached_file) > 40000:
             return cached_file
         if download_video_file(url, cached_file):
             return cached_file
@@ -194,25 +236,6 @@ def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, 
 
     return generate_procedural_broll_clip(cat_key, proc_file, width=width, height=height, duration=max(2.5, target_duration))
 
+
 def process_broll_clip_for_timeline(raw_video_path: str, target_duration: float, width: int, height: int):
-    from moviepy.editor import VideoFileClip
-
-    clip = VideoFileClip(raw_video_path).without_audio()
-    orig_w, orig_h = clip.size
-
-    scale = max(width / float(orig_w), height / float(orig_h))
-    new_w = int(orig_w * scale)
-    new_h = int(orig_h * scale)
-
-    resized = clip.resize((new_w, new_h))
-    x1 = max(0, (new_w - width) // 2)
-    y1 = max(0, (new_h - height) // 2)
-    cropped = resized.crop(x1=x1, y1=y1, width=width, height=height)
-
-    if cropped.duration < target_duration:
-        from moviepy.editor import vfx
-        cropped = cropped.fx(vfx.loop, duration=target_duration)
-    else:
-        cropped = cropped.subclip(0, target_duration)
-
-    return cropped
+    return raw_video_path

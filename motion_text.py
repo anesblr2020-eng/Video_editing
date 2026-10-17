@@ -14,6 +14,8 @@ motion_text.py - محرك الموشن جرافيك الاحترافي الفا�
 
 import sys
 import os
+import gc
+import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -66,7 +68,7 @@ except Exception:
     cairo = None
     _HAS_CAIRO = False
 
-from auto_cut import remove_silence, is_video_file
+from auto_cut import remove_silence, is_video_file, get_safe_working_resolution, extract_jumpcut_audio_and_intervals, force_free_ram
 from transcriber import (
     transcribe_audio,
     split_words_into_micro_scenes
@@ -1753,8 +1755,8 @@ def render_master_directed_video_frame(
 def create_kinetic_typography_video(
     input_path: str,
     output_path: str,
-    video_resolution: Tuple[int, int] = (1080, 1920),
-    whisper_model: str = "small",
+    video_resolution: Tuple[int, int] = (540, 960),
+    whisper_model: str = "base",
     ollama_model: str = "llama3",
     dialect_mode: str = "algerian_darija",
     groq_api_key: Optional[str] = None,
@@ -1763,7 +1765,6 @@ def create_kinetic_typography_video(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     **kwargs
 ) -> str:
-    from moviepy.editor import VideoFileClip, AudioFileClip, VideoClip
     from smart_analyzer import analyze_contextual_storyboard
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -1775,30 +1776,19 @@ def create_kinetic_typography_video(
             progress_callback(val, text)
         logger.info(f"Progress: {val*100:.1f}% - {text}")
 
-    audio_clip = None
-    src_vid = None
-    final_clip = None
+    clean_media = os.path.join(temp_dir, f"clean_kinetic_input_{os.getpid()}.mp3")
+    enc_proc = None
 
     try:
-        update_progress(0.10, "1/4: تنظيف الصوت وقص الصمت الطبيعي...")
-        has_vid = is_video_file(input_path)
-        clean_media = os.path.join(temp_dir, "clean_kinetic_input.mp4" if has_vid else "clean_kinetic_input.mp3")
-        remove_silence(
+        gc.collect()
+        update_progress(0.10, "1/4: تنظيف الصوت وقص الصمت الطبيعي بدون استهلاك ذاكرة...")
+        _, total_dur = extract_jumpcut_audio_and_intervals(
             input_path=input_path,
-            output_path=clean_media,
+            clean_audio_output_path=clean_media,
             silence_threshold=-42.0,
             padding_ms=250
         )
-
-        if has_vid:
-            src_vid = VideoFileClip(clean_media)
-            audio_clip = src_vid.audio
-            total_dur = float(src_vid.duration)
-            vw, vh = src_vid.size
-        else:
-            audio_clip = AudioFileClip(clean_media)
-            total_dur = float(audio_clip.duration)
-            vw, vh = video_resolution
+        vw, vh = get_safe_working_resolution(video_resolution[0], video_resolution[1], max_dim=960)
 
         update_progress(0.30, "2/4: تفريغ الكلام وتشغيل المخ السياقي (Contextual Storyboard Brain)...")
         words = transcribe_audio(
@@ -1810,7 +1800,6 @@ def create_kinetic_typography_video(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
-        # تجميع الكلمات في جمل وأفكار سياقية متكاملة (وليس كلمة بكلمة!)
         semantic_clauses = split_words_into_micro_scenes(
             words,
             max_words_per_scene=8,
@@ -1828,15 +1817,17 @@ def create_kinetic_typography_video(
             ollama_model=ollama_model
         )
 
-        bg_cache = {
-            t_name: create_studio_background(vw, vh, theme_name=t_name)
-            for t_name in MOTION_THEMES.keys()
-        }
+        bg_cache: Dict[str, np.ndarray] = {}
+        gc.collect()
 
         update_progress(0.55, "3/4: تصيير رسومات الفيكتور السياقية (PyCairo) وبطاقات الزجاج (VisionOS Glass)...")
 
         def make_frame(t: float) -> np.ndarray:
+            if len(bg_cache) > 1:
+                bg_cache.clear()
             if not planned_scenes:
+                if "cyber_gold" not in bg_cache:
+                    bg_cache["cyber_gold"] = create_studio_background(vw, vh, "cyber_gold")
                 return bg_cache["cyber_gold"]
             active_idx = 0
             for i, s in enumerate(planned_scenes):
@@ -1892,32 +1883,56 @@ def create_kinetic_typography_video(
                 )
                 curr_img = apply_scene_transition(prev_img, curr_img, time_into / 0.28, sc.get("transition", "zoom_portal"))
 
-            return np.array(curr_img.convert("RGB"))
+            return np.array(curr_img.convert("RGB"), dtype=np.uint8)
 
-        final_clip = VideoClip(make_frame, duration=total_dur)
-        if audio_clip is not None:
-            final_clip = final_clip.set_audio(audio_clip)
+        fps = 24
+        total_frames = max(1, int(round(total_dur * fps)))
+        update_progress(0.65, "4/4: الرندرة النهائية عبر التدفق المباشر (Zero-RAM FFmpeg Pipe)...")
 
-        update_progress(0.85, "4/4: الرندرة النهائية وتصدير فيديو الموشن جرافيك السياقي...")
-        temp_aud = os.path.join(temp_dir, "temp_kinetic_aud.m4a")
-        final_clip.write_videofile(
-            output_path,
-            fps=24,
-            codec="libx264",
-            audio_codec="aac",
-            temp_audiofile=temp_aud,
-            remove_temp=True,
-            preset="medium",
-            threads=4,
-            logger=None
-        )
+        enc_cmd = [
+            "ffmpeg", "-y", "-v", "error", "-threads", "1",
+            "-f", "rawvideo", "-vcodec", "rawvideo", "-pix_fmt", "rgb24",
+            "-s", f"{vw}x{vh}", "-r", str(fps), "-i", "-",
+            "-threads", "1", "-i", clean_media,
+            "-map", "0:v:0", "-map", "1:a:0?",
+            "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
+            "-x264-params", "rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0",
+            "-crf", "24", "-pix_fmt", "yuv420p", "-threads", "1",
+            "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "16000",
+            "-movflags", "+faststart", "-shortest",
+            output_path
+        ]
+        enc_proc = subprocess.Popen(enc_cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        for f_idx in range(total_frames):
+            t_cur = f_idx / float(fps)
+            frm = make_frame(t_cur)
+            enc_proc.stdin.write(np.ascontiguousarray(frm, dtype=np.uint8).tobytes())
+            if f_idx % 24 == 0:
+                prog_ratio = 0.65 + 0.33 * (f_idx / float(max(1, total_frames)))
+                pct_done = int(round((f_idx / float(max(1, total_frames))) * 100))
+                update_progress(prog_ratio, f"4/4: جاري رندرة الفيديو النهائي باستهلاك ذاكرة منخفض ({pct_done}%)...")
+            if f_idx % 60 == 0 and f_idx > 0:
+                force_free_ram()
+
+        enc_proc.stdin.close()
+        enc_proc.wait(timeout=120)
+        enc_proc = None
+
         update_progress(1.0, "اكتمل تصيير الموشن جرافيك السياقي الاحترافي بنجاح!")
         return output_path
 
     finally:
-        for c in (final_clip, src_vid, audio_clip):
-            if c is not None:
-                try:
-                    c.close()
-                except Exception:
-                    pass
+        if enc_proc is not None:
+            try:
+                if enc_proc.stdin:
+                    enc_proc.stdin.close()
+                enc_proc.kill()
+            except Exception:
+                pass
+        if os.path.exists(clean_media):
+            try:
+                os.remove(clean_media)
+            except Exception:
+                pass
+        gc.collect()
