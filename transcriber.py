@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _force_free_ram():
     try:
-        _force_free_ram()
+        gc.collect()
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
         pass
@@ -71,6 +71,9 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "تشارجي": "تشارجي",
     "تشرجي": "تشارجي",
     "شارجي": "تشارجي",
+    "يتشارجا": "يتشارجا",
+    "تلقاوش": "يلقاوش",
+    "فاستا": "فاست",
     "معناتها": "معنتها",
     "معنتها": "معنتها",
     "ومتخافش": "وما تخافش",
@@ -88,10 +91,10 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "لنلو": "أهلاً",
     "لنلو،": "أهلاً،",
     "اهلا": "أهلاً",
-                        "سنه": "سنة",
+    "سنه": "سنة",
     "منصه": "منصة",
     "المنصه": "المنصة",
-        "استناعي": "اصطناعي",
+    "استناعي": "اصطناعي",
     "إستناعي": "اصطناعي",
     "بذكاء": "بالذكاء",
     "اوتوماتيكي": "أوتوماتيكي",
@@ -104,7 +107,7 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "ريز": "ريلز",
     "ريز،": "ريلز،",
     "الريز": "الريلز",
-                        "وشراكم": "واش راكم",
+    "وشراكم": "واش راكم",
     "واشراكم": "واش راكم",
     "علاه": "علاش",
     "كفاش": "كيفاش",
@@ -125,18 +128,68 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "هاذي": "هاذ",
     "كلشي": "كلش",
     "ليفريزو": "ليفريزون",
+    "الخاصيه": "الخاصية",
+    "للخاصيه": "للخاصية",
+    "الاولى": "الأولى",
+    "الثانيه": "الثانية",
+    "الثالثه": "الثالثة",
+    "الرابعه": "الرابعة",
+    "الخامسه": "الخامسة",
+    "الانتاجيه": "الإنتاجية",
+    "المسؤوله": "المسؤولة",
+    "دقيقه": "دقيقة",
+    "ساعه": "ساعة",
+    "جوده": "جودة",
+    "صوره": "صورة",
+    "مباشره": "مباشرة",
+    "واحده": "واحدة",
+    "فكره": "فكرة",
+    "مشكله": "مشكلة",
+    "طريقه": "طريقة",
+    "نتيجه": "نتيجة",
+    "خطوه": "خطوة",
+    "اللي": "اللي",
+    "اسفل": "أسفل",
+    "والاقوى": "والأقوى",
+    "الاقوى": "الأقوى",
+    "والخاصيه": "والخاصية",
+    "بالنسبه": "بالنسبة",
+    "تليفون": "تيليفون",
+    "تليفونك": "تيليفونك",
+    "افضل": "أفضل",
+    "اقل": "أقل",
+    "اكثر": "أكثر",
+    "انه": "أنه",
+    "اما": "أما",
+    "اي": "أي",
 }
 
 PHRASE_LEVEL_FIXES = [
-                                                        (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
+    (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
     (r"قطع[،,]?\s+يتقطع", "قاع يتقطع"),
     (r"المتوفرس\s+على", "راه متوفر"),
     (r"أكموان\s+من", "اكموندي من"),
+    (r"حتى\s+تديهم\s+بالبري\s+مهب", "تديهم باطل"),
+    (r"تديهم\s+بالبري\s+مهب", "تديهم باطل"),
+    (r"بالبري\s+مهب", "باطل"),
+    (r"تتفرج\s+وتم\s+والخاصي", "تتفرج والخاصي"),
+    (r"والاقوى\s+ما\s+انت\s+اي", "والأقوى من هذا أي"),
+    (r"والأقوى\s+ما\s+أنت\s+أي", "والأقوى من هذا أي"),
+    (r"والاقوى\s+ما\s+انت", "والأقوى من هذا"),
+    (r"والأقوى\s+ما\s+أنت", "والأقوى من هذا"),
+    (r"بالسوبر\s+فاستا", "بالسوبر فاست"),
+    (r"سوبر\s+فاستا", "سوبر فاست"),
+    (r"ترفع\s+الإنتاجية\s+التواصل\s+الاجتماعي", "ترفع الإنتاجية في التواصل الاجتماعي"),
+    (r"ترفع\s+الانتاجية\s+التواصل\s+الاجتماعي", "ترفع الإنتاجية في التواصل الاجتماعي"),
+    (r"منصة\s+فيديو\s+المسؤولة", "منصة فيديوهات المسؤولة"),
+    (r"ترفع\s+ان\s+ترفع", "ترفع"),
+    (r"ترفع\s+أن\s+ترفع", "ترفع"),
+    (r"لاحظت\s+ان\s+في", "لاحظت أن في"),
 ]
 
 
 # ==============================================================================
-# 1.5 محرك إصلاح الكلمات المبتورة صوتياً والسياقية (Anti-Truncation Morphological Repair)
+# 1.5 محرك إصلاح الكلمات المبتورة صوتياً والسياقية ومنع التكرار (Universal Fluency & Dedup Engine)
 # ==============================================================================
 CONTEXTUAL_BROKEN_WORD_REPAIRS = [
     (r"(?<!\w)في\s+المونت(?!\w)", "في المونتاج"),
@@ -154,7 +207,8 @@ CONTEXTUAL_BROKEN_WORD_REPAIRS = [
     (r"(?<!\w)ومونتاج\s+احت\s+ولا(?!\w)", "ومونتاج احترافي"),
     (r"(?<!\w)ومونتاج\s+احت(?!\w)", "ومونتاج احترافي"),
     (r"(?<!\w)مونتاج\s+احت(?!\w)", "مونتاج احترافي"),
-    (r"(?<!\w)من\s+دقيقه(?!\w)", "أقل من دقيقة"),
+    # Idempotent negative lookbehind so "أقل من دقيقة" never becomes "أقل أقل من دقيقة"!
+    (r"(?<!أقل\s)(?<!اقل\s)(?<!\w)من\s+دقيقه(?!\w)", "أقل من دقيقة"),
     (r"(?<!\w)قص\s+تعديل\s+الفيديو(?!\w)", "قص وتعديل الفيديو"),
 ]
 
@@ -167,22 +221,53 @@ SINGLE_TRUNCATED_TOKEN_MAP = {
     "المسؤوله": "المسؤولة",
     "دقيقه": "دقيقة",
     "للفيديوهات": "الفيديوهات",
+    "الخاصيه": "الخاصية",
+    "للخاصيه": "للخاصية",
+    "الاولى": "الأولى",
+    "الثانيه": "الثانية",
+    "الثالثه": "الثالثة",
+    "فاستا": "فاست",
+    "اقل": "أقل",
+    "افضل": "أفضل",
+    "اسفل": "أسفل",
+    "والاقوى": "والأقوى",
+    "الاقوى": "الأقوى",
+    "والخاصيه": "والخاصية",
+    "بالنسبه": "بالنسبة",
+    "تليفون": "تيليفون",
+    "تليفونك": "تيليفونك",
 }
 
+
+def _orthographic_skeleton(word: str) -> str:
+    w = re.sub(r"[،,.!؟?:؛\-]", "", str(word)).strip().lower()
+    for ch in "أإآ":
+        w = w.replace(ch, "ا")
+    w = w.replace("ة", "ه").replace("ى", "ي")
+    return w
+
+
 def repair_truncated_words_and_sentences(words_list):
+    """
+    محرك عام لإصلاح الكلمات المبتورة، توحيد الإملاء العربي، إزالة الحشو الناتج عن أخطاء التعرف الصوتي،
+    ومنع تكرار الكلمات المتجاورة أو العبارات المكسورة في أي فيديو مستقبلي.
+    """
     if not words_list:
         return []
     repaired = [dict(w) for w in words_list]
+    n = len(repaired)
     for i, w_obj in enumerate(repaired):
         raw_w = str(w_obj.get("word", "")).strip()
         clean_w = raw_w.strip("،,.!؟?")
         if clean_w in SINGLE_TRUNCATED_TOKEN_MAP:
             repaired[i]["word"] = SINGLE_TRUNCATED_TOKEN_MAP[clean_w]
-        if clean_w in {"الان", "الآن"} and i + 1 < len(repaired):
+            clean_w = repaired[i]["word"]
+
+        if clean_w in {"الان", "الآن"} and i + 1 < n:
             nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
             if nxt_w in {"أغلب", "اغلب", "كثير", "بزاف", "الناس"}:
                 repaired[i]["word"] = "لأن"
-        if clean_w in {"صورته", "صورتك"} and i + 1 < len(repaired):
+        if clean_w in {"صورته", "صورتك"} and i + 1 < n:
             nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
             if "ذكاء" in nxt_w or "اصطناعي" in nxt_w:
                 repaired[i]["word"] = "صوت وصورة"
@@ -190,8 +275,55 @@ def repair_truncated_words_and_sentences(words_list):
             prev_w = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
             if prev_w == "احترافي":
                 repaired[i]["word"] = ""
-    return [w for w in repaired if str(w.get("word", "")).strip()]
+        # إزالة "وتم" المقحمة صوتياً قبل "والخاصية"
+        if clean_w == "وتم" and i + 1 < n:
+            nxt_w = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if "خاصي" in nxt_w or "ثاني" in nxt_w or "ثالث" in nxt_w:
+                repaired[i]["word"] = ""
+        # إصلاح "ترفع ان ترفع" -> حذف "ان ترفع" المكررة
+        if clean_w in {"ان", "أن"} and 0 < i < n - 1:
+            prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if prev_s == next_s and prev_s:
+                repaired[i]["word"] = ""
+                repaired[i + 1]["word"] = ""
+        # إصلاح "ما انت" بعد "والأقوى" -> "من هذا"
+        if clean_w in {"ما"} and i > 0 and i + 1 < n:
+            prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if "اقوي" in prev_s and next_s in {"انت", "انك"}:
+                repaired[i]["word"] = "من"
+                repaired[i + 1]["word"] = "هذا"
+        # إصلاح "حتى تديهم بالبري مهب" -> "تديهم باطل"
+        if clean_w == "بالبري" and i + 1 < n:
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if next_s in {"مهب", "باطل"}:
+                repaired[i]["word"] = "باطل"
+                repaired[i + 1]["word"] = ""
+                if i >= 2 and _orthographic_skeleton(repaired[i - 2].get("word", "")) == "حتي":
+                    repaired[i - 2]["word"] = ""
+        # إضافة حرف الجر "في" إذا سقط صوتياً بين "الإنتاجية" و"التواصل الاجتماعي"
+        if _orthographic_skeleton(clean_w) in {"الانتاجيه", "انتاجيه"} and i + 1 < n:
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if next_s == "التواصل":
+                repaired[i]["word"] = "الإنتاجية في"
 
+    # فلترة الفراغات ودمج الكلمات المتجاورة المكررة إملائياً (مثل "اقل أقل" -> "أقل")
+    non_empty = [w for w in repaired if str(w.get("word", "")).strip()]
+    deduped = []
+    for w in non_empty:
+        w_skel = _orthographic_skeleton(w["word"])
+        if deduped:
+            prev_skel = _orthographic_skeleton(deduped[-1]["word"])
+            if w_skel and w_skel == prev_skel and w_skel not in {"اصبر", "شوف", "لا", "نعم", "صح"}:
+                # نحتفظ بالنسخة الأصح إملائياً (التي تحتوي همزة أو تاء مربوطة) ونوسع وقت النهاية
+                if any(ch in w["word"] for ch in "أإآة") and not any(ch in deduped[-1]["word"] for ch in "أإآة"):
+                    deduped[-1]["word"] = w["word"]
+                deduped[-1]["end"] = max(float(deduped[-1]["end"]), float(w["end"]))
+                continue
+        deduped.append(w)
+
+    return deduped
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
 

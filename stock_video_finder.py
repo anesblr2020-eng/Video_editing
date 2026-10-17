@@ -213,7 +213,7 @@ def generate_procedural_broll_clip(category: str, output_path: str, width: int =
     return output_path
 
 
-def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None) -> str:
+def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None, allow_procedural_fallback: bool = False) -> Optional[str]:
     os.makedirs(cache_dir, exist_ok=True)
     cat_key = category.lower()
     is_portrait = (height >= width)
@@ -243,6 +243,9 @@ def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, 
             return cached_file
         if download_video_file(url, cached_file):
             return cached_file
+
+    if not allow_procedural_fallback:
+        return None
 
     proc_file = os.path.join(cache_dir, f'proc_{cat_key}_{int(target_duration)}.mp4')
     if os.path.exists(proc_file) and os.path.getsize(proc_file) > 10000:
