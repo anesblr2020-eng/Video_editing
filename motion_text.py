@@ -1864,7 +1864,117 @@ def render_choreographed_stage_archetype(
             )
 
     # =========================================================================
-    # النمط 8: interactive_cta_outro (بطاقة التفاعل الختامية الحية بدون تجمد الإطارات الأخيرة)
+    # النمط 8: video_schedule_table (جدول الفيديو والـ Timeline التفاعلي - تغوص الكاميرا في خلاياه وتخرج منها بأسلوب onetakemotion.com)
+    # =========================================================================
+    elif archetype == "video_schedule_table":
+        s_in = 0.90 + 0.10 * _staggered_spring(scene_progress, delay=0.0, duration=0.36)
+        cw, ch = int(sw * 0.94 * s_in), int(sh * 0.88 * s_in)
+        bx1, by1 = cx - cw // 2, cy - ch // 2
+        bx2, by2 = bx1 + cw, by1 + ch
+
+        canvas_rgba = draw_visionos_glass_panel(
+            canvas_rgba, (bx1, by1, bx2, by2), radius=24,
+            tint_color=card_tint, border_color=c_blue,
+            blur_radius=12, shadow_offset=10, shadow_blur=16
+        )
+        draw = ImageDraw.Draw(canvas_rgba, "RGBA")
+
+        # شريط عنوان جدول الفيديو (Video Schedule & Timeline Header)
+        hdr_h = int(ch * 0.17)
+        draw.rounded_rectangle([(bx1 + 6, by1 + 6), (bx2 - 6, by1 + hdr_h)], radius=18, fill=(15, 23, 42, 240) if is_light_saas else (10, 16, 30, 245))
+        cam_pill_w = int(cw * 0.27)
+        cam_px1, cam_py1 = bx1 + 14, by1 + 12
+        cam_py2 = by1 + hdr_h - 8
+        draw.rounded_rectangle([(cam_px1, cam_py1), (cam_px1 + cam_pill_w, cam_py2)], radius=12, fill=(*c_green, 45), outline=(*c_green, 235), width=2)
+        draw_contained_arabic_text(
+            draw, (cam_px1, cam_py1, cam_px1 + cam_pill_w, cam_py2),
+            kpi_val, initial_font_size=max(14, int(sh * 0.030)),
+            fill=(*c_yellow, 255), pad_left=6, pad_right=6, min_font_size=10
+        )
+        draw_contained_arabic_text(
+            draw, (cam_px1 + cam_pill_w + 10, by1 + 6, bx2 - 14, by1 + hdr_h),
+            f"جدول الفيديو • {concept_title}",
+            initial_font_size=max(16, int(sh * 0.035)),
+            fill=(255, 255, 255, 255), pad_left=8, pad_right=10, min_font_size=10
+        )
+
+        # شريط رؤوس الأعمدة (المشهد | الخط الزمني Timeline | الحالة)
+        col_hdr_y = by1 + hdr_h + 4
+        col_hdr_h = int(ch * 0.10)
+        col1_x1, col1_x2 = bx1 + 14, bx1 + int(cw * 0.24)   # عمود الحالة (يسار)
+        col2_x1, col2_x2 = col1_x2 + 8, bx1 + int(cw * 0.56) # عمود الـ Timeline (وسط)
+        col3_x1, col3_x2 = col2_x2 + 8, bx2 - 14             # عمود المشهد (يمين)
+
+        draw.line([(bx1 + 12, col_hdr_y + col_hdr_h), (bx2 - 12, col_hdr_y + col_hdr_h)], fill=(148, 163, 184, 90), width=1)
+        draw_contained_arabic_text(draw, (col3_x1, col_hdr_y, col3_x2, col_hdr_y + col_hdr_h), "المشهد والمهمة", initial_font_size=max(13, int(sh * 0.026)), fill=txt_sub, pad_left=4, pad_right=6, min_font_size=9)
+        draw_contained_arabic_text(draw, (col2_x1, col_hdr_y, col2_x2, col_hdr_y + col_hdr_h), "مسار الفيديو Timeline", initial_font_size=max(13, int(sh * 0.026)), fill=txt_sub, pad_left=4, pad_right=4, min_font_size=9)
+        draw_contained_arabic_text(draw, (col1_x1, col_hdr_y, col1_x2, col_hdr_y + col_hdr_h), "الحالة", initial_font_size=max(13, int(sh * 0.026)), fill=txt_sub, pad_left=4, pad_right=4, min_font_size=9)
+
+        # 3 صفوف تفاعلية في جدول الفيديو مع بوابة الكاميرا (Portal Cell) التي تغوص فيها الكاميرا أو تخرج منها
+        rows_y0 = col_hdr_y + col_hdr_h + int(ch * 0.03)
+        row_h = int(ch * 0.20)
+        row_gap = int(ch * 0.03)
+        portal_row = int(scene_meta.get("portal_row_index", 1)) % 3
+        row_cols = [c_blue, c_green, c_purple]
+        status_labels = ["جاهز", "نشط الآن", "مجدول"]
+
+        for r_idx in range(3):
+            sp_r = _staggered_spring(scene_progress, delay=0.04 + r_idx * 0.06, duration=0.36)
+            ry1 = int(rows_y0 + r_idx * (row_h + row_gap) + 20 * (1.0 - sp_r))
+            ry2 = ry1 + row_h
+            rc = row_cols[r_idx]
+            is_portal_row = (r_idx == portal_row)
+
+            # تمييز الصف المستهدف ببوابة الكاميرا (One-Take Camera Portal Highlight)
+            row_bg = (239, 246, 255, 255) if (is_light_saas and is_portal_row) else (sub_card_tint if not is_portal_row else (30, 41, 59, 252))
+            border_w = 3 if is_portal_row else 1
+            border_c = (*c_yellow, 255) if (is_portal_row and scene_progress > 0.65) else ((*rc, 235) if is_portal_row else (148, 163, 184, 110))
+            draw.rounded_rectangle([(bx1 + 12, ry1), (bx2 - 12, ry2)], radius=14, fill=row_bg, outline=border_c, width=border_w)
+
+            # خطوط فصل الأعمدة داخل الصف
+            draw.line([(col1_x2 + 4, ry1 + 6), (col1_x2 + 4, ry2 - 6)], fill=(148, 163, 184, 65), width=1)
+            draw.line([(col2_x2 + 4, ry1 + 6), (col2_x2 + 4, ry2 - 6)], fill=(148, 163, 184, 65), width=1)
+
+            # 1) خلية اسم المشهد (يمين)
+            draw_contained_arabic_text(
+                draw, (col3_x1 + 2, ry1, col3_x2 - 4, ry2),
+                str(sub_items[r_idx]),
+                initial_font_size=max(15, int(sh * 0.032)),
+                fill=(255, 255, 255, 255) if (not is_light_saas or is_portal_row and not is_light_saas) else txt_main,
+                pad_left=6, pad_right=8, min_font_size=10
+            )
+
+            # 2) خلية مسار الـ Timeline (وسط) - تحتوي شرائح فيديو مصغرة ومؤشر Playhead متحرك
+            tl_pad_y = max(6, int(row_h * 0.24))
+            tl_y1, tl_y2 = ry1 + tl_pad_y, ry2 - tl_pad_y
+            tl_w = max(24, col2_x2 - col2_x1 - 12)
+            tl_x1 = col2_x1 + 6
+            draw.rounded_rectangle([(tl_x1, tl_y1), (tl_x1 + tl_w, tl_y2)], radius=6, fill=(15, 23, 42, 45) if is_light_saas else (255, 255, 255, 28))
+            clip_prog = min(1.0, max(0.25, (scene_progress * 1.25 - r_idx * 0.12)))
+            seg1_w = int(tl_w * 0.46 * clip_prog)
+            seg2_w = int(tl_w * 0.36 * clip_prog)
+            if seg1_w > 4:
+                draw.rounded_rectangle([(tl_x1 + 3, tl_y1 + 2), (tl_x1 + 3 + seg1_w, tl_y2 - 2)], radius=4, fill=(*rc, 230))
+            if seg2_w > 4 and (tl_x1 + 7 + seg1_w + seg2_w) < (tl_x1 + tl_w - 2):
+                draw.rounded_rectangle([(tl_x1 + 7 + seg1_w, tl_y1 + 2), (tl_x1 + 7 + seg1_w + seg2_w, tl_y2 - 2)], radius=4, fill=(*c_yellow, 230))
+
+            # 3) خلية الحالة (يسار)
+            st_pill_h = max(22, int(row_h * 0.58))
+            st_py1 = ry1 + (row_h - st_pill_h) // 2
+            draw.rounded_rectangle([(col1_x1 + 4, st_py1), (col1_x2 - 4, st_py1 + st_pill_h)], radius=st_pill_h // 2, fill=(*rc, 40), outline=(*rc, 220), width=1)
+            draw_contained_arabic_text(
+                draw, (col1_x1 + 4, st_py1, col1_x2 - 4, st_py1 + st_pill_h),
+                status_labels[r_idx], initial_font_size=max(13, int(sh * 0.027)),
+                fill=(*rc, 255), pad_left=4, pad_right=4, min_font_size=9
+            )
+
+        # خط الـ Playhead الأحمر الرأسي المتحرك عبر جدول الفيديو بالكامل
+        ph_x = int(col2_x1 + 8 + (col2_x2 - col2_x1 - 16) * ((0.15 + scene_progress * 0.78) % 1.0))
+        draw.line([(ph_x, rows_y0 - 4), (ph_x, rows_y0 + 3 * row_h + 2 * row_gap + 4)], fill=(239, 68, 68, 245), width=3)
+        draw.ellipse([(ph_x - 5, rows_y0 - 7), (ph_x + 5, rows_y0 + 3)], fill=(239, 68, 68, 255))
+
+    # =========================================================================
+    # النمط 9: interactive_cta_outro (بطاقة التفاعل الختامية الحية بدون تجمد الإطارات الأخيرة)
     # =========================================================================
     else:
         s_in = 0.88 + 0.12 * _staggered_spring(scene_progress, delay=0.0, duration=0.38)
@@ -2053,51 +2163,431 @@ def render_single_scene_canvas(
 
 
 # ==============================================================================
-# 9. محرك الانتقالات السينمائية مع التمويه الحركي (Transitions with Motion Blur)
+# 9. محرك اللقطة الواحدة المتصلة والكاميرا الافتراضية المستمرة (One-Take Motion Engine - onetakemotion.com)
 # ==============================================================================
-def apply_scene_transition(
+def get_archetype_portal_and_survivor_bboxes(
+    width: int,
+    height: int,
+    stage_bbox: Tuple[int, int, int, int],
+    scene_meta: Optional[Dict[str, Any]] = None
+) -> Dict[str, Tuple[int, int, int, int, int]]:
+    """
+    يحسب الإحداثيات الهندسية الدقيقة `(x1, y1, x2, y2, radius)` للعنصر الناجي (Surviving Element)
+    أو البوابة (Portal Cell/Card) التي تدخل الكاميرا فيها أو تخرج منها لكل نمط من أنماط الكوريغرافيا الـ 9.
+    """
+    x1, y1, x2, y2 = stage_bbox
+    sw, sh = x2 - x1, y2 - y1
+    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+    arch = str((scene_meta or {}).get("archetype", "saas_folder_reorder")).strip()
+    portal_row = int((scene_meta or {}).get("portal_row_index", 1)) % 3
+
+    # الإطار الرئيسي الافتراضي للنافذة داخل المسرح
+    main_win = (cx - int(sw * 0.45), cy - int(sh * 0.42), cx + int(sw * 0.45), cy + int(sh * 0.42), 24)
+
+    if arch == "video_schedule_table":
+        cw, ch = int(sw * 0.94), int(sh * 0.88)
+        bx1, by1 = cx - cw // 2, cy - ch // 2
+        bx2, by2 = bx1 + cw, by1 + ch
+        hdr_h = int(ch * 0.17)
+        col_hdr_h = int(ch * 0.10)
+        rows_y0 = by1 + hdr_h + 4 + col_hdr_h + int(ch * 0.03)
+        row_h = int(ch * 0.20)
+        row_gap = int(ch * 0.03)
+        ry1 = rows_y0 + portal_row * (row_h + row_gap)
+        ry2 = ry1 + row_h
+        cell_portal = (bx1 + 12, ry1, bx2 - 12, ry2, 14)
+        return {"portal": cell_portal, "container": (bx1, by1, bx2, by2, 24)}
+
+    if arch == "saas_typewriter_mechanism":
+        sb_w, sb_h = int(sw * 0.88), int(sh * 0.22)
+        sb_x1, sb_y1 = cx - sb_w // 2, y1 + int(sh * 0.24)
+        return {
+            "portal": (sb_x1, sb_y1, sb_x1 + sb_w, sb_y1 + sb_h, 22),
+            "container": (sb_x1, sb_y1, sb_x1 + sb_w, sb_y1 + sb_h, 22)
+        }
+
+    if arch == "stage_trust_bubbles":
+        pw, ph = int(sw * 0.28), int(sh * 0.56)
+        px1, py1 = cx - pw // 2, y1 + int(sh * 0.05)
+        return {
+            "portal": (px1, py1, px1 + pw, py1 + ph, 24),
+            "container": (px1, py1, px1 + pw, py1 + ph, 24)
+        }
+
+    if arch == "saas_grid_2x2_cursor":
+        gap_x, gap_y = int(sw * 0.04), int(sh * 0.04)
+        card_w = (int(sw * 0.90) - gap_x) // 2
+        card_h = (int(sh * 0.84) - gap_y) // 2
+        start_x = cx - (card_w * 2 + gap_x) // 2
+        start_y = cy - (card_h * 2 + gap_y) // 2
+        gx1 = start_x + 1 * (card_w + gap_x)
+        gy1 = start_y + 1 * (card_h + gap_y)
+        return {
+            "portal": (gx1, gy1, gx1 + card_w, gy1 + card_h, 22),
+            "container": (start_x, start_y, start_x + card_w * 2 + gap_x, start_y + card_h * 2 + gap_y, 24)
+        }
+
+    if arch == "saas_folder_reorder":
+        cw, ch = int(sw * 0.92), int(sh * 0.88)
+        bx1, by1 = cx - cw // 2, cy - ch // 2
+        bx2, by2 = bx1 + cw, by1 + ch
+        hdr_h = int(ch * 0.19)
+        list_y0 = by1 + hdr_h + int(ch * 0.05)
+        row_h = int(ch * 0.21)
+        row_gap = int(ch * 0.04)
+        ry1 = list_y0 + 1 * (row_h + row_gap)
+        return {
+            "portal": (bx1 + int(cw * 0.05), ry1, bx2 - int(cw * 0.13), ry1 + row_h, 16),
+            "container": (bx1, by1, bx2, by2, 26)
+        }
+
+    if arch == "saas_process_flow":
+        cw = int(sw * 0.90)
+        c1_h = int(sh * 0.23)
+        c1_y = y1 + int(sh * 0.03)
+        c2_h = int(sh * 0.38)
+        c2_y = c1_y + c1_h + int(sh * 0.04)
+        c3_h = int(sh * 0.22)
+        c3_y = c2_y + c2_h + int(sh * 0.04)
+        return {
+            "portal": (cx - cw // 2, c3_y, cx + cw // 2, c3_y + c3_h, 20),
+            "container": (cx - cw // 2, c1_y, cx + cw // 2, c3_y + c3_h, 22)
+        }
+
+    if arch == "stage_balance_scale":
+        pivot_y = y1 + int(sh * 0.44)
+        arm_half = int(sw * 0.29)
+        rx = cx + int(arm_half * 0.96)
+        ry = pivot_y - int(arm_half * 0.22)
+        pan_w, pan_h = int(sw * 0.41), int(sh * 0.28)
+        r_box = (max(cx + 6, rx - pan_w // 2), ry + 18, min(x2 - 4, rx + pan_w // 2), ry + 18 + pan_h, 18)
+        return {"portal": r_box, "container": main_win}
+
+    if arch == "stage_before_after_checklist":
+        top_h = int(sh * 0.42)
+        card_w = int(sw * 0.41)
+        aft_x1 = x1 + int(sw * 0.04)
+        bef_y1 = y1 + int(sh * 0.03)
+        return {
+            "portal": (aft_x1, bef_y1, aft_x1 + card_w, bef_y1 + top_h, 20),
+            "container": main_win
+        }
+
+    return {"portal": main_win, "container": main_win}
+
+
+def _crop_and_zoom_viewport(
+    img: Image.Image,
+    crop_box: Tuple[float, float, float, float],
+    out_w: int,
+    out_h: int
+) -> Image.Image:
+    """قص وتكبير الكاميرا الافتراضية بدقة عالية لمحاكاة دخول الكاميرا في عنصر أو خروجها منه."""
+    x1, y1, x2, y2 = crop_box
+    x1 = max(0.0, min(float(out_w - 16), x1))
+    y1 = max(0.0, min(float(out_h - 16), y1))
+    x2 = max(x1 + 16.0, min(float(out_w), x2))
+    y2 = max(y1 + 16.0, min(float(out_h), y2))
+    cropped = img.crop((int(round(x1)), int(round(y1)), int(round(x2)), int(round(y2))))
+    return cropped.resize((out_w, out_h), Image.Resampling.BILINEAR)
+
+
+def _camera_curve(u: float) -> float:
+    """منحنى حركة الكاميرا السينمائية المعاير على كامل فترة الانتقال [0.0 -> 1.0]."""
+    u = max(0.0, min(1.0, float(u)))
+    if u < 0.5:
+        return 4.0 * u * u * u
+    return 1.0 - pow(-2.0 * u + 2.0, 3) / 2.0
+
+
+def _paste_aspect_preserving_aperture(
+    base_rgba: Image.Image,
+    inner_img: Image.Image,
+    aperture_box: Tuple[int, int, int, int],
+    corner_radius: int,
+    inner_zoom: float = 1.0,
+    border_rgba: Optional[Tuple[int, int, int, int]] = None,
+    border_width: int = 3
+) -> Image.Image:
+    """
+    يرسم المشهد الداخلي (`inner_img`) عبر نافذة بوابة (`aperture_box`) مع الحفاظ التام 100%
+    على النسبة الهندسية للأبعاد (1:1 Aspect Ratio) دون أي مط أو تشويه للنصوص العربية أو الدوائر!
+    """
+    w, h = base_rgba.size
+    ax1, ay1, ax2, ay2 = aperture_box
+    ax1 = max(0, min(w - 4, int(ax1)))
+    ay1 = max(0, min(h - 4, int(ay1)))
+    ax2 = max(ax1 + 4, min(w, int(ax2)))
+    ay2 = max(ay1 + 4, min(h, int(ay2)))
+    aw, ah = ax2 - ax1, ay2 - ay1
+    acx, acy = (ax1 + ax2) // 2, (ay1 + ay2) // 2
+
+    # تكبير متماثل (Uniform Scale) يحافظ على أبعاد الخطوط العربية 100%
+    scale = max(aw / float(max(1, w)), ah / float(max(1, h)), float(inner_zoom))
+    sw = max(aw, int(round(w * scale)))
+    sh = max(ah, int(round(h * scale)))
+    scaled_inner = inner_img.resize((sw, sh), Image.Resampling.BILINEAR).convert("RGBA")
+
+    # قص الجزء المقابل لمركز البوابة
+    crop_x1 = max(0, min(sw - aw, (sw - aw) // 2))
+    crop_y1 = max(0, min(sh - ah, (sh - ah) // 2))
+    aperture_patch = scaled_inner.crop((crop_x1, crop_y1, crop_x1 + aw, crop_y1 + ah))
+
+    mask = Image.new("L", (aw, ah), 0)
+    safe_r = max(0, min(int(corner_radius), aw // 2, ah // 2))
+    ImageDraw.Draw(mask).rounded_rectangle([(0, 0), (aw - 1, ah - 1)], radius=safe_r, fill=255)
+
+    out = base_rgba.copy()
+    out.paste(aperture_patch, (ax1, ay1), mask)
+
+    if border_rgba is not None and border_width > 0:
+        odraw = ImageDraw.Draw(out, "RGBA")
+        odraw.rounded_rectangle(
+            [(ax1, ay1), (ax2 - 1, ay2 - 1)],
+            radius=safe_r,
+            outline=border_rgba,
+            width=border_width
+        )
+    return out
+
+
+def render_one_take_camera_handoff(
     prev_img: Image.Image,
     curr_img: Image.Image,
     trans_progress: float,
-    transition_type: str
+    transition_type: str,
+    prev_meta: Optional[Dict[str, Any]] = None,
+    curr_meta: Optional[Dict[str, Any]] = None,
+    stage_bbox: Optional[Tuple[int, int, int, int]] = None
 ) -> Image.Image:
-    p = _spring_physics(trans_progress, stiffness=190.0, damping=18.0)
+    """
+    محرك اللقطة الواحدة المتصلة بمصفوفة إسقاط الكاميرا الحقيقية وبدون أي تشويه أو تداخل شفاف (Zero-Ghosting & Aspect-Preserving One-Take Engine)
+    يطبق مبادئ `onetakemotion.com` (`feitangyuan/onetake`):
+    1. `camera_dive_into_portal`: الكاميرا تغوص داخل خلية جدول الفيديو أو البطاقة النشطة في `prev_img`،
+       وتنفتح الخلية كبوابة متماثلة الأبعاد (Aspect-Preserving Portal Aperture) تكشف عن `curr_img` بداخلها حتى تملأ الشاشة!
+    2. `camera_pull_out_reveal`: الكاميرا تبدأ من داخل خلية في جدول الفيديو أو لوحة `curr_img` ثم تبتعد للخلف (`Pull-Out`)
+       ليتضح أن المشهد السابق كان بداخل تلك الخلية!
+    3. `bar_collapses_to_table_grid`: شريط التقدم يندمج في خط ضوئي يمتد عبر الشاشة ثم ينفتح عمودياً كبوابة نظيفة ليرسم جدول الفيديو.
+    4. `prompt_bar_to_window` / `window_reflows_to_phone` / `card_grows_to_page` / `cast_folds_to_lockup`:
+       العنصر الناجي على الشاشة يتمدد كبوابة كاميرا متماثلة الأبعاد مع حركة كاميرا خلفية بدون أي تداخل نصوص (Zero Ghosting)!
+    """
     w, h = curr_img.size
+    if stage_bbox is None:
+        stage_bbox = (int(w * 0.04), int(h * 0.112), int(w * 0.96), int(h * 0.725))
 
-    blur_strength = int(10 * math.sin(max(0.0, min(1.0, trans_progress)) * math.pi))
+    t_clamped = max(0.0, min(1.0, float(trans_progress)))
+    p = _camera_curve(t_clamped)
 
-    if transition_type == "whip_left":
+    velocity = math.sin(t_clamped * math.pi)
+    blur_r = int(round(3.0 * velocity))
+
+    prev_boxes = get_archetype_portal_and_survivor_bboxes(w, h, stage_bbox, prev_meta)
+    curr_boxes = get_archetype_portal_and_survivor_bboxes(w, h, stage_bbox, curr_meta)
+
+    src_portal = prev_boxes["portal"]
+    dst_portal = curr_boxes["portal"]
+    dst_container = curr_boxes["container"]
+
+    # -------------------------------------------------------------------------
+    # 1. غوص الكاميرا داخل عنصر أو خلية جدول الفيديو (True Camera Dive-In Portal)
+    # -------------------------------------------------------------------------
+    if transition_type in ("camera_dive_into_portal", "zoom_portal"):
+        px1, py1, px2, py2, prad = src_portal
+        cam_x1 = px1 * p
+        cam_y1 = py1 * p
+        cam_x2 = float(w) - (float(w) - px2) * p
+        cam_y2 = float(h) - (float(h) - py2) * p
+        cam_w = max(16.0, cam_x2 - cam_x1)
+        cam_h = max(16.0, cam_y2 - cam_y1)
+
+        out = _crop_and_zoom_viewport(prev_img.convert("RGBA"), (cam_x1, cam_y1, cam_x2, cam_y2), w, h)
+        if blur_r >= 2 and p < 0.85:
+            out = out.filter(ImageFilter.BoxBlur(blur_r))
+
+        proj_x1 = int(round((px1 - cam_x1) / cam_w * w))
+        proj_y1 = int(round((py1 - cam_y1) / cam_h * h))
+        proj_x2 = int(round((px2 - cam_x1) / cam_w * w))
+        proj_y2 = int(round((py2 - cam_y1) / cam_h * h))
+        cur_rad = int(round(prad * (1.0 - p)))
+
+        rim_col = (250, 204, 21, int(round(250 * (1.0 - p * 0.6)))) if p < 0.96 else None
+        out = _paste_aspect_preserving_aperture(
+            base_rgba=out,
+            inner_img=curr_img,
+            aperture_box=(proj_x1, proj_y1, proj_x2, proj_y2),
+            corner_radius=cur_rad,
+            inner_zoom=0.72 + 0.28 * p,
+            border_rgba=rim_col,
+            border_width=max(2, int(round(5 * (1.0 - p * 0.5))))
+        )
+        return out
+
+    # -------------------------------------------------------------------------
+    # 2. خروج الكاميرا من عنصر للكشف عن جدول الفيديو أو اللوحة (True Camera Pull-Out Reveal)
+    # -------------------------------------------------------------------------
+    elif transition_type == "camera_pull_out_reveal":
+        px1, py1, px2, py2, prad = dst_portal
+        inv_p = 1.0 - p
+        cam_x1 = px1 * inv_p
+        cam_y1 = py1 * inv_p
+        cam_x2 = float(w) - (float(w) - px2) * inv_p
+        cam_y2 = float(h) - (float(h) - py2) * inv_p
+        cam_w = max(16.0, cam_x2 - cam_x1)
+        cam_h = max(16.0, cam_y2 - cam_y1)
+
+        out = _crop_and_zoom_viewport(curr_img.convert("RGBA"), (cam_x1, cam_y1, cam_x2, cam_y2), w, h)
+        if blur_r >= 2 and 0.15 < p < 0.80:
+            out = out.filter(ImageFilter.BoxBlur(blur_r))
+
+        proj_x1 = int(round((px1 - cam_x1) / cam_w * w))
+        proj_y1 = int(round((py1 - cam_y1) / cam_h * h))
+        proj_x2 = int(round((px2 - cam_x1) / cam_w * w))
+        proj_y2 = int(round((py2 - cam_y1) / cam_h * h))
+        cur_rad = int(round(prad * p))
+
+        if p < 0.82:
+            # نعرض المشهد السابق بداخل البوابة المنكمشة مع الحفاظ التام على نسبة أبعاده
+            portal_prev = _paste_aspect_preserving_aperture(
+                base_rgba=out,
+                inner_img=prev_img,
+                aperture_box=(proj_x1, proj_y1, proj_x2, proj_y2),
+                corner_radius=cur_rad,
+                inner_zoom=1.0,
+                border_rgba=(37, 99, 235, 245),
+                border_width=4
+            )
+            if p > 0.55:
+                blend_t = (p - 0.55) / 0.27
+                out = Image.blend(portal_prev, out, max(0.0, min(1.0, blend_t)))
+            else:
+                out = portal_prev
+        else:
+            odraw = ImageDraw.Draw(out, "RGBA")
+            odraw.rounded_rectangle(
+                [(proj_x1, proj_y1), (proj_x2 - 1, proj_y2 - 1)],
+                radius=cur_rad,
+                outline=(250, 204, 21, int(round(240 * (1.0 - (p - 0.82) / 0.18)))),
+                width=3
+            )
+        return out
+
+    # -------------------------------------------------------------------------
+    # 3. اندماج الشريط في خط ضوئي يرسم جدول الفيديو (Bar Collapses into Line -> Table Grid)
+    # -------------------------------------------------------------------------
+    elif transition_type == "bar_collapses_to_table_grid":
+        sx1, sy1, sx2, sy2, _ = src_portal
+        dx1, dy1, dx2, dy2, drad = dst_container
+        mid_y = int(round(((sy1 + sy2) * 0.5) * (1.0 - p) + ((dy1 + dy2) * 0.5) * p))
+
+        # الكاميرا تدفع المشهد السابق للأمام بينما ينبثق الجدول من الخط الضوئي بدون أي تداخل نصوص (Zero Ghosting)
+        zoom_bg = _crop_and_zoom_viewport(
+            prev_img.convert("RGBA"),
+            (w * 0.08 * p, h * 0.08 * p, w * (1.0 - 0.08 * p), h * (1.0 - 0.08 * p)),
+            w, h
+        )
+        if blur_r >= 1:
+            zoom_bg = zoom_bg.filter(ImageFilter.BoxBlur(max(2, blur_r)))
+
+        if p < 0.35:
+            lp = p / 0.35
+            cur_x1 = int(round(sx1 + (dx1 - sx1) * lp))
+            cur_x2 = int(round(sx2 + (dx2 - sx2) * lp))
+            half_h = max(5, int(round(((sy2 - sy1) * 0.5) * (1.0 - lp))))
+            odraw = ImageDraw.Draw(zoom_bg, "RGBA")
+            odraw.rounded_rectangle(
+                [(cur_x1, mid_y - half_h), (cur_x2, mid_y + half_h)],
+                radius=max(3, half_h),
+                fill=(37, 99, 235, 250),
+                outline=(250, 204, 21, 255),
+                width=3
+            )
+            return zoom_bg
+        else:
+            up = (p - 0.35) / 0.65
+            cur_x1 = int(round(dx1 * (1.0 - up)))
+            cur_x2 = int(round(dx2 + (w - dx2) * up))
+            cur_y1 = int(round(mid_y * (1.0 - up)))
+            cur_y2 = int(round(mid_y + (h - mid_y) * up))
+            return _paste_aspect_preserving_aperture(
+                base_rgba=zoom_bg,
+                inner_img=curr_img,
+                aperture_box=(cur_x1, cur_y1, cur_x2, cur_y2),
+                corner_radius=int(round(drad * (1.0 - up))),
+                inner_zoom=0.82 + 0.18 * up,
+                border_rgba=(250, 204, 21, int(round(245 * (1.0 - up * 0.6)))) if up < 0.95 else None,
+                border_width=4
+            )
+
+    # -------------------------------------------------------------------------
+    # 4. تحول العنصر الناجي عبر الحدود (Prompt Bar -> Window / Window -> Phone / Card -> Page / Cast -> Lockup)
+    # -------------------------------------------------------------------------
+    elif transition_type in ("prompt_bar_to_window", "window_reflows_to_phone", "card_grows_to_page", "cast_folds_to_lockup"):
+        sx1, sy1, sx2, sy2, srad = prev_boxes["container"] if transition_type in ("window_reflows_to_phone", "cast_folds_to_lockup") else src_portal
+
+        # الكاميرا تقترب من العنصر الناجي في المشهد السابق بينما يتمدد ليفتح المشهد الجديد بداخله بوضوح تام
+        cam_x1 = sx1 * 0.45 * p
+        cam_y1 = sy1 * 0.45 * p
+        cam_x2 = float(w) - (float(w) - sx2) * 0.45 * p
+        cam_y2 = float(h) - (float(h) - sy2) * 0.45 * p
+        zoom_prev = _crop_and_zoom_viewport(prev_img.convert("RGBA"), (cam_x1, cam_y1, cam_x2, cam_y2), w, h)
+        if blur_r >= 1:
+            zoom_prev = zoom_prev.filter(ImageFilter.BoxBlur(max(2, blur_r)))
+
+        ap_x1 = int(round(sx1 * (1.0 - p)))
+        ap_y1 = int(round(sy1 * (1.0 - p)))
+        ap_x2 = int(round(sx2 + (w - sx2) * p))
+        ap_y2 = int(round(sy2 + (h - sy2) * p))
+        cur_rad = int(round(srad * (1.0 - p)))
+
+        return _paste_aspect_preserving_aperture(
+            base_rgba=zoom_prev,
+            inner_img=curr_img,
+            aperture_box=(ap_x1, ap_y1, ap_x2, ap_y2),
+            corner_radius=cur_rad,
+            inner_zoom=0.78 + 0.22 * p,
+            border_rgba=(37, 99, 235, int(round(245 * (1.0 - p * 0.6)))) if p < 0.96 else None,
+            border_width=4
+        )
+
+    # -------------------------------------------------------------------------
+    # 5. الانتقالات الكلاسيكية الاحتياطية
+    # -------------------------------------------------------------------------
+    elif transition_type == "whip_left":
         offset = int(w * (1.0 - p))
         out = Image.new("RGBA", (w, h), (0, 0, 0, 255))
-        p_frame = prev_img.filter(ImageFilter.BoxBlur(blur_strength)) if blur_strength > 1 else prev_img
-        c_frame = curr_img.filter(ImageFilter.BoxBlur(blur_strength)) if blur_strength > 1 else curr_img
-        out.paste(p_frame, (-int(w * p), 0))
-        out.paste(c_frame, (offset, 0))
+        out.paste(prev_img, (-int(w * p), 0))
+        out.paste(curr_img, (offset, 0))
         return out
 
     elif transition_type == "whip_up":
         offset = int(h * (1.0 - p))
         out = Image.new("RGBA", (w, h), (0, 0, 0, 255))
-        p_frame = prev_img.filter(ImageFilter.BoxBlur(blur_strength)) if blur_strength > 1 else prev_img
-        c_frame = curr_img.filter(ImageFilter.BoxBlur(blur_strength)) if blur_strength > 1 else curr_img
-        out.paste(p_frame, (0, -int(h * p)))
-        out.paste(c_frame, (0, offset))
-        return out
-
-    elif transition_type == "zoom_portal":
-        scale = 0.55 + 0.45 * p
-        zw, zh = max(20, int(w * scale)), max(20, int(h * scale))
-        resized_curr = curr_img.resize((zw, zh), Image.Resampling.BILINEAR)
-        out = prev_img.copy()
-        if blur_strength > 1:
-            out = out.filter(ImageFilter.GaussianBlur(radius=blur_strength // 2))
-        paste_x, paste_y = (w - zw) // 2, (h - zh) // 2
-        alpha_mask = Image.new("L", (zw, zh), int(255 * min(1.0, trans_progress * 1.6)))
-        out.paste(resized_curr, (paste_x, paste_y), alpha_mask)
+        out.paste(prev_img, (0, -int(h * p)))
+        out.paste(curr_img, (0, offset))
         return out
 
     else:
         return Image.blend(prev_img, curr_img, max(0.0, min(1.0, p)))
+
+
+def apply_scene_transition(
+    prev_img: Image.Image,
+    curr_img: Image.Image,
+    trans_progress: float,
+    transition_type: str,
+    prev_meta: Optional[Dict[str, Any]] = None,
+    curr_meta: Optional[Dict[str, Any]] = None,
+    stage_bbox: Optional[Tuple[int, int, int, int]] = None
+) -> Image.Image:
+    return render_one_take_camera_handoff(
+        prev_img=prev_img,
+        curr_img=curr_img,
+        trans_progress=trans_progress,
+        transition_type=transition_type,
+        prev_meta=prev_meta,
+        curr_meta=curr_meta,
+        stage_bbox=stage_bbox
+    )
 
 
 # ==============================================================================
@@ -2324,8 +2814,8 @@ def render_master_directed_video_frame(
         )
 
         stage_bbox = (int(w * 0.04), int(h * 0.092), int(w * 0.96), int(h * 0.51))
-        canvas = render_choreographed_stage_archetype(
-            canvas_rgba=canvas,
+        curr_stage_canvas = render_choreographed_stage_archetype(
+            canvas_rgba=canvas.copy(),
             stage_bbox=stage_bbox,
             scene_meta=sc,
             scene_progress=sc_prog,
@@ -2333,6 +2823,31 @@ def render_master_directed_video_frame(
             theme=theme,
             is_light_saas=False
         )
+        time_into_split = t - sc["start"]
+        handoff_dur_split = float(sc.get("handoff_duration_sec", 0.42))
+        if active_idx > 0 and 0.0 <= time_into_split < handoff_dur_split:
+            prev_sc = master_plan[active_idx - 1]
+            prev_stage_canvas = render_choreographed_stage_archetype(
+                canvas_rgba=canvas.copy(),
+                stage_bbox=stage_bbox,
+                scene_meta=prev_sc,
+                scene_progress=1.0,
+                global_t=t,
+                theme=theme,
+                is_light_saas=False
+            )
+            handoff_mode = sc.get("one_take_handoff") or sc.get("transition", "camera_dive_into_portal")
+            canvas = render_one_take_camera_handoff(
+                prev_img=prev_stage_canvas,
+                curr_img=curr_stage_canvas,
+                trans_progress=time_into_split / handoff_dur_split,
+                transition_type=handoff_mode,
+                prev_meta=prev_sc,
+                curr_meta=sc,
+                stage_bbox=stage_bbox
+            )
+        else:
+            canvas = curr_stage_canvas
 
         # قص منطقة العمل النشطة (أعلى 78% من الفيديو الأصلي) لاستبعاد أي كابشن قديم محروق في أسفل الفيديو الأصلي
         pip_x1, pip_y1 = int(w * 0.05), int(h * 0.56)
@@ -2376,9 +2891,33 @@ def render_master_directed_video_frame(
             bg_cache=bg_cache
         )
         time_into_scene = t - sc["start"]
-        if active_idx > 0 and 0.0 <= time_into_scene < 0.28:
-            prev_base = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
-            blended = apply_scene_transition(prev_base, curr_img, time_into_scene / 0.28, sc.get("transition", "zoom_portal"))
+        handoff_dur = float(sc.get("handoff_duration_sec", 0.42))
+        if active_idx > 0 and 0.0 <= time_into_scene < handoff_dur:
+            prev_sc = master_plan[active_idx - 1]
+            prev_img = render_single_scene_canvas(
+                scene_meta=prev_sc,
+                active_word="",
+                scene_words=prev_sc.get("word_strings", []),
+                active_word_idx=max(0, len(prev_sc.get("word_strings", [])) - 1),
+                word_local_progress=1.0,
+                scene_progress=1.0,
+                global_t=t,
+                total_duration=total_duration,
+                audio_level=audio_level,
+                width=w,
+                height=h,
+                bg_cache=bg_cache
+            )
+            handoff_mode = sc.get("one_take_handoff") or sc.get("transition", "camera_dive_into_portal")
+            blended = render_one_take_camera_handoff(
+                prev_img=prev_img,
+                curr_img=curr_img,
+                trans_progress=time_into_scene / handoff_dur,
+                transition_type=handoff_mode,
+                prev_meta=prev_sc,
+                curr_meta=sc,
+                stage_bbox=(int(w * 0.04), int(h * 0.112), int(w * 0.96), int(h * 0.725))
+            )
             return np.array(blended.convert("RGB"))
         return np.array(curr_img.convert("RGB"))
 
@@ -2608,13 +3147,14 @@ def create_kinetic_typography_video(
             )
 
             time_into = t - sc["start"]
-            if active_idx > 0 and 0.0 <= time_into < 0.28:
+            handoff_dur = float(sc.get("handoff_duration_sec", 0.42))
+            if active_idx > 0 and 0.0 <= time_into < handoff_dur:
                 prev_sc = planned_scenes[active_idx - 1]
                 prev_img = render_single_scene_canvas(
                     scene_meta=prev_sc,
                     active_word="",
                     scene_words=prev_sc.get("word_strings", []),
-                    active_word_idx=0,
+                    active_word_idx=max(0, len(prev_sc.get("word_strings", [])) - 1),
                     word_local_progress=1.0,
                     scene_progress=1.0,
                     global_t=t,
@@ -2624,7 +3164,16 @@ def create_kinetic_typography_video(
                     height=vh,
                     bg_cache=bg_cache
                 )
-                curr_img = apply_scene_transition(prev_img, curr_img, time_into / 0.28, sc.get("transition", "zoom_portal"))
+                handoff_mode = sc.get("one_take_handoff") or sc.get("transition", "camera_dive_into_portal")
+                curr_img = render_one_take_camera_handoff(
+                    prev_img=prev_img,
+                    curr_img=curr_img,
+                    trans_progress=time_into / handoff_dur,
+                    transition_type=handoff_mode,
+                    prev_meta=prev_sc,
+                    curr_meta=sc,
+                    stage_bbox=(int(vw * 0.04), int(vh * 0.112), int(vw * 0.96), int(vh * 0.725))
+                )
 
             return np.array(curr_img.convert("RGB"), dtype=np.uint8)
 
