@@ -74,11 +74,13 @@ except ImportError:
 try:
     from style_evolution_brain import (
         load_evolution_memory,
-        get_best_params_for_scene_type
+        get_best_params_for_scene_type,
+        get_active_brand_theme
     )
 except ImportError:
     load_evolution_memory = None
     get_best_params_for_scene_type = None
+    get_active_brand_theme = None
 
 try:
     from stock_video_finder import map_scene_to_stock_category
@@ -464,8 +466,8 @@ class WebMotionLearner:
             merged = dict(sc)
             merged.update(blueprint)
             merged["step_badge"] = f"#{idx + 1}"
-            # ثبات الهوية البصرية الموحدة لمنع الوميض المزعج بين الأبيض والأسود كل 3 ثوانٍ
-            merged["style_mode"] = "clean_saas_light"
+            # هوية بصرية سينمائية داكنة فخمة افتراضياً (أو مخصصة حسب ثيم اللوقو/المستخدم)
+            merged["style_mode"] = merged.get("style_mode") or "dark_stage_pro"
             choreographed_scenes.append(merged)
 
         if callable(query_llm_func) and (groq_api_key or gemini_api_key or openai_api_key):
@@ -1483,6 +1485,7 @@ def analyze_contextual_storyboard(
         try:
             mem = load_evolution_memory()
             active_dna = mem.get("active_reference_dna")
+            active_brand = get_active_brand_theme() if callable(get_active_brand_theme) else mem.get("active_brand_theme")
             for sc in enriched_scenes:
                 st_key = str(sc.get("scene_type") or sc.get("archetype") or "default")
                 evolved_p = get_best_params_for_scene_type(st_key)
@@ -1505,6 +1508,17 @@ def analyze_contextual_storyboard(
                         sc["handoff_duration_sec"] = float(active_dna["handoff_duration_sec"])
                     if active_dna.get("stagger_delay_sec"):
                         sc["stagger_delay_sec"] = float(active_dna["stagger_delay_sec"])
+                if isinstance(active_brand, dict) and active_brand.get("enabled", True):
+                    if active_brand.get("theme_name"):
+                        sc["theme_name"] = active_brand["theme_name"]
+                        if "theme_palette" in active_brand:
+                            import motion_text
+                            motion_text.MOTION_THEMES[active_brand["theme_name"]] = active_brand["theme_palette"]
+                    if active_brand.get("style_mode"):
+                        sc["style_mode"] = active_brand["style_mode"]
+                    if active_brand.get("logo_path") and active_brand.get("show_logo_watermark", True):
+                        sc["brand_logo_path"] = active_brand["logo_path"]
+                        sc["brand_logo_position"] = active_brand.get("logo_position", "top_right")
         except Exception as evo_err:
             logger.debug(f"Style evolution injection notice: {evo_err}")
 
@@ -1763,8 +1777,8 @@ def generate_master_director_plan(
                 zoom_factor = 1.0
                 last_badge_idx = idx
             elif can_show_overlay and (idx % 2 == 1):
-                layout_mode = "split_screen_stage"
-                zoom_factor = 1.0
+                layout_mode = "floating_callout"
+                zoom_factor = 1.05
                 last_badge_idx = idx
             elif can_show_overlay:
                 layout_mode = "top_overlay"

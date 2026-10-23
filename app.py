@@ -916,6 +916,119 @@ with col2:
     else:
         st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري.")
 
+    st.markdown("---")
+    st.subheader("🎨 3. الهوية البصرية: اللوقو وألوان الثيم (Logo & Theme Colors)")
+    with st.container():
+        from style_evolution_brain import (
+            extract_brand_palette_from_image,
+            apply_custom_brand_colors,
+            get_active_brand_theme,
+            clear_active_brand_theme
+        )
+
+        active_brand_now = get_active_brand_theme() or {}
+        logo_uploaded = st.file_uploader(
+            "🖼️ ارفع اللوقو (Logo) أو صورة باليت ألوان (يستخرج منها ألوان الفيديو تلقائياً):",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="main_brand_logo_uploader"
+        )
+
+        logo_pos_map = {
+            "أعلى اليمين (Top Right)": "top_right",
+            "أعلى اليسار (Top Left)": "top_left",
+            "استخراج الألوان فقط بدون عرض اللوقو": "none"
+        }
+        logo_pos_label = st.selectbox(
+            "موضع ظهور اللوقو في الفيديو:",
+            options=list(logo_pos_map.keys()),
+            index=0
+        )
+        chosen_logo_pos = logo_pos_map[logo_pos_label]
+        show_logo_flag = (chosen_logo_pos != "none")
+
+        saved_logo_path = active_brand_now.get("logo_path")
+        if logo_uploaded is not None:
+            logo_hash = hashlib.md5(f"{logo_uploaded.name}_{getattr(logo_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
+            ext_l = os.path.splitext(logo_uploaded.name)[1].lower() or ".png"
+            saved_logo_path = os.path.join(INPUTS_DIR, f"brand_logo_{logo_hash}{ext_l}")
+            if not os.path.exists(saved_logo_path):
+                logo_uploaded.seek(0)
+                with open(saved_logo_path, "wb") as lf:
+                    shutil.copyfileobj(logo_uploaded, lf)
+            if st.session_state.get("last_extracted_logo_hash") != logo_hash:
+                extracted_prof = extract_brand_palette_from_image(
+                    image_path=saved_logo_path,
+                    show_logo_watermark=show_logo_flag,
+                    logo_position=chosen_logo_pos if show_logo_flag else "top_right",
+                    prefer_dark_bg=True
+                )
+                st.session_state["last_extracted_logo_hash"] = logo_hash
+                st.session_state["brand_primary_hex"] = extracted_prof.get("primary_hex", "#38BDF8")
+                st.session_state["brand_secondary_hex"] = extracted_prof.get("secondary_hex", "#FACC15")
+                st.session_state["brand_bg_hex"] = extracted_prof.get("bg_hex", "#0B1325")
+                st.session_state["theme_preset_mode"] = "🎨 ألوان اللوقو / الألوان المخصصة (Custom Brand Theme)"
+                active_brand_now = extracted_prof
+
+        theme_presets = [
+            "🌌 داكن سينمائي فخم ومتنوع (Dark Studio Pro - تلقائي)",
+            "🎨 ألوان اللوقو / الألوان المخصصة (Custom Brand Theme)",
+            "⚡ نيون ذهبي وزبرجد (Cyber Gold & Emerald)",
+            "💎 أزرق كوبالت تقني (Electric Cobalt)",
+            "🔥 طاقة وإعلانات دافئة (Crimson & Sunset)",
+            "☀️ فاتح نظيف هادئ (Minimal Daylight)"
+        ]
+        default_preset_idx = 1 if (logo_uploaded is not None or active_brand_now.get("enabled")) else 0
+        chosen_preset = st.selectbox(
+            "اختر ستايل وثيم الفيديو:",
+            options=theme_presets,
+            index=default_preset_idx,
+            key="theme_preset_selector"
+        )
+
+        preset_palettes = {
+            theme_presets[2]: ("#FFD700", "#00F5D4", "#070B16", "dark_stage_pro"),
+            theme_presets[3]: ("#38BDF8", "#FACC15", "#080E1E", "dark_stage_pro"),
+            theme_presets[4]: ("#FFBE0B", "#FF006E", "#120810", "dark_stage_pro"),
+            theme_presets[5]: ("#2563EB", "#10B981", "#F1F5F9", "clean_saas_light"),
+        }
+
+        def_p = st.session_state.get("brand_primary_hex", active_brand_now.get("primary_hex", "#38BDF8"))
+        def_s = st.session_state.get("brand_secondary_hex", active_brand_now.get("secondary_hex", "#FACC15"))
+        def_bg = st.session_state.get("brand_bg_hex", active_brand_now.get("bg_hex", "#0B1325"))
+
+        if chosen_preset in preset_palettes:
+            def_p, def_s, def_bg, _ = preset_palettes[chosen_preset]
+
+        cp1, cp2, cp3 = st.columns(3)
+        with cp1:
+            picked_primary = st.color_picker("اللون الأساسي", value=def_p, key="cp_primary")
+        with cp2:
+            picked_secondary = st.color_picker("اللون الثانوي", value=def_s, key="cp_secondary")
+        with cp3:
+            picked_bg = st.color_picker("لون الخلفية", value=def_bg, key="cp_bg")
+
+        st.session_state["brand_primary_hex"] = picked_primary
+        st.session_state["brand_secondary_hex"] = picked_secondary
+        st.session_state["brand_bg_hex"] = picked_bg
+
+        if chosen_preset == theme_presets[0] and logo_uploaded is None:
+            clear_active_brand_theme()
+        else:
+            is_light_choice = (chosen_preset == theme_presets[5])
+            apply_custom_brand_colors(
+                primary_hex=picked_primary,
+                secondary_hex=picked_secondary,
+                bg_hex=picked_bg,
+                style_mode="clean_saas_light" if is_light_choice else "dark_stage_pro",
+                logo_path=saved_logo_path if (logo_uploaded is not None or saved_logo_path) else None,
+                show_logo_watermark=show_logo_flag,
+                logo_position=chosen_logo_pos if show_logo_flag else "top_right"
+            )
+            st.caption(
+                f"✅ **الثيم النشط:** أساسي `{picked_primary}` • ثانوي `{picked_secondary}` • خلفية `{picked_bg}`"
+                + (f" • مع شعار اللوقو ({logo_pos_label})" if (saved_logo_path and show_logo_flag) else "")
+            )
+
     st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button(
         "🚀 بدء صناعة ومونتاج الفيديو في الخلفية (Start Processing)",
