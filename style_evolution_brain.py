@@ -74,35 +74,105 @@ def hex_to_rgb(hex_str: str, fallback: Tuple[int, int, int] = (56, 189, 248)) ->
 #    ويدعم رسم جميع الـ 12 نمطاً من الرسومات والأنيميشن التفاعلية!
 # ==============================================================================
 ALL_DYNAMIC_VISUAL_ARCHETYPES: List[str] = [
-    "agency_receipt_stamp",          # 1. بطاقة المشكلة/الفاتورة مع الختم المتحرك وأبراج العملات ثلاثية الأبعاد
-    "bezier_growth_nodes",           # 2. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة 01->04
-    "live_magnifier_scanner",        # 3. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
-    "radar_target_sweep",            # 4. رادار الاستهداف الدوار بشعاع مسح 360° ونقاط تنبض بعلامات صح
-    "fan_out_mobile_report",         # 5. الهاتف الذكي مع البطاقات المروحية المنبثقة ومؤشر الأداء الدائري
-    "blueprint_numbered_steps",      # 6. قائمة الخطوات الهندسية المرقمة 1-2-3-4 مع إطار التحديد ومؤشر النقر
-    "damped_balance_scale",          # 7. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
-    "split_before_after_cards",      # 8. مقارنة قبل/بعد المزدوجة مع جسر التحول وقائمة التدقيق
-    "bento_grid_2x2_ripple",         # 9. شبكة Bento الرباعية التفاعلية مع أشرطة التقدم ونقرات الماوس
-    "typewriter_gear_console",       # 10. محرك الأوامر والبحث الذكي بالكتابة الآلية والترس الدوار
-    "nle_timeline_matrix",           # 11. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك Playhead
-    "rocket_bars_cta_outro"          # 12. مشهد الإطلاق الختامي مع أعمدة النمو الصاعدة والصاروخ وزر الإجراء النابض
+    "chrono_ring_3d_counter",        # 1. [6944 Shot 1] الحلقة ثلاثية الأبعاد والعداد الدائري الحي المتزامن مع النطق (10->14->20)
+    "pack_3d_extruding_pillars",     # 2. [6944 Shot 2] صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع مع نقرة اليد
+    "macos_folder_counter_list",     # 3. [6944 Shot 3] قائمة المجلدات الزرقاء ثلاثية الأبعاد مع العداد الخلفي المتصاعد (+34 -> +44)
+    "reels_6card_showcase_grid",     # 4. [6944 Shot 4] معرض الفيديوهات والبطاقات الستة المتحركة (2×3) مع معاينات الفيديو الحية
+    "dark_cinema_fanned_cards",      # 5. [6944 Shot 5] المسرح السينمائي الداكن والبطاقات المروحية ثلاثية الأبعاد مع الموجة الصوتية المضيئة
+    "interactive_profile_follow_card", # 6. [6944 Shot 6] بطاقة الحساب التفاعلية وزر المتابعة الذي ينبض ويتحول عند نقرة اليد (Follow -> Following)
+    "bezier_growth_nodes",           # 7. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة
+    "live_magnifier_scanner",        # 8. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
+    "damped_balance_scale",          # 9. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
+    "nle_timeline_matrix",           # 10. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك Playhead
+    "radar_target_sweep",            # 11. رادار الاستهداف الدوار بشعاع مسح 360° ونقاط تنبض بعلامات صح
+    "kinetic_quote_dm_finale"        # 12. [6944 Shot 7] الخاتمة الحركية السريعة بعلامات التنصيص المضيئة والـ CTA المتتابع
 ]
 
 PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
+    "haamza_15s_cinema": {
+        "style_id": "haamza_15s_cinema",
+        "label_ar": "🌟 ستايل المونتاج السينمائي الفاخر 15s (تدرج كريمي دافئ ومخملي بدون مربعات • انتقالات سلسة وموشن ثلاثي الأبعاد)",
+        "design_family": "haamza_15s_cinema",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "none_clean",
+        "headline_style": "gold_accent_clean",
+        "card_tilt_deg": 1.8,
+        "preferred_archetypes": [
+            "chrono_ring_3d_counter", "pack_3d_extruding_pillars", "macos_folder_counter_list",
+            "reels_6card_showcase_grid", "dark_cinema_fanned_cards", "interactive_profile_follow_card",
+            "bezier_growth_nodes", "kinetic_quote_dm_finale"
+        ],
+        "unified_palette": {
+            "top_bg": (253, 250, 241),
+            "bottom_bg": (244, 231, 198),
+            "glow": (234, 179, 8),
+            "primary": (217, 155, 28),
+            "secondary": (37, 99, 235),
+            "accent": (16, 185, 129),
+            "card_bg": (255, 255, 255),
+            "is_light_bg": True,
+            "sticker_bg": (234, 179, 8),
+            "sticker_txt": (24, 24, 27),
+            "headline_txt": (24, 24, 27)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (253, 250, 241),
+                "bottom_bg": (244, 231, 198),
+                "glow": (234, 179, 8),
+                "primary": (217, 155, 28),
+                "secondary": (37, 99, 235),
+                "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255),
+                "is_light_bg": True,
+                "sticker_bg": (234, 179, 8),
+                "sticker_txt": (24, 24, 27),
+                "headline_txt": (24, 24, 27)
+            },
+            "body_steps": {
+                "top_bg": (253, 250, 241),
+                "bottom_bg": (244, 231, 198),
+                "glow": (234, 179, 8),
+                "primary": (217, 155, 28),
+                "secondary": (37, 99, 235),
+                "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255),
+                "is_light_bg": True,
+                "sticker_bg": (234, 179, 8),
+                "sticker_txt": (24, 24, 27),
+                "headline_txt": (24, 24, 27)
+            },
+            "outro_finale": {
+                "top_bg": (253, 250, 241),
+                "bottom_bg": (244, 231, 198),
+                "glow": (234, 179, 8),
+                "primary": (217, 155, 28),
+                "secondary": (37, 99, 235),
+                "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255),
+                "is_light_bg": True,
+                "sticker_bg": (234, 179, 8),
+                "sticker_txt": (24, 24, 27),
+                "headline_txt": (24, 24, 27)
+            }
+        }
+    },
     "byw_cyan_agency": {
         "style_id": "byw_cyan_agency",
         "label_ar": "🎬 ستايل وكالة السيان والكحلي الاحترافي (بطاقات بيضاء مائلة وستيكر نصي بارز)",
         "design_family": "byw_cyan_agency",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "step_dots_pill",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.5,
         "preferred_archetypes": [
-            "agency_receipt_stamp", "bezier_growth_nodes", "live_magnifier_scanner",
-            "radar_target_sweep", "fan_out_mobile_report", "bento_grid_2x2_ripple",
-            "split_before_after_cards", "rocket_bars_cta_outro"
+            "chrono_ring_3d_counter", "bezier_growth_nodes", "live_magnifier_scanner",
+            "radar_target_sweep", "pack_3d_extruding_pillars", "reels_6card_showcase_grid",
+            "dark_cinema_fanned_cards", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (13, 118, 142),
@@ -163,16 +233,16 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "style_id": "mazen_blueprint_collage",
         "label_ar": "📐 ستايل المخطط الهندسي السماوي (إطارات تحديد ذكية ورسومات تقنية مشرقة)",
         "design_family": "mazen_blueprint_collage",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "corner_punctuation_watermark",
         "headline_style": "selection_box_handle",
         "card_tilt_deg": 0.0,
         "preferred_archetypes": [
-            "blueprint_numbered_steps", "damped_balance_scale", "bento_grid_2x2_ripple",
-            "typewriter_gear_console", "bezier_growth_nodes", "live_magnifier_scanner",
-            "nle_timeline_matrix", "rocket_bars_cta_outro"
+            "macos_folder_counter_list", "damped_balance_scale", "reels_6card_showcase_grid",
+            "interactive_profile_follow_card", "bezier_growth_nodes", "live_magnifier_scanner",
+            "nle_timeline_matrix", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (172, 214, 248),
@@ -233,16 +303,16 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "style_id": "baghdadi_luxury_plum",
         "label_ar": "🟣 ستايل مختبر الإعلانات البنفسجي الفاخر (تبويبات علوية وواجهات زجاجية داكنة)",
         "design_family": "baghdadi_luxury_plum",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "segmented_3tabs",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.0,
         "preferred_archetypes": [
-            "split_before_after_cards", "radar_target_sweep", "bezier_growth_nodes",
-            "fan_out_mobile_report", "damped_balance_scale", "bento_grid_2x2_ripple",
-            "live_magnifier_scanner", "rocket_bars_cta_outro"
+            "dark_cinema_fanned_cards", "radar_target_sweep", "bezier_growth_nodes",
+            "pack_3d_extruding_pillars", "damped_balance_scale", "reels_6card_showcase_grid",
+            "live_magnifier_scanner", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (18, 15, 36),
@@ -303,16 +373,16 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "style_id": "emerald_fintech_mint",
         "label_ar": "🌿 ستايل الفينتك الزمردي الداكن (مخططات مالية وتقارير أداء عالية التباين)",
         "design_family": "emerald_fintech_mint",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "step_dots_pill",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.2,
         "preferred_archetypes": [
-            "bezier_growth_nodes", "fan_out_mobile_report", "damped_balance_scale",
-            "bento_grid_2x2_ripple", "agency_receipt_stamp", "radar_target_sweep",
-            "nle_timeline_matrix", "rocket_bars_cta_outro"
+            "bezier_growth_nodes", "pack_3d_extruding_pillars", "damped_balance_scale",
+            "reels_6card_showcase_grid", "chrono_ring_3d_counter", "radar_target_sweep",
+            "nle_timeline_matrix", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (9, 32, 26),
@@ -373,16 +443,16 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "style_id": "royal_cobalt_gold",
         "label_ar": "👑 ستايل الكوبالت الملكي والذهبي السينمائي (لوحات زجاجية وتوهج ذهبي)",
         "design_family": "royal_cobalt_gold",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "segmented_3tabs",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.2,
         "preferred_archetypes": [
-            "typewriter_gear_console", "bento_grid_2x2_ripple", "bezier_growth_nodes",
-            "radar_target_sweep", "damped_balance_scale", "fan_out_mobile_report",
-            "split_before_after_cards", "rocket_bars_cta_outro"
+            "interactive_profile_follow_card", "reels_6card_showcase_grid", "bezier_growth_nodes",
+            "radar_target_sweep", "damped_balance_scale", "pack_3d_extruding_pillars",
+            "dark_cinema_fanned_cards", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (11, 20, 44),
@@ -443,16 +513,16 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "style_id": "sunset_coral_editorial",
         "label_ar": "🔥 ستايل الإديتوريال المرجاني الدافئ (بطاقات SaaS نظيفة وتباين ديناميكي)",
         "design_family": "sunset_coral_editorial",
-        "has_grid": True,
-        "has_floating_diamonds": True,
+        "has_grid": False,
+        "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
         "header_style": "step_dots_pill",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.0,
         "preferred_archetypes": [
-            "agency_receipt_stamp", "blueprint_numbered_steps", "live_magnifier_scanner",
-            "split_before_after_cards", "bento_grid_2x2_ripple", "fan_out_mobile_report",
-            "bezier_growth_nodes", "rocket_bars_cta_outro"
+            "chrono_ring_3d_counter", "macos_folder_counter_list", "live_magnifier_scanner",
+            "dark_cinema_fanned_cards", "reels_6card_showcase_grid", "pack_3d_extruding_pillars",
+            "bezier_growth_nodes", "kinetic_quote_dm_finale"
         ],
         "unified_palette": {
             "top_bg": (26, 14, 24),
@@ -594,9 +664,9 @@ def _select_non_repeating_archetype_sequence(
     يبني تسلسلاً غنياً ومتنوعاً من الرسومات والأنيميشن (`Visual Archetypes`) لمشاهد الفيديو
     بحيث لا يتكرر نفس الشكل أو التحريك في مشهدين متجاورين، ويكون المشهد الأخير دائماً خاتمة احترافية.
     """
-    pool = [a for a in preferred_pool if a != "rocket_bars_cta_outro"]
+    pool = [a for a in preferred_pool if a != "kinetic_quote_dm_finale"]
     for a in ALL_DYNAMIC_VISUAL_ARCHETYPES:
-        if a not in pool and a != "rocket_bars_cta_outro":
+        if a not in pool and a != "kinetic_quote_dm_finale":
             pool.append(a)
 
     # إزاحة البداية حسب عداد التدوير لكي لا تبدأ كل الفيديوهات بنفس الشكل!
@@ -606,7 +676,7 @@ def _select_non_repeating_archetype_sequence(
     seq: List[str] = []
     for idx in range(max(1, num_scenes)):
         if idx == num_scenes - 1 and num_scenes >= 2:
-            seq.append("rocket_bars_cta_outro")
+            seq.append("kinetic_quote_dm_finale")
         else:
             cand = rotated_pool[idx % len(rotated_pool)]
             if seq and cand == seq[-1]:
@@ -637,6 +707,15 @@ def build_dynamic_scene_style_assignment(
         mem["style_rotation_counter"] = rot_idx
         save_evolution_memory(mem)
 
+    style_aliases = {
+        "warm_editorial_cream": "editorial_cream",
+        "obsidian_gold_exec": "editorial_dark",
+        "crimson_velvet_studio": "editorial_crimson",
+        "mint_sage_broadcast": "editorial_mint",
+        "royal_cobalt": "royal_cobalt_gold",
+    }
+    if force_style_mode in style_aliases:
+        force_style_mode = style_aliases[force_style_mode]
     family_keys = list(PRO_STUDIO_STYLE_FAMILIES.keys())
     active_ref = mem.get("active_reference_dna")
 
@@ -661,15 +740,15 @@ def build_dynamic_scene_style_assignment(
         plan: List[Dict[str, Any]] = []
         for idx in range(max(1, num_scenes)):
             act_name = "hook_problem" if idx == 0 else ("outro_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else "body_steps")
-            arch_for_scene = "rocket_bars_cta_outro" if (idx == num_scenes - 1 and num_scenes >= 2) else cloned_arch_seq[idx % len(cloned_arch_seq)]
+            arch_for_scene = "kinetic_quote_dm_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else cloned_arch_seq[idx % len(cloned_arch_seq)]
             plan.append({
                 "style_family_id": base_fam["style_id"],
                 "design_family": base_fam["design_family"],
                 "act_name": act_name,
                 "step_number": idx + 1,
                 "visual_archetype": arch_for_scene,
-                "has_grid": bool(active_ref.get("has_grid", base_fam["has_grid"])),
-                "has_floating_diamonds": bool(active_ref.get("has_floating_diamonds", base_fam["has_floating_diamonds"])),
+                "has_grid": False,
+                "has_floating_diamonds": False,
                 "has_giant_bg_numbers": False,
                 "header_style": str(active_ref.get("header_style", base_fam["header_style"])),
                 "headline_style": str(active_ref.get("headline_style", base_fam["headline_style"])),
@@ -1066,22 +1145,22 @@ def _classify_shot_visual_archetype(frm_rgb: np.ndarray, shot_idx: int) -> str:
         "bezier_growth_nodes",
         "live_magnifier_scanner",
         "radar_target_sweep",
-        "fan_out_mobile_report",
-        "blueprint_numbered_steps",
+        "pack_3d_extruding_pillars",
+        "macos_folder_counter_list",
         "damped_balance_scale",
-        "split_before_after_cards",
-        "bento_grid_2x2_ripple",
-        "typewriter_gear_console",
-        "agency_receipt_stamp",
+        "dark_cinema_fanned_cards",
+        "reels_6card_showcase_grid",
+        "interactive_profile_follow_card",
+        "chrono_ring_3d_counter",
         "nle_timeline_matrix"
     ]
 
     if row_peaks >= 4:
-        return "blueprint_numbered_steps" if (shot_idx % 2 == 0) else "nle_timeline_matrix"
+        return "macos_folder_counter_list" if (shot_idx % 2 == 0) else "nle_timeline_matrix"
     if abs(left_e - right_e) < 3.5 and center_col_e < min(left_e, right_e) * 0.82:
-        return "split_before_after_cards" if (shot_idx % 2 == 0) else "damped_balance_scale"
+        return "dark_cinema_fanned_cards" if (shot_idx % 2 == 0) else "damped_balance_scale"
     if bright_ratio >= 0.28:
-        bright_choices = ["agency_receipt_stamp", "bezier_growth_nodes", "live_magnifier_scanner", "fan_out_mobile_report"]
+        bright_choices = ["chrono_ring_3d_counter", "bezier_growth_nodes", "live_magnifier_scanner", "pack_3d_extruding_pillars"]
         return bright_choices[shot_idx % len(bright_choices)]
     return candidates[shot_idx % len(candidates)]
 

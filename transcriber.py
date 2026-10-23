@@ -589,9 +589,9 @@ def ensure_word_timestamp_continuity(
 
 def split_words_into_micro_scenes(
     words_list: List[Dict[str, Any]],
-    max_words_per_scene: int = 8,
-    max_duration_per_scene: float = 4.2,
-    min_words_per_scene: int = 4
+    max_words_per_scene: int = 6,
+    max_duration_per_scene: float = 3.1,
+    min_words_per_scene: int = 3
 ) -> List[Dict[str, Any]]:
     """
     تقسيم الكلمات حسب السياق والمعنى الكامل للجملة (Semantic Clause Grouping):
@@ -603,9 +603,9 @@ def split_words_into_micro_scenes(
         return []
 
     # ترقية الحدود الدنيا تلقائياً حتى لو تم استدعاء الدالة بمعاملات قديمة صغيرة (مثل 4 كلمات و 2.0 ثانية)
-    eff_max_words = max(7, int(max_words_per_scene))
-    eff_max_dur = max(3.6, float(max_duration_per_scene))
-    eff_min_words = max(4, int(min_words_per_scene))
+    eff_max_words = max(5, min(7, int(max_words_per_scene)))
+    eff_max_dur = max(2.4, min(3.4, float(max_duration_per_scene)))
+    eff_min_words = max(3, min(4, int(min_words_per_scene)))
 
     words_list = ensure_word_timestamp_continuity(words_list)
     raw_scenes: List[Dict[str, Any]] = []
@@ -712,15 +712,41 @@ def split_words_into_micro_scenes(
         final_scenes.append(curr)
         i += 1
 
-    # سد أي فجوة صغيرة بين نهاية مشهد وبداية المشهد التالي لعدم اختفاء الرسومات
-    for idx in range(len(final_scenes) - 1):
-        gap = final_scenes[idx + 1]["start"] - final_scenes[idx]["end"]
-        if 0.0 < gap <= 0.60:
-            final_scenes[idx]["end"] = final_scenes[idx + 1]["start"]
-            if final_scenes[idx]["words"]:
-                final_scenes[idx]["words"][-1]["end"] = final_scenes[idx + 1]["start"]
+    # تقسيم أي مشهد طويل (> 3.6 ثانية) إلى لقطتين بصريتين متجددتين لمنع بقاء نفس الرسمة ثابتة على الشاشة لفترة طويلة!
+    paced_scenes: List[Dict[str, Any]] = []
+    for sc in final_scenes:
+        sc_w = sc.get("words", [])
+        sc_dur = float(sc["end"]) - float(sc["start"])
+        if sc_dur > 3.6 and len(sc_w) >= 6:
+            mid_idx = len(sc_w) // 2
+            w1, w2 = sc_w[:mid_idx], sc_w[mid_idx:]
+            paced_scenes.append({
+                "text": " ".join(x["word"] for x in w1),
+                "start": round(float(w1[0]["start"]), 3),
+                "end": round(float(w1[-1]["end"]), 3),
+                "words": w1
+            })
+            paced_scenes.append({
+                "text": " ".join(x["word"] for x in w2),
+                "start": round(float(w2[0]["start"]), 3),
+                "end": round(float(w2[-1]["end"]), 3),
+                "words": w2
+            })
+        else:
+            paced_scenes.append(sc)
 
-    return final_scenes
+    # سد أي فجوة بين نهاية مشهد وبداية المشهد التالي مع إعادة توزيع أوقات الكلمات إذا وُجدت فجوة طويلة
+    for idx in range(len(paced_scenes) - 1):
+        gap = paced_scenes[idx + 1]["start"] - paced_scenes[idx]["end"]
+        if 0.0 < gap <= 1.20:
+            paced_scenes[idx]["end"] = paced_scenes[idx + 1]["start"]
+            if paced_scenes[idx]["words"]:
+                paced_scenes[idx]["words"][-1]["end"] = paced_scenes[idx + 1]["start"]
+        elif gap > 1.20:
+            # إذا كانت هناك فجوة كبيرة، نقسمها إلى مشهد بصري انتقالي حتى لا تتجمد الشاشة
+            paced_scenes[idx]["end"] = round(paced_scenes[idx]["end"] + min(0.8, gap * 0.4), 3)
+
+    return paced_scenes
 
 
 # ==============================================================================
@@ -955,40 +981,65 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
-        # تقسيم المقاطع الطويلة عند أهدأ نقطة صمت بين الكلمات (Acoustic Valley Splitting) لمنع بتر أي كلمة في المنتصف!
+        # تقسيم المقاطع الطويلة إلى جمل رشيقة (<= 4.2 ثانية) عند أهدأ نقطة صمت بين الكلمات لمنع ضياع أي جملة في Google STT!
         final_chunks: List[Tuple[int, int]] = []
         for s_ms, e_ms in merged_chunks:
             cur_s = s_ms
-            while (e_ms - cur_s) > 7200:
-                search_start = cur_s + 3400
-                search_end = min(e_ms - 1200, cur_s + 6400)
-                best_split = cur_s + 4800
+            while (e_ms - cur_s) > 4200:
+                search_start = cur_s + 2100
+                search_end = min(e_ms - 800, cur_s + 3900)
+                best_split = cur_s + 3100
                 min_rms = float("inf")
-                for probe_ms in range(search_start, search_end, 25):
-                    win_slice = audio[probe_ms:probe_ms + 50]
+                for probe_ms in range(search_start, max(search_start + 25, search_end), 20):
+                    win_slice = audio[probe_ms:probe_ms + 45]
                     if win_slice.rms < min_rms:
                         min_rms = win_slice.rms
-                        best_split = probe_ms + 25
-                final_chunks.append((cur_s, min(e_ms, best_split + 40)))
-                cur_s = max(cur_s + 1000, best_split - 40)
+                        best_split = probe_ms + 22
+                final_chunks.append((cur_s, min(e_ms, best_split + 35)))
+                cur_s = max(cur_s + 800, best_split - 35)
             if e_ms - cur_s >= 180:
                 final_chunks.append((cur_s, e_ms))
 
         recognizer = sr.Recognizer()
         all_words: List[Dict[str, Any]] = []
 
+        def _recognize_chunk_with_fallback(c_s: int, c_e: int) -> str:
+            ch_aud = audio[c_s:c_e]
+            ad = sr.AudioData(ch_aud.raw_data, 16000, 2)
+            for lang_code in ("ar-DZ", "ar-SA", "ar"):
+                try:
+                    res_txt = recognizer.recognize_google(ad, language=lang_code)
+                    if res_txt and res_txt.strip():
+                        return res_txt.strip()
+                except sr.UnknownValueError:
+                    continue
+                except Exception:
+                    break
+            # إذا كانت القطعة > 2200ms وفشلت ككتلة واحدة، نقسمها من المنتصف عند أهدأ نقطة ونفرغ النصفين
+            if (c_e - c_s) > 2200:
+                mid_s = c_s + int((c_e - c_s) * 0.35)
+                mid_e = c_s + int((c_e - c_s) * 0.65)
+                best_m = (c_s + c_e) // 2
+                min_r = float("inf")
+                for p_ms in range(mid_s, max(mid_s + 20, mid_e), 20):
+                    w_sl = audio[p_ms:p_ms + 40]
+                    if w_sl.rms < min_r:
+                        min_r = w_sl.rms
+                        best_m = p_ms + 20
+                part1 = _recognize_chunk_with_fallback(c_s, best_m)
+                part2 = _recognize_chunk_with_fallback(best_m, c_e)
+                return f"{part1} {part2}".strip()
+            return ""
+
         for c_start_ms, c_end_ms in final_chunks:
             chunk_audio = audio[c_start_ms:c_end_ms]
-            raw_wav_bytes = chunk_audio.raw_data
-            audio_data = sr.AudioData(raw_wav_bytes, 16000, 2)
-
             try:
-                text_dz = recognizer.recognize_google(audio_data, language="ar-DZ")
-            except sr.UnknownValueError:
-                continue
+                text_dz = _recognize_chunk_with_fallback(c_start_ms, c_end_ms)
             except Exception as e:
                 logger.warning(f"تعذر الاتصال بمحرك ar-DZ: {e}")
                 return None
+            if not text_dz:
+                continue
 
             if not text_dz or not text_dz.strip():
                 continue
@@ -1315,8 +1366,14 @@ def _run_full_transcription(
     final_device = device if device is not None else detected_device
     final_compute = compute_type if compute_type is not None else detected_compute
 
-    # إذا نجح محرك الجزائر السحابي المجاني (ar-DZ) على بيئة CPU المحدودة (مثل Streamlit Cloud)، نعتمد نتائجه مباشرة دون تحميل نموذج Whisper في الـ RAM!
-    if ar_dz_words and len(ar_dz_words) >= 3 and final_device == "cpu":
+    # التحقق من عدم وجود أي فجوة كلامية مفقودة (> 2.5 ثانية) في نتائج ar-DZ قبل اعتمادها المباشر
+    _has_large_gap = False
+    if ar_dz_words and len(ar_dz_words) >= 3:
+        for _gi in range(len(ar_dz_words) - 1):
+            if float(ar_dz_words[_gi + 1]["start"]) - float(ar_dz_words[_gi]["end"]) > 2.6:
+                _has_large_gap = True
+                break
+    if ar_dz_words and len(ar_dz_words) >= 3 and final_device == "cpu" and not _has_large_gap:
         final_words = apply_phrase_fixes_to_words(ar_dz_words)
         micro_scenes = split_words_into_micro_scenes(final_words)
         if len(_TRANSCRIPTION_CACHE) > 2:

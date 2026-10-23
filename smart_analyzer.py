@@ -1707,41 +1707,54 @@ def generate_master_director_plan(
         scene_type = sc.get("scene_type", "ecommerce_showcase" if global_domain == "ecommerce" else ("reels_smartphone" if global_domain == "social_media" else "growth_analytics"))
         stock_category = map_scene_to_stock_category(scene_type, s_text)
 
-        if idx in selected_broll_indices:
-            layout_mode = "stock_broll"
-            zoom_factor = 1.0
-        elif not has_video:
+        # كلمات ومؤشرات النقاط المهمة التي تستدعي فتح شاشة موشن جرافيك كاملة (Full-Screen Motion Cutaway) لتوضيح الفكرة
+        important_explanation_triggers = (
+            "الأولى", "الاولى", "الثانية", "الثانيه", "الثالثة", "الثالثه",
+            "ثلاث", "خصائص", "ميزات", "خطوات", "سوبر فاست", "فاست", "240",
+            "قماش", "يتقطع", "سيبور", "حامل", "استثمار", "علاش", "مشكل",
+            "مشكلة", "منصة", "ذكاء", "الاصطناعي", "أقل من دقيقة", "اقل من دقيقه",
+            "إنتاجية", "انتاجية", "مقارنة", "الفرق", "توصيل", "58"
+        )
+        has_important_concept = any(kw in t_low for kw in important_explanation_triggers) or bool(re.search(r"\d+", t_low))
+        prev_was_fullscreen = (master_plan and master_plan[-1].get("layout_mode") == "full_screen")
+        last_fs_end = max([0.0] + [float(m["end"]) for m in master_plan if m.get("layout_mode") == "full_screen"])
+        time_since_last_fs = s_start - last_fs_end
+
+        if not has_video:
             layout_mode = "full_screen"
+            zoom_factor = 1.0
+        elif idx in selected_broll_indices and prev_was_fullscreen:
+            layout_mode = "stock_broll"
             zoom_factor = 1.0
         else:
             is_hook = (idx == 0)
             is_finale = (idx == num_scenes - 1)
-            has_lower_trigger = any(trig in t_low for trig in lower_third_triggers)
-            can_show_overlay = (idx - last_badge_idx) >= 1
-
-            if is_hook:
-                layout_mode = "top_overlay"
-                zoom_factor = 1.08
-                last_badge_idx = idx
-            elif is_finale:
-                layout_mode = "lower_third"
+            # في الفيديوهات المصورة: نفتح شاشة موشن جرافيك كاملة (Full-Screen Cutaway) بشكل سلس عند كل معلومة مهمة أو كل ~4 ثوانٍ
+            # بدلاً من حشر الموشن جرافيك في زاوية الفيديو طوال الوقت!
+            should_trigger_fullscreen_motion = (
+                not is_hook
+                and not prev_was_fullscreen
+                and (
+                    (has_important_concept and time_since_last_fs >= 2.2)
+                    or time_since_last_fs >= 4.2
+                    or (idx % 2 == 1)
+                )
+            )
+            if should_trigger_fullscreen_motion:
+                layout_mode = "full_screen"
                 zoom_factor = 1.0
                 last_badge_idx = idx
-            elif has_lower_trigger and can_show_overlay:
-                layout_mode = "lower_third"
+            elif is_finale and not prev_was_fullscreen:
+                layout_mode = "full_screen"
                 zoom_factor = 1.0
                 last_badge_idx = idx
-            elif can_show_overlay and (idx % 2 == 1):
-                layout_mode = "floating_callout"
-                zoom_factor = 1.05
-                last_badge_idx = idx
-            elif can_show_overlay:
-                layout_mode = "top_overlay"
-                zoom_factor = 1.08
-                last_badge_idx = idx
+            elif idx in selected_broll_indices:
+                layout_mode = "stock_broll"
+                zoom_factor = 1.0
             else:
+                # لقطة المتحدث الصافية بدون حشر بطاقات مزعجة فوق الفيديو
                 layout_mode = "speaker_clean"
-                zoom_factor = 1.06 if (idx % 2 == 1) else 1.0
+                zoom_factor = 1.08 if (idx % 2 == 0) else 1.0
 
         badge_label = sc.get("badge_label", "ميزة ذكية")
         if product_name_override and (idx == 0):

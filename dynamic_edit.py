@@ -319,9 +319,9 @@ def _execute_master_director_pipeline(
             word_data = remap_words_after_retake_cuts(word_data, retake_cuts)
         micro_scenes = split_words_into_micro_scenes(
             word_data,
-            max_words_per_scene=8,
-            max_duration_per_scene=4.2,
-            min_words_per_scene=4
+            max_words_per_scene=6,
+            max_duration_per_scene=3.1,
+            min_words_per_scene=3
         )
         force_free_ram()
 
