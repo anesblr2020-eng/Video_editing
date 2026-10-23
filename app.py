@@ -1,13 +1,13 @@
 """
-app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، استنساخ الفيديوهات المرجعية، وتنويع الستايلات الاحترافية في الخلفية
-=======================================================================================================================
+app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، استنساخ الفيديوهات المرجعية (الأشكال والرسومات والأنيميشن)، والستايل الموحد لكل فيديو
+========================================================================================================================================
 التحديثات الجوهرية:
-1. زر ومحرّك "🎯 سوي لي نفس التصميم بالضبط (Clone Reference Video Design)":
-   - رفع أي فيديو مرجعي يعجبك بضغطة زر واحدة ليقوم النظام باستنساخ تصميمه الهندسي، مراحله اللونية المتعددة،
-     إيقاع حركته، وشكل بطاقاته وعناوينه بالضبط.
-2. محرك التنويع التلقائي للستايلات الاحترافية (`Auto-Vary Pro Studio Styles` - مستوحى من `6873.mp4` و `6842.mp4` و `6871.mp4`):
-   - يغير الستايل تلقائياً في كل مرة يُنتج فيها فيديو جديد، وينوّع أطوار الخلفيات والبطاقات داخل مشاهد الفيديو نفسه.
-3. محرك الهوية البصرية واستخراج ألوان اللوقو (`Logo & Brand Palette Extractor`) + الحفاظ على الفيديو الأصلي بملء الشاشة 100%.
+1. زر واحد ذكي تحت الفيديو المرجعي (`🎯 نسخ الفيديو المرجعي وتطبيق نفس الأشكال والرسومات والأنيميشن والتحريك`):
+   - ينسخ الألوان، الخلفية، هندسة الأشكال، الرسومات والأنفوجرافيك، وفيزياء الأنيميشن والتحريك ويطبقها بما يناسب الفيديو أو التعليق الصوتي للمستخدم.
+2. نظام الهوية الموحدة لكل فيديو (`One Cohesive Studio Style Per Video`):
+   - عند اختيار الوضع العشوائي/التلقائي، يختار النظام ستايلاً واحداً متكاملاً وموحداً لكامل الفيديو (بدون خلط خلفيات متضاربة داخل الفيديو الواحد)،
+     أو يتيح للمستخدم اختيار الستايل بنفسه، مع تنويع الرسومات والـ Animations (12 نمطاً تفاعلياً) في كل مشهد حسب معنى الكلام.
+3. ضبط نسبة الصمت الطبيعية بين `3%` إلى `4%` (`3.5%`) + كاشف ومزيل أخطاء التعليق الصوتي (حذف الجمل أو الكلمات المعادة مرتين تلقائياً).
 4. محرك العمل المستمر في الخلفية وحفظ الجلسة التلقائي (`PersistentBackgroundJobManager`) مع معمارية `Zero-OOM`.
 """
 
@@ -347,9 +347,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك المتعدد الستايلات</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">استنساخ تصميم أي فيديو مرجعي بضغطة زر • تنويع تلقائي للستايلات الاحترافية في كل فيديو وداخل المشاهد • يعمل في الخلفية (Zero-OOM)</div>',
+    '<div class="sub-title">ستايل موحد لكل فيديو • 12 نمطاً من الرسومات والأنيميشن المستمر (30fps) • ضبط الصمت الطبيعي (3%-4%) وحذف الجمل المعادة بالخطأ</div>',
     unsafe_allow_html=True
 )
 st.markdown(
@@ -408,7 +408,7 @@ with st.sidebar:
     st.header("⚙️ الإعدادات الذكية والاتصال")
 
     auto_optimize = st.toggle(
-        "🤖 تحديد أفضل الموديلات والإعدادات تلقائياً (موصى به)",
+        "🤖 ضبط الصمت الطبيعي (3% - 4%) وحذف الإعادات الخاطئة تلقائياً (موصى به)",
         value=True
     )
 
@@ -450,17 +450,17 @@ with st.sidebar:
         st.info(f"💻 الوضع المحلي النشط: **{ai_status['label']}**")
 
     st.markdown("---")
-    st.subheader("🎚️ إعدادات قص الصمت الطبيعي والموديلات")
+    st.subheader("🎚️ إعدادات قص الصمت (3% - 4%) وكشف الإعادات")
     if auto_optimize:
-        st.caption("✅ **القص البشري الطبيعي + حماية الذاكرة مفعّلة:** عتبة آمنة (250ms) تحمي مخارج الحروف.")
+        st.caption("✅ **المعايرة التلقائية مفعّلة:** يقص كل السكوت الزائد لتبقى نسبة الصمت الطبيعية بين **3% إلى 4%**، ويحذف الجمل أو الكلمات المعادة بالخطأ.")
         silence_threshold = -42.0
         chunk_size = 20
-        padding_ms = 250
+        padding_ms = 75
         whisper_model_choice = "base"
     else:
-        silence_threshold = st.slider("عتبة الصمت (dBFS)", min_value=-60.0, max_value=-20.0, value=-42.0, step=1.0)
+        silence_threshold = st.slider("عتبة الصمت (dBFS)", min_value=-60.0, max_value=-20.0, value=-34.0, step=1.0)
         chunk_size = st.slider("دقة الفحص (Chunk Size ms)", min_value=10, max_value=50, value=20, step=5)
-        padding_ms = st.slider("هامش حماية الكلام الطبيعي (ms)", min_value=150, max_value=450, value=250, step=10)
+        padding_ms = st.slider("هامش الصمت الطبيعي (ms)", min_value=40, max_value=250, value=75, step=5)
         whisper_model_choice = st.selectbox(
             "حجم نموذج Whisper المحلي:",
             options=["tiny", "base", "small"],
@@ -476,29 +476,11 @@ with st.sidebar:
     manim_flag = manim_quality_choice.split()[0]
 
     st.markdown("---")
-    st.subheader("🧬 مؤشر التطور الذاتي والذاكرة البصرية")
-    try:
-        from style_evolution_brain import get_evolution_status_summary
-        from manim_generator import load_manim_library
-        evo_summary = get_evolution_status_summary()
-        manim_lib = load_manim_library()
-        manim_patterns_cnt = len(manim_lib.get("entries", []))
-        total_patterns_cnt = int(evo_summary.get("learned_scene_types_count", 6)) + manim_patterns_cnt
-        avg_q_score = float(evo_summary.get("average_quality_score", 0.94))
-
-        ev_c1, ev_c2 = st.columns(2)
-        ev_c1.metric("الستايلات والأنماط", f"{total_patterns_cnt} ستايل")
-        ev_c2.metric("تقييم الناقد الذاتي", f"{int(round(avg_q_score * 100))}%")
-        st.progress(min(1.0, max(0.1, avg_q_score)))
-    except Exception as evo_ui_err:
-        logger.debug(f"Evolution UI notice: {evo_ui_err}")
-
-    st.markdown("---")
     st.subheader("💬 تحكم الكابشن وشارات الفيديو")
     cap_choice = st.selectbox(
         "شكل وموضع الكابشن في الفيديو:",
         options=[
-            "✨ كابشن ريلز عصري متفاعل (أسفل الشاشة - سطر واحد تفاعلي Karaoke)",
+            "✨ كابشن ريلز عصري متفاعل (أسفل الشاشة - صفحات ثابتة بدون تكرار)",
             "🚫 بدون كابشن إضافي (فقط مونتاج ذكي وبادجات - مثالي إذا كان الفيديو مصوراً بنصوص)",
             "🔝 كابشن أعلى الشاشة (Top Safe Zone)"
         ],
@@ -519,10 +501,10 @@ STYLE_OPTIONS = [
     "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
     "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
-    "🚀 موشن جرافيك احترافي متعدد الستايلات (Pro Multi-Style Studio Motion • 6873 / 6842 / 6871)",
+    "🚀 موشن جرافيك احترافي متكامل (12 نمط رسومات وأنيميشن مستمر 30fps • هوية موحدة لكل فيديو)",
     "📐 موشن جرافيك هندسي ذكي (Manim + AI Infographics)",
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
-    "✂️ قص الصمت الطبيعي وتنظيف الصوت فقط (Natural Jump-cuts)"
+    "✂️ قص الصمت الطبيعي (3% - 4%) وحذف الإعادات الخاطئة فقط"
 ]
 
 
@@ -578,7 +560,7 @@ def run_selected_pipeline(
             dialect_mode=dialect,
             pexels_api_key=pexels_key,
             groq_api_key=groq_key,
-            gemini_api_key=gemini_api_key,
+            gemini_api_key=gemini_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
             caption_mode=caption_mode
@@ -599,7 +581,7 @@ def run_selected_pipeline(
             dialect_mode=dialect,
             pexels_api_key=pexels_key,
             groq_api_key=groq_key,
-            gemini_api_key=gemini_key,
+            gemini_api_key=gemini_api_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
             caption_mode=caption_mode
@@ -735,7 +717,7 @@ if job_manager.is_running():
 
 
 # ==============================================================================
-# 5. جسم الصفحة: رفع ملف ومحرر الستايلات واستنساخ التصميم المرجعي
+# 5. جسم الصفحة: رفع ملف ومحرر الستايلات واستنساخ الفيديو المرجعي بـ زر واحد
 # ==============================================================================
 col1, col2 = st.columns([1.05, 1.05], gap="large")
 
@@ -800,7 +782,7 @@ with col1:
 
         cache_analysis_key = f"analysis_{file_hash}"
         if cache_analysis_key not in st.session_state:
-            with st.spinner("🔍 جاري فحص وتحليل خصائص الصوت والفيديو تلقائياً..."):
+            with st.spinner("🔍 جاري فحص وتحليل خصائص الصوت والفيديو وضبط نسبة الصمت (3% - 4%)..."):
                 st.session_state[cache_analysis_key] = analyze_media_file(
                     active_input_path,
                     groq_api_key=groq_api_key,
@@ -814,7 +796,7 @@ with col1:
     if active_input_path and os.path.exists(active_input_path) and media_analysis:
         st.success(
             f"✅ **الملف جاهز للمعالجة الآمنة!** ({media_analysis['media_type_ar']} | "
-            f"المدة: `{media_analysis['duration_sec']} ثانية` | حجم العمل الرشيق: `{media_analysis['file_size_mb']} MB`)"
+            f"المدة: `{media_analysis['duration_sec']} ثانية` | الصمت الطبيعي المستهدف: `{media_analysis['silence_percent']}%`)"
         )
 
         if media_analysis["has_video"]:
@@ -822,12 +804,12 @@ with col1:
         else:
             st.audio(active_input_path)
 
-        with st.expander("📊 تقرير التحليل الذكي ومخطط المخرج الشامل", expanded=True):
+        with st.expander("📊 تقرير التحليل الذكي (نسبة الصمت 3%-4% + كشف أخطاء وإعادات الصوت)", expanded=True):
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("متوسط الصوت", f"{media_analysis['mean_dbfs']} dBFS")
-            m2.metric("عتبة الصمت الآمنة", f"{media_analysis['optimal_silence_threshold']} dBFS")
-            m3.metric("نسبة الصمت", f"{media_analysis['silence_percent']}%")
-            m4.metric("موديل التفريغ", media_analysis["optimal_whisper_model"].upper())
+            m2.metric("عتبة الصمت الذكية", f"{media_analysis['optimal_silence_threshold']} dBFS")
+            m3.metric("نسبة الصمت الطبيعي", f"{media_analysis['silence_percent']}%")
+            m4.metric("كشف الإعادات", "مفعّل آلياً ✅")
 
             st.markdown("**📌 معايير المخرج الذكي:**")
             for reason in media_analysis.get("criteria_reasons", []):
@@ -848,8 +830,8 @@ with col2:
     if selected_style == STYLE_OPTIONS[0]:
         st.info(
             "🧠 **النمط التلقائي الشامل (Smart Director All-in-One):**\n"
-            "- يحافظ على الفيديو الأصلي بملء الشاشة 100% دون تقليص أو إزعاج.\n"
-            "- يدمج بطاقات الوكالة العائمة الأنيقة ومشاهد B-Roll خالية من حقوق الملكية."
+            "- يحافظ على الفيديو الأصلي بملء الشاشة 100% ويحذف الجمل أو الكلمات المعادة بالخطأ.\n"
+            "- يضبط نسبة الصمت بين **3% إلى 4%** ويدمج بطاقات الموشن العائمة ومشاهد B-Roll."
         )
     elif selected_style == STYLE_OPTIONS[1]:
         st.info("🛍️ **إعلانات المنتجات والتجارة الإلكترونية:** خطاف Hook 0-3s، إبراز المشكلة، ميزات المنتج، شارات الثقة (58 ولاية / دفع عند الاستلام)، ولافتة الشراء CTA.")
@@ -859,19 +841,19 @@ with col2:
     elif selected_style == STYLE_OPTIONS[2]:
         st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات وكالة عائمة مرقمة (`01, 02, 03`) بدون تقليص الفيديو الأصلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك احترافي متعدد الستايلات (بمستوى 6873 و 6842 و 6871):** بطاقات بيضاء مائلة، فواتير وتقارير أداء، ستيكر الكلمة المفتاحية، وخطوات مرقمة.")
+        st.info("🚀 **موشن جرافيك احترافي متكامل:** هوية لونية وخلفية موحدة لكل فيديو مع 12 رسماً وأنفوجرافيك متحركاً بسلاسة 30fps.")
     elif selected_style == STYLE_OPTIONS[4]:
         st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
-        st.info("🔍 **مونتاج ديناميكي:** قص صمت طبيعي مع زوم 15% متناوب وكابشن تفاعلي.")
+        st.info("🔍 **مونتاج ديناميكي:** قص صمت طبيعي (3%-4%) مع زوم 15% متناوب وكابشن تفاعلي.")
     else:
-        st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري.")
+        st.info("✂️ **قص الصمت الطبيعي (3% - 4%) وحذف الإعادات:** إزالة السكوت الزائد والجمل المعادة بالخطأ مع الحفاظ على طبيعية الكلام.")
 
     # ==========================================================================
-    # القسم الجديد البارز: استنساخ تصميم فيديو مرجعي أو تنويع الستايلات الاحترافية
+    # القسم 3: اختيار ستايل موحد للفيديو أو استنساخ فيديو مرجعي بزر واحد فقط
     # ==========================================================================
     st.markdown("---")
-    st.subheader("🎯 3. استنساخ تصميم فيديو مرجعي أو تنويع الستايلات الاحترافية")
+    st.subheader("🎯 3. ستايل الفيديو الموحد أو استنساخ فيديو مرجعي")
     with st.container():
         from style_evolution_brain import (
             extract_reference_video_dna,
@@ -885,12 +867,12 @@ with col2:
         )
 
         studio_mode_map = {
-            "🎲 تغيير وتنويع الستايلات الاحترافية تلقائياً (كل مرة ستايل مختلف + تنويع داخل الفيديو نفسه)": "auto_vary_pro",
-            "🎯 سوي لي نفس تصميم الفيديو المرجعي بالضبط (Clone Reference Video Design)": "clone_reference",
-            "🎬 ستايل وكالة BYW السيان والتقارير والستيكر النصي (مطابق لفيديو 6873)": "byw_cyan_agency",
-            "📐 ستايل المخطط الهندسي السماوي والخطوات المرقمة 1-2-3-4 (مطابق لفيديو 6842)": "mazen_blueprint_collage",
-            "🟣 ستايل مختبر الإعلانات البنفسجي الفاخر والتبويبات العلوية (مطابق لفيديو 6871)": "baghdadi_luxury_plum",
-            "🌿 ستايل الفينتك الزمردي والأبيض النعناعي (بطاقات تقارير مالية)": "emerald_fintech_mint",
+            "🎲 اختيار ستايل احترافي عشوائي موحد لكل فيديو جديد (Auto-Pick Cohesive Style Per Video)": "auto_vary_pro",
+            "🎯 تطبيق ستايل ورسومات وأنيميشن الفيديو المرجعي المستنسخ (Cloned Reference Video)": "clone_reference",
+            "🎬 ستايل وكالة السيان والكحلي الاحترافي (بطاقات بيضاء مائلة وستيكر نصي)": "byw_cyan_agency",
+            "📐 ستايل المخطط الهندسي السماوي (إطارات تحديد ذكية ورسومات مشرقة)": "mazen_blueprint_collage",
+            "🟣 ستايل مختبر الإعلانات البنفسجي الفاخر (تبويبات علوية وواجهات داكنة)": "baghdadi_luxury_plum",
+            "🌿 ستايل الفينتك الزمردي الداكن (مخططات مالية وتقارير أداء)": "emerald_fintech_mint",
             "👑 ستايل الكوبالت الملكي والذهبي السينمائي": "royal_cobalt_gold",
             "🔥 ستايل الإديتوريال المرجاني الدافئ": "sunset_coral_editorial"
         }
@@ -904,7 +886,7 @@ with col2:
                 break
 
         selected_studio_label = st.selectbox(
-            "اختر نظام تصميم الستايلات البصرية:",
+            "اختر ستايل الفيديو (يُطبق كستايل موحد ومتناسق على كامل الفيديو):",
             options=mode_labels,
             index=def_mode_idx,
             key="main_studio_style_mode_selector"
@@ -912,39 +894,35 @@ with col2:
         chosen_studio_mode_code = studio_mode_map[selected_studio_label]
         set_active_studio_style_mode(chosen_studio_mode_code)
 
-        # مربع وزر "سوي لي نفس التصميم بالضبط" مباشرة في الواجهة الرئيسية!
-        st.markdown("**📹 أو ارفع أي فيديو يعجبك واضغط الزر ليصنع لك المحرك نفس تصميمه بالضبط:**")
+        st.markdown("**📹 أو ارفع فيديو مرجعي لنسخ أشكاله ورسوماته وأنيميشن التحريك وتطبيقها على الفيديو/التعليق الصوتي:**")
         ref_vid_uploaded = st.file_uploader(
-            "ارفع فيديو مرجعي لنسخ تصميمه وألوانه وحركته (MP4, MOV, MKV, WEBM):",
+            "ارفع الفيديو المرجعي (MP4, MOV, MKV, WEBM):",
             type=["mp4", "mov", "mkv", "webm"],
             key="main_panel_ref_video_uploader"
         )
 
+        ref_save_path_ready = None
         if ref_vid_uploaded is not None:
-            if st.button("🎯 سوي لي نفس التصميم بالضبط (استنساخ تصميم الفيديو المرجعي الآن)", use_container_width=True):
-                ref_hash = hashlib.md5(f"{ref_vid_uploaded.name}_{getattr(ref_vid_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
-                ref_save_path = os.path.join(INPUTS_DIR, f"ref_video_{ref_hash}.mp4")
+            ref_hash = hashlib.md5(f"{ref_vid_uploaded.name}_{getattr(ref_vid_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
+            ref_save_path_ready = os.path.join(INPUTS_DIR, f"ref_video_{ref_hash}.mp4")
+            if not os.path.exists(ref_save_path_ready):
                 ref_vid_uploaded.seek(0)
-                with open(ref_save_path, "wb") as rf:
+                with open(ref_save_path_ready, "wb") as rf:
                     shutil.copyfileobj(ref_vid_uploaded, rf, length=524288)
                 force_free_ram()
-                with st.spinner("🔬 جاري تحليل واستنساخ هندسة البطاقات والمراحل اللونية وإيقاع الحركة من الفيديو المرجعي..."):
-                    dna = extract_reference_video_dna(ref_save_path, style_alias=f"ref_{ref_hash}")
+
+            # زر واحد فقط تحت الفيديو المرجعي ينسخ الأشكال والرسومات والأنيميشن والتحريك ويطبقها
+            if st.button("🎯 نسخ الفيديو المرجعي وتطبيق نفس الأشكال والرسومات والأنيميشن والتحريك على مشروعي", use_container_width=True):
+                with st.spinner("🔬 جاري استخراج الأشكال والرسومات وفيزياء الأنيميشن والتحريك من الفيديو المرجعي..."):
+                    dna = extract_reference_video_dna(ref_save_path_ready, style_alias=f"ref_{ref_hash}")
                     set_active_studio_style_mode("clone_reference")
+                    st.session_state["last_cloned_ref_hash"] = ref_hash
                 st.success(
-                    f"✅ **تم استنساخ تصميم الفيديو المرجعي بنجاح!**\n"
-                    f"- العائلة البصرية المكتشفة: **{dna.get('detected_family_label_ar', dna.get('detected_design_family'))}**\n"
-                    f"- إيقاع اللقطة: `{dna['avg_shot_duration_sec']}s` | فيزياء النابض: `{dna['spring_stiffness']}`"
+                    f"✅ **تم نسخ أشكال ورسومات وأنيميشن الفيديو المرجعي بنجاح!**\n"
+                    f"- الهوية المستخرجة: **{dna.get('detected_family_label_ar', dna.get('detected_design_family'))}**\n"
+                    f"- أنماط الرسومات المستنسخة: `{len(dna.get('cloned_archetype_sequence', []))}` أنماط تفاعلية | فيزياء الحركة: `{dna['spring_stiffness']}`"
                 )
                 st.rerun()
-
-        mem_now = load_evolution_memory()
-        active_ref_dna = mem_now.get("active_reference_dna")
-        if chosen_studio_mode_code == "clone_reference" and isinstance(active_ref_dna, dict):
-            st.caption(
-                f"🎯 **التصميم المرجعي النشط حالياً:** `{active_ref_dna.get('source_video', active_ref_dna.get('style_id'))}` "
-                f"({active_ref_dna.get('detected_family_label_ar', '')})"
-            )
 
     # ==========================================================================
     # القسم 4: اللوقو وألوان الهوية البصرية المخصصة (اختياري)
@@ -1001,7 +979,7 @@ with col2:
 
         def_p = st.session_state.get("brand_primary_hex", active_brand_now.get("primary_hex", "#1BAECA"))
         def_s = st.session_state.get("brand_secondary_hex", active_brand_now.get("secondary_hex", "#FACC15"))
-        def_bg = st.session_state.get("brand_bg_hex", active_brand_now.get("bg_hex", "#0B181F"))
+        def_bg = st.session_state.get("brand_bg_hex", active_brand_now.get("bg_hex", "#0D768E"))
 
         cp1, cp2, cp3 = st.columns(3)
         with cp1:
@@ -1047,6 +1025,14 @@ if start_btn:
         st.warning("⚠️ يرجى رفع ملف فيديو أو صوت (أو تسجيل صوتك) أولاً قبل بدء المعالجة.")
     else:
         clear_custom_caption_override()
+
+        # إذا رفع المستخدم فيديو مرجعي وضغط زر البدء مباشرة، نستنسخ الفيديو المرجعي تلقائياً
+        if ref_save_path_ready and os.path.exists(ref_save_path_ready):
+            ref_h = os.path.basename(ref_save_path_ready)
+            if st.session_state.get("last_cloned_ref_hash") != ref_h:
+                extract_reference_video_dna(ref_save_path_ready, style_alias=f"ref_{ref_h[:8]}")
+                set_active_studio_style_mode("clone_reference")
+                st.session_state["last_cloned_ref_hash"] = ref_h
 
         if auto_optimize and media_analysis is not None:
             eff_silence_thresh = float(media_analysis["optimal_silence_threshold"])
@@ -1184,7 +1170,7 @@ if result_path and os.path.exists(result_path):
                     st.session_state["caption_sentences"] = new_s
 
                     params = st.session_state.get("eff_params", {
-                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 20, "whisper_model": "base"
+                        "silence_thresh": -34.0, "padding_ms": 75, "chunk_size": 20, "whisper_model": "base"
                     })
                     new_out_path = os.path.join(OUTPUTS_DIR, f"edited_captions_{int(time.time())}.mp4")
                     chosen_style = st.session_state.get("processed_style", selected_style)
@@ -1255,7 +1241,7 @@ if result_path and os.path.exists(result_path):
                     st.session_state["caption_sentences"] = new_s
 
                     params = st.session_state.get("eff_params", {
-                        "silence_thresh": -42.0, "padding_ms": 250, "chunk_size": 20, "whisper_model": "base"
+                        "silence_thresh": -34.0, "padding_ms": 75, "chunk_size": 20, "whisper_model": "base"
                     })
                     new_out_path = os.path.join(OUTPUTS_DIR, f"edited_words_{int(time.time())}.mp4")
                     chosen_style = st.session_state.get("processed_style", selected_style)

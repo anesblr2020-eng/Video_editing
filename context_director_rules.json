@@ -1,0 +1,34 @@
+{
+  "system_goal": "Contextual AI Motion Graphics & Video Editing System",
+  "accuracy_target": "95%-99% semantic and acoustic fidelity",
+  "dialect_support": "Algerian Darija (ar-DZ) + Modern Standard Arabic",
+  "domain_classification": {
+    "ecommerce": {
+      "keywords": ["كابل", "شاحن", "سيبور", "توصيل", "58 ولاية", "سعر", "سومة", "اكموندي", "متانة", "قماش", "شحن سريع"],
+      "default_scene_types": ["ecommerce_showcase", "delivery_express", "reels_smartphone"],
+      "stock_video_categories": ["ecommerce_showcase", "delivery_express", "smartphone_reels"]
+    },
+    "social_media": {
+      "keywords": ["انستغرام", "ريلز", "تيك توك", "متابعين", "تفاعل", "ريتش", "خوارزمية", "نشر", "محتوى", "فيديو وطلع"],
+      "default_scene_types": ["reels_smartphone", "growth_analytics", "brand_finale"],
+      "stock_video_categories": ["smartphone_reels", "creator_studio"]
+    },
+    "tech_software": {
+      "keywords": ["برمجة", "كود", "تطبيق", "منصة", "ذكاء اصطناعي", "سحابي", "خوارزمية", "سيرفر"],
+      "default_scene_types": ["platform_builder", "ai_neural_brain", "video_montage_studio"],
+      "stock_video_categories": ["developer_coding", "ai_technology"]
+    },
+    "educational_general": {
+      "keywords": ["نصيحة", "تعلم", "معلومة", "فائدة", "طريقة", "أسرار", "خطوات", "فكرة"],
+      "default_scene_types": ["growth_analytics", "reels_smartphone", "time_warp_clock"],
+      "stock_video_categories": ["creator_studio", "smartphone_reels"]
+    }
+  },
+  "strict_safety_rules": [
+    "NEVER inject hardcoded founder names, ages (e.g. 17 years old), or Anas unless explicitly spoken in the transcript.",
+    "NEVER inject video editing, Cloud AI, or Full-Stack badges on e-commerce product videos or general content.",
+    "ALWAYS extract numbers directly from speech (e.g. 58 for wilayas, 3 for features, 100 for percent).",
+    "ALWAYS scale Arabic text dynamically to fit inside card and badge boundaries using get_fitted_arabic_font.",
+    "KEEP initial transcription prompts neutral without biasing the acoustic model toward any specific script."
+  ]
+}

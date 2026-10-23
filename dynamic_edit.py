@@ -58,9 +58,10 @@ from auto_cut import (
     remove_silence,
     is_video_file,
     get_safe_working_resolution,
+    prune_retake_cuts_from_media,
     force_free_ram
 )
-from transcriber import transcribe_audio, transcribe_sentences, split_words_into_micro_scenes
+from transcriber import transcribe_audio, transcribe_sentences, split_words_into_micro_scenes, get_last_detected_retake_cuts, remap_words_after_retake_cuts
 from motion_text import (
     get_arabic_font,
     draw_arabic_text,
@@ -310,6 +311,12 @@ def _execute_master_director_pipeline(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key
         )
+        retake_cuts = get_last_detected_retake_cuts()
+        if retake_cuts:
+            jumpcut_temp_video, video_duration = prune_retake_cuts_from_media(
+                jumpcut_temp_video, retake_cuts, video_duration
+            )
+            word_data = remap_words_after_retake_cuts(word_data, retake_cuts)
         micro_scenes = split_words_into_micro_scenes(
             word_data,
             max_words_per_scene=8,

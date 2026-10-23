@@ -324,6 +324,220 @@ def repair_truncated_words_and_sentences(words_list):
         deduped.append(w)
 
     return deduped
+
+# ==============================================================================
+# 1.8 محرك كشف وإزالة أخطاء وإعادات التعليق الصوتي (Voiceover Retake & Stutter Eliminator)
+# ==============================================================================
+import difflib
+
+_LAST_DETECTED_RETAKE_CUTS: List[Dict[str, Any]] = []
+
+
+def get_last_detected_retake_cuts() -> List[Dict[str, Any]]:
+    """إرجاع قائمة الفترات الزمنية التي أخطأ فيها المتحدث أو أعاد الجملة/الكلمة مرتين ليتم قصها من الصوت والفيديو."""
+    return [dict(c) for c in _LAST_DETECTED_RETAKE_CUTS]
+
+
+def _stem_skeleton(word: str) -> str:
+    """جذر إملائي مبسط للمقارنة الصوتية والسياقية بين المحاولة الخاطئة والإعادة الصحيحة."""
+    s = _orthographic_skeleton(word)
+    for pref in ("وال", "بال", "فل", "كال", "لل", "ال", "و", "ب", "ف", "ل"):
+        if s.startswith(pref) and len(s) - len(pref) >= 3:
+            s = s[len(pref):]
+            break
+    return s
+
+
+def _words_are_equivalent(w1: str, w2: str) -> bool:
+    s1, s2 = _orthographic_skeleton(w1), _orthographic_skeleton(w2)
+    if not s1 or not s2:
+        return False
+    if s1 == s2:
+        return True
+    st1, st2 = _stem_skeleton(w1), _stem_skeleton(w2)
+    if st1 == st2 and len(st1) >= 2:
+        return True
+    if min(len(st1), len(st2)) >= 4:
+        ratio = difflib.SequenceMatcher(None, st1, st2).ratio()
+        if ratio >= 0.78:
+            return True
+    return False
+
+
+def _phrase_similarity(seq1: List[str], seq2: List[str]) -> float:
+    if not seq1 or not seq2:
+        return 0.0
+    m = min(len(seq1), len(seq2))
+    matches = sum(1 for a, b in zip(seq1[:m], seq2[:m]) if _words_are_equivalent(a, b))
+    return matches / float(max(len(seq1), len(seq2)))
+
+
+def detect_and_remove_voiceover_retakes(
+    words_list: List[Dict[str, Any]],
+    remap_timestamps: bool = False
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    يكتشف أخطاء التعليق الصوتي عندما يعيد المتحدث الكلمة أو العبارة أو الجملة مرتين (بسبب تلعثم أو خطأ في النطق):
+    1. تكرار الكلمة الواحدة المتتالية (`W[i] == W[i+1]`).
+    2. إعادة العبارة أو الكلمات المتتالية (`N-gram Phrase Retake` من كلمتين إلى 8 كلمات).
+    3. البداية الخاطئة للجملة (`False-Start Clause Retake`): عندما يبدأ المتحدث جملة من 2-8 كلمات، يتوقف أو يخطئ في آخرها،
+       ثم يعيد نفس بداية الجملة (أول كلمتين أو أكثر متطابقتين) بصياغة صحيحة وكاملة!
+    يحذف المحاولة الأولى الخاطئة تماماً ويسجل توقيتها الزمني `[start, end]` في `_LAST_DETECTED_RETAKE_CUTS` ليتم قصها من الصوت والفيديو.
+    """
+    global _LAST_DETECTED_RETAKE_CUTS
+    _LAST_DETECTED_RETAKE_CUTS = []
+
+    if not words_list or len(words_list) < 2:
+        return list(words_list), []
+
+    items = [dict(w) for w in words_list if str(w.get("word", "")).strip()]
+    n = len(items)
+    keep_mask = [True] * n
+    detected_cuts: List[Dict[str, Any]] = []
+
+    i = 0
+    while i < n - 1:
+        if not keep_mask[i]:
+            i += 1
+            continue
+
+        cut_made = False
+
+        # أولاً: فحص إعادة جملة أو عبارة (من 7 كلمات نزولاً إلى كلمتين) أو بداية جملة خاطئة (False-Start Retake)
+        max_span = min(8, n - i - 1)
+        for j in range(i + 1, min(n, i + 10)):
+            if not keep_mask[j]:
+                continue
+            span_len = j - i
+            time_span = float(items[j]["start"]) - float(items[i]["start"])
+            if time_span > 7.5:
+                break
+
+            # أ) تطابق عبارة كاملة مكررة (Contiguous or Near-Contiguous Phrase Repeat)
+            check_len = min(span_len, n - j)
+            if check_len >= 2 and _words_are_equivalent(items[i]["word"], items[j]["word"]):
+                seq_a = [items[k]["word"] for k in range(i, i + check_len)]
+                seq_b = [items[k]["word"] for k in range(j, j + check_len)]
+                sim = _phrase_similarity(seq_a, seq_b)
+                if sim >= 0.80 and span_len <= check_len + 2:
+                    cut_s = float(items[i]["start"])
+                    cut_e = float(items[j]["start"])
+                    removed_str = " ".join(items[k]["word"] for k in range(i, j))
+                    for k in range(i, j):
+                        keep_mask[k] = False
+                    detected_cuts.append({
+                        "start": round(cut_s, 3),
+                        "end": round(max(cut_s + 0.08, cut_e), 3),
+                        "removed_text": removed_str,
+                        "reason": "phrase_retake"
+                    })
+                    i = j
+                    cut_made = True
+                    break
+
+            # ب) البداية الخاطئة للجملة (False-Start Sentence Retake):
+            # المتحدث قال 2 إلى 8 كلمات، ثم أعاد نفس أول كلمتين (أو 3 كلمات) ليكمل الجملة الصحيحة!
+            if 2 <= span_len <= 8 and (j + 2) <= n:
+                prefix_match_2 = (
+                    _words_are_equivalent(items[i]["word"], items[j]["word"])
+                    and _words_are_equivalent(items[i + 1]["word"], items[j + 1]["word"])
+                )
+                # أو إذا بدأ بكلمة مثل "أنا جيت لكم..." ثم قال "جيت لكم..." (حذف ضمير البداية في الإعادة)
+                prefix_match_shifted = (
+                    span_len >= 3
+                    and _words_are_equivalent(items[i + 1]["word"], items[j]["word"])
+                    and _words_are_equivalent(items[i + 2]["word"], items[j + 1]["word"])
+                )
+                if prefix_match_2:
+                    cut_idx_start = i if prefix_match_2 else (i + 1)
+                    cut_s = float(items[cut_idx_start]["start"])
+                    cut_e = float(items[j]["start"])
+                    removed_str = " ".join(items[k]["word"] for k in range(cut_idx_start, j))
+                    for k in range(cut_idx_start, j):
+                        keep_mask[k] = False
+                    detected_cuts.append({
+                        "start": round(cut_s, 3),
+                        "end": round(max(cut_s + 0.08, cut_e), 3),
+                        "removed_text": removed_str,
+                        "reason": "false_start_sentence_retake"
+                    })
+                    i = j
+                    cut_made = True
+                    break
+
+        if cut_made:
+            continue
+
+        # ثانياً: فحص تكرار الكلمة الواحدة المتتالية (Single-Word Stutter: W[i] == W[i+1])
+        nxt_i = i + 1
+        while nxt_i < n and not keep_mask[nxt_i]:
+            nxt_i += 1
+        if nxt_i < n:
+            w_curr = items[i]["word"]
+            w_next = items[nxt_i]["word"]
+            skel_curr = _orthographic_skeleton(w_curr)
+            if _words_are_equivalent(w_curr, w_next) and skel_curr not in {"اصبر", "شوف", "لا", "نعم", "صح", "خطوه"}:
+                cut_s = float(items[i]["start"])
+                cut_e = float(items[nxt_i]["start"])
+                keep_mask[i] = False
+                detected_cuts.append({
+                    "start": round(cut_s, 3),
+                    "end": round(max(cut_s + 0.06, cut_e), 3),
+                    "removed_text": w_curr,
+                    "reason": "word_stutter"
+                })
+                i = nxt_i
+                continue
+
+        i += 1
+
+    cleaned_words = [w for idx_w, w in enumerate(items) if keep_mask[idx_w]]
+    _LAST_DETECTED_RETAKE_CUTS = detected_cuts
+
+    if remap_timestamps and detected_cuts:
+        cleaned_words = remap_words_after_retake_cuts(cleaned_words, detected_cuts)
+
+    if detected_cuts:
+        logger.info(f"Voiceover Retake Detector removed {len(detected_cuts)} mistake/retake segment(s): {detected_cuts}")
+
+    return cleaned_words, detected_cuts
+
+
+def remap_words_after_retake_cuts(
+    words_list: List[Dict[str, Any]],
+    retake_cuts: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    إعادة حساب التوقيت الزمني (`start`, `end`) لجميع الكلمات بعد قص فترات الغلطات والإعادات الصوتية
+    من ملف الميديا الفعلي، لضمان بقاء التزامن الصوتي والبصري 100%.
+    """
+    if not words_list or not retake_cuts:
+        return list(words_list)
+
+    cuts = sorted(
+        [(float(c["start"]), float(c["end"])) for c in retake_cuts if float(c["end"]) > float(c["start"])],
+        key=lambda x: x[0]
+    )
+    remapped: List[Dict[str, Any]] = []
+    for w in words_list:
+        w_copy = dict(w)
+        ws = float(w_copy.get("start", 0.0))
+        we = float(w_copy.get("end", ws + 0.25))
+        shift = 0.0
+        for cs, ce in cuts:
+            if ce <= ws + 0.02:
+                shift += (ce - cs)
+            elif cs < ws < ce:
+                shift += (ws - cs)
+        new_s = max(0.0, round(ws - shift, 3))
+        new_e = max(new_s + 0.10, round(we - shift, 3))
+        w_copy["start"] = new_s
+        w_copy["end"] = new_e
+        remapped.append(w_copy)
+
+    return ensure_word_timestamp_continuity(remapped)
+
+
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
 
@@ -693,7 +907,8 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
                 })
         else:
             final_expanded.append(w)
-    return ensure_word_timestamp_continuity(final_expanded)
+    cleaned_no_retakes, _ = detect_and_remove_voiceover_retakes(final_expanded, remap_timestamps=False)
+    return ensure_word_timestamp_continuity(cleaned_no_retakes)
 
 
 # ==============================================================================
