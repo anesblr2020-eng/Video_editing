@@ -32,14 +32,6 @@ def _free_ram():
 
 
 CURATED_DIRECT_STOCK_VIDEOS = {
-    'ecommerce_showcase': [
-        'https://assets.mixkit.co/videos/preview/mixkit-hands-holding-a-smartphone-with-a-blank-screen-41719-large.mp4',
-        'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-typing-on-a-laptop-keyboard-41315-large.mp4'
-    ],
-    'delivery_express': [
-        'https://assets.mixkit.co/videos/preview/mixkit-young-man-using-a-smartphone-in-the-city-43180-large.mp4',
-        'https://assets.mixkit.co/videos/preview/mixkit-hands-holding-a-smartphone-with-a-blank-screen-41719-large.mp4'
-    ],
     'video_editor': [
         'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-working-on-a-computer-43407-large.mp4',
         'https://assets.mixkit.co/videos/preview/mixkit-hands-of-a-man-typing-on-a-laptop-keyboard-41315-large.mp4'
@@ -69,8 +61,6 @@ CURATED_DIRECT_STOCK_VIDEOS = {
 
 def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
     type_map = {
-        'ecommerce_showcase': 'ecommerce_showcase',
-        'delivery_express': 'delivery_express',
         'time_warp_clock': 'busy_no_time',
         'ai_neural_brain': 'ai_technology',
         'cloud_database': 'ai_technology',
@@ -87,19 +77,17 @@ def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
         return type_map[scene_type]
 
     t = scene_text.lower()
-    if any(w in t for w in ('كابل', 'شاحن', 'سيبور', 'منتج', 'سلعة', 'توصيل', 'شراء', 'تشارجي')):
-        return 'ecommerce_showcase'
-    if any(w in t for w in ('انستغرام', 'انستقرام', 'ريلز', 'تيك توك', 'شورتس', 'سوشيال', 'هاتف', 'تلفون', 'موبايل', 'smartphone')):
-        return 'smartphone_reels'
     if any(w in t for w in ('ذكاء', 'اصطناعي', 'خوارزمية', 'أوتوماتيكي', 'ai', 'neural')):
         return 'ai_technology'
-    if any(w in t for w in ('وقت', 'ساعة', 'ما عندها وقت', 'ما عندهمش وقت', 'مشغول', 'ساعات', 'تأخير')):
+    if any(w in t for w in ('وقت', 'ساعة', 'ما عندها وقت', 'ما عندهمش وقت', 'مشغول', 'ساعات', 'دقيقة', 'تأخير')):
         return 'busy_no_time'
+    if any(w in t for w in ('ريلز', 'تيك توك', 'شورتس', 'سوشيال', 'هاتف', 'تلفون', 'موبايل', 'smartphone')):
+        return 'smartphone_reels'
     if any(w in t for w in ('كود', 'برمجة', 'أبني', 'تطبيق', 'موقع', 'منصة', 'developer', 'code')):
         return 'developer_coding'
     if any(w in t for w in ('استوديو', 'صانع محتوى', 'مبدع', 'كاميرا', 'تسجيل', 'ميكروفون', 'creator')):
         return 'creator_studio'
-    return 'smartphone_reels' 
+    return 'video_editor'
 
 
 def download_video_file(url: str, output_path: str, timeout: int = 12) -> bool:
@@ -213,7 +201,7 @@ def generate_procedural_broll_clip(category: str, output_path: str, width: int =
     return output_path
 
 
-def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None, allow_procedural_fallback: bool = False) -> Optional[str]:
+def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None) -> str:
     os.makedirs(cache_dir, exist_ok=True)
     cat_key = category.lower()
     is_portrait = (height >= width)
@@ -221,8 +209,6 @@ def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, 
 
     if pexels_api_key:
         query_map = {
-            'ecommerce_showcase': 'charging cable phone accessories',
-            'delivery_express': 'delivery courier package box',
             'video_editor': 'video editing computer',
             'ai_technology': 'artificial intelligence technology',
             'busy_no_time': 'time lapse clock laptop',
@@ -243,9 +229,6 @@ def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, 
             return cached_file
         if download_video_file(url, cached_file):
             return cached_file
-
-    if not allow_procedural_fallback:
-        return None
 
     proc_file = os.path.join(cache_dir, f'proc_{cat_key}_{int(target_duration)}.mp4')
     if os.path.exists(proc_file) and os.path.getsize(proc_file) > 10000:

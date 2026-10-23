@@ -344,7 +344,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك السياقي</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">محرك ون تيك موشن المتصل بلقطة كاميرا واحدة (One-Take Motion • onetakemotion.com) • تدخل الكاميرا في جدول الفيديو وتخرج منه بسلاسة 30fps • يعمل في الخلفية</div>',
+    '<div class="sub-title">مخ تحليل سياقي يفهم معنى الجمل • معالجة مستمرة في الخلفية لا تتوقف عند الخروج من كروم • حماية قصوى للذاكرة (Zero-OOM)</div>',
     unsafe_allow_html=True
 )
 st.markdown(
@@ -496,7 +496,7 @@ STYLE_OPTIONS = [
     "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
     "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
-    "🚀 موشن جرافيك ون تيك متصل بلقطة واحدة (One-Take Studio Motion • onetakemotion.com)",
+    "🚀 موشن جرافيك نصي وأنفوجرافيك احترافي (Studio Kinetic Typography)",
     "📐 موشن جرافيك هندسي ذكي (Manim + AI Infographics)",
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
     "✂️ قص الصمت الطبيعي وتنظيف الصوت فقط (Natural Jump-cuts)"
@@ -837,7 +837,7 @@ with col2:
     elif selected_style == STYLE_OPTIONS[2]:
         st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات زجاجية علوية ومشاهد B-Roll واقعية وكابشن بالثلث السفلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك ون تيك متصل بلقطة كاميرا واحدة (One-Take Motion - onetakemotion.com):** الكاميرا لا تقطع بين المشاهد أبداً، بل تغوص داخل العناصر وخلايا جدول الفيديو وتخرج منها بسلاسة مع تحول العناصر الناجية عبر الحدود (Carry Score >= 0.90)!")
+        st.info("🚀 **موشن جرافيك نصي احترافي موجه بالسياق:** بطاقات Bento زجاجية ورسومات فيكتور تعبر عن الفكرة الكاملة للجملة.")
     elif selected_style == STYLE_OPTIONS[4]:
         st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
