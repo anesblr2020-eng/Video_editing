@@ -8,8 +8,10 @@ smart_analyzer.py - عقل المخرج الذكي الشامل ومحرك ال�
    - المرحلة الثانية (`analyze_contextual_storyboard`): توجيه كل مشهد بناءً على معنى الجملة الكاملة وعلاقتها بما قبلها وما بعدها
      (عبر الذكاء الاصطناعي السحابي/المحلي + آلة الحالة السردية الذكية)، وتوليد عناوين مفاهيمية ومؤشرات KPI مرتبطة بالسياق الفعلي
      دون تكرار الكلمات المنطوقة حرفياً.
-2. التحليل الصوتي متعدد الترددات والقص الطبيعي (Loudness, Silence Pacing, Speech Cadence).
-3. توليد "مخطط المخرج الشامل (Master Director Plan)" مع اختيار 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية.
+2. محرك تنويع واستنساخ الستايلات الاحترافية (`build_dynamic_scene_style_assignment`):
+   - يربط كل مشهد بستايل أستوديو احترافي متجدد (مستوحى من `6873.mp4` و `6842.mp4` و `6871.mp4`) أو يطبق تصميم الفيديو المرجعي المستنسخ بالضبط.
+3. التحليل الصوتي متعدد الترددات والقص الطبيعي (Loudness, Silence Pacing, Speech Cadence).
+4. توليد "مخطط المخرج الشامل (Master Director Plan)" مع اختيار 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية.
 """
 
 import sys
@@ -75,12 +77,14 @@ try:
     from style_evolution_brain import (
         load_evolution_memory,
         get_best_params_for_scene_type,
-        get_active_brand_theme
+        get_active_brand_theme,
+        build_dynamic_scene_style_assignment
     )
 except ImportError:
     load_evolution_memory = None
     get_best_params_for_scene_type = None
     get_active_brand_theme = None
+    build_dynamic_scene_style_assignment = None
 
 try:
     from stock_video_finder import map_scene_to_stock_category
@@ -343,31 +347,29 @@ def query_hybrid_llm(
     return None
 
 
-
 # ==============================================================================
 # 1.8 نظام التعلم الذاتي للموشن جرافيك من الإنترنت والملفات المرجعية (Self-Learning Choreography Brain)
 # ==============================================================================
 CHOREOGRAPHY_ARCHETYPES = [
-    "video_schedule_table",         # جدول الفيديو والـ Timeline التفاعلي (تغوص الكاميرا في خلاياه وتخرج منها بأسلوب onetakemotion.com)
-    "saas_folder_reorder",          # بطاقة مجلد وقائمة عناصر تنزلق بالتتابع (Stagger 6f) وتتبادل مواقعها مع أسهم دوارة
-    "stage_trust_bubbles",          # شاشة هاتف/عنصر مركزي محاط بـ 4 فقاعات منبثقة (Pop-in Spring) + شريط مؤشر سفلي
-    "stage_balance_scale",          # ميزان فيزيائي ذو كفتين (المشكلة/اليدوي مقابل الحل/الذكي أو السعر مقابل القيمة)
-    "saas_typewriter_mechanism",    # ترس ميكانيكي دوار + شريط بحث يكتب المفهوم كلمة بكلمة (Typewriter + Caret)
-    "saas_process_flow",            # 3 بطاقات متدرجة: شريط تقدم + منحنى بياني تتبعه أيقونة ذكية + بطاقة اكتشاف
-    "saas_grid_2x2_cursor",         # شبكة رباعية (2x2 Grid) بأشرطة تقدم ملونة + جزيئات متطايرة + مؤشر ماوس ينقر مع Ripple
-    "stage_before_after_checklist", # مقارنة (قبل / بعد) مع عداد تقييم صاعد + قائمة تدقيق تتفعل بعلامات صح خضراء ✔️
-    "interactive_cta_outro"         # بطاقة تفاعل ختامية بخطوتين (طائرة ورقية متحركة ✈️ + حقل تعليق/طلب مع نقرة ماوس)
+    "video_schedule_table",
+    "saas_folder_reorder",
+    "stage_trust_bubbles",
+    "stage_balance_scale",
+    "saas_typewriter_mechanism",
+    "saas_process_flow",
+    "saas_grid_2x2_cursor",
+    "stage_before_after_checklist",
+    "interactive_cta_outro"
 ]
 
-# أنماط حركة الكاميرا الواحدة المتصلة وتحول العناصر عبر الحدود (One-Take Motion Camera & Morphing Handoffs - onetakemotion.com)
 ONE_TAKE_HANDOFF_MODES = [
-    "camera_dive_into_portal",      # غوص الكاميرا داخل بطاقة أو خلية في جدول الفيديو ليصبح باطنها هو المشهد التالي بالكامل (Scale 1x -> 4.2x)
-    "camera_pull_out_reveal",       # خروج الكاميرا من داخل تفصيل مكبر ليتضح أنه خلية داخل جدول الفيديو أو لوحة أكبر (Scale 3.8x -> 1x)
-    "prompt_bar_to_window",         # تمدد شريط البحث أو الإدخال فيزيائياً لينفتح ويتحول إلى نافذة المشهد التالي
-    "window_reflows_to_phone",      # انكماش وتشكل النافذة العريضة بنعومة لتصبح هيكل الهاتف الذكي في المشهد التالي
-    "bar_collapses_to_table_grid",  # اندماج شريط التقدم في خط ضوئي ينطلق عبر الشاشة ليرسم أول سطر شبكي في جدول الفيديو
-    "card_grows_to_page",           # نمو بطاقة فرعية من القائمة أو الشبكة لتصبح الصفحة/المسرح الكامل للمشهد التالي
-    "cast_folds_to_lockup"          # انطواء عناصر المسرح في النهاية لتندمج في بطاقة الختام والشعار (CTA Lockup)
+    "camera_dive_into_portal",
+    "camera_pull_out_reveal",
+    "prompt_bar_to_window",
+    "window_reflows_to_phone",
+    "bar_collapses_to_table_grid",
+    "card_grows_to_page",
+    "cast_folds_to_lockup"
 ]
 
 GENOME_STORAGE_PATH = os.path.join(_CURRENT_DIR, "outputs", "learned_motion_genome.json")
@@ -375,8 +377,8 @@ GENOME_STORAGE_PATH = os.path.join(_CURRENT_DIR, "outputs", "learned_motion_geno
 
 class WebMotionLearner:
     """
-    يتعلم تلقائياً من الإنترنت ومن ملف المواصفات المرجعي (Frame-by-Frame Spec) ومن سجل الأخطاء الممنوعة
-    لبناء كوريغرافيا بصرية متكاملة وفريدة لكل مشهد بدون أي قوالب جامدة أو تكرار، ويحفظ الأنماط في `learned_motion_genome.json`.
+    يتعلم تلقائياً من الإنترنت ومن الفيديوهات المرجعية لبناء كوريغرافيا بصرية متكاملة وفريدة لكل مشهد
+    بدون أي قوالب جامدة أو تكرار، ويحفظ الأنماط في `learned_motion_genome.json`.
     """
 
     def __init__(self):
@@ -465,15 +467,14 @@ class WebMotionLearner:
 
             merged = dict(sc)
             merged.update(blueprint)
-            merged["step_badge"] = f"#{idx + 1}"
-            # هوية بصرية سينمائية داكنة فخمة افتراضياً (أو مخصصة حسب ثيم اللوقو/المستخدم)
+            merged["step_badge"] = f"{idx + 1:02d}"
             merged["style_mode"] = merged.get("style_mode") or "dark_stage_pro"
             choreographed_scenes.append(merged)
 
         if callable(query_llm_func) and (groq_api_key or gemini_api_key or openai_api_key):
             try:
                 web_Order = self.fetch_web_design_inspiration(global_ctx.get("domain_label_ar", "motion graphics"))
-                web_hint = " | ".join(web_Order) if web_Order else "أسلوب 101bdarija Clean SaaS و moujtabakhalifa Split-Screen Stage"
+                web_hint = " | ".join(web_Order) if web_Order else "أسلوب BYW Agency 6873 و Mazen Blueprint 6842 و Baghdadi Plum 6871"
                 scenes_desc = "\n".join(
                     f"{i+1}. [{s['start']:.1f}s - {s['end']:.1f}s]: \"{s['text']}\""
                     for i, s in enumerate(choreographed_scenes)
@@ -548,9 +549,6 @@ class WebMotionLearner:
         return choreographed_scenes
 
     def _pick_next_non_outro_archetype(self, preferred: str, used_archetypes: List[str], scene_index: int, total_scenes: int) -> str:
-        """
-        يضمن توزيع أنماط الكوريغرافيا الـ 7 الأساسية دون أي تكرار، مع حجز `interactive_cta_outro` للمشهد الأخير حصرياً.
-        """
         if scene_index == total_scenes - 1 and total_scenes >= 2:
             return "interactive_cta_outro"
 
@@ -567,7 +565,6 @@ class WebMotionLearner:
         if preferred in non_outro_pool and preferred not in used_archetypes:
             return preferred
         if preferred in non_outro_pool and (not used_archetypes or preferred != used_archetypes[-1]):
-            # إذا لم نستخدم كل الأنماط الـ 7 بعد، نفضل نمطاً لم يُستخدم إطلاقاً في هذا الفيديو
             unused = [a for a in non_outro_pool if a not in used_archetypes]
             if unused:
                 return unused[0]
@@ -590,23 +587,13 @@ class WebMotionLearner:
         prev_scene_text: str = "",
         next_scene_text: str = ""
     ) -> Dict[str, Any]:
-        """
-        محرك التوليد الدلالي الشامل الموجه بالمجال والسياق (Universal Domain-Isolated Blueprint Synthesizer):
-        - يعزل كل مجال (`ecommerce`, `social_media`, `tech_software`, `education`, `business`, `general`) عزلاً تاماً
-          بحيث لا تتسرب مصطلحات المونتاج إلى إعلانات المنتجات أو العكس أبداً.
-        - يستنبط المعنى الفعلي للجملة وعلاقتها بالجملة السابقة واللاحقة دون أي قوالب حشو عامة.
-        """
         t_low = scene_text.lower()
         window_low = f"{prev_scene_text} {scene_text} {next_scene_text}".lower()
         wilayas = global_ctx.get("wilayas_count") or 58
         kws = extract_clean_keywords(scene_text, max_words=3)
         kw_phrase = " ".join(kws[:2]) if kws else ""
 
-        # =====================================================================
-        # المجال الأول: إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)
-        # =====================================================================
         if domain == "ecommerce":
-            # 1. مشهد الخاتمة وطلب المنتج (CTA Outro)
             if scene_index == total_scenes - 1 or any(w in t_low for w in ["اضغط على زر", "اسفل الفيديو", "أسفل الفيديو", "اكموندي", "اطلب", "الرابط", "للطلب"]):
                 return {
                     "archetype": "interactive_cta_outro",
@@ -623,7 +610,6 @@ class WebMotionLearner:
                     "kpi_label": "عبر الزر أسفل الفيديو"
                 }
 
-            # 2. الشحن الفائق والقوة (Super Fast / 240W / يتشارجا)
             if any(w in t_low for w in ["سوبر فاست", "فاست", "فاستا", "يتشارجا", "240", "اقوى", "أقوى", "اي تليفون", "أي تيليفون"]):
                 arch = self._pick_next_non_outro_archetype("stage_before_after_checklist", used_archetypes, scene_index, total_scenes)
                 return {
@@ -641,7 +627,6 @@ class WebMotionLearner:
                     "kpi_label": "شحن فائق السرعة"
                 }
 
-            # 3. الخاصية الثالثة / التغليف القماشي ومقاومة القطع
             if any(w in t_low for w in ["قماش", "يتقطع", "الثالثة", "الثالثه", "مغلف", "متانة"]) or ("قماش" in window_low and "ثالث" in t_low):
                 arch = self._pick_next_non_outro_archetype("stage_trust_bubbles", used_archetypes, scene_index, total_scenes)
                 return {
@@ -659,7 +644,6 @@ class WebMotionLearner:
                     "kpi_label": "مقاوم للقطع والتلف"
                 }
 
-            # 4. الخاصية الثانية / الشحن والمشاهدة المريحة في نفس الوقت
             if any(w in t_low for w in ["تشارجي", "تتفرج", "الثانية", "الثانيه", "نفس الوقت", "بكل راحة"]):
                 arch = self._pick_next_non_outro_archetype("saas_process_flow", used_archetypes, scene_index, total_scenes)
                 return {
@@ -677,7 +661,6 @@ class WebMotionLearner:
                     "kpi_label": "شحن ومشاهدة معاً"
                 }
 
-            # 5. الخاصية الأولى / حامل الهاتف المدمج (سيبور تيليفون)
             if any(w in t_low for w in ["سيبور", "حامل", "ستاند", "مدمج"]):
                 arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
                 return {
@@ -695,7 +678,6 @@ class WebMotionLearner:
                     "kpi_label": "شاحن وسيبور مدمج"
                 }
 
-            # 6. استعراض الخصائص الثلاث المجانية (3 خصائص تديهم باطل)
             if any(w in t_low for w in ["ثلاث", "3", "خصائص", "ميزات", "باطل", "بري", "الأولى", "الاولى"]):
                 arch = self._pick_next_non_outro_archetype("saas_grid_2x2_cursor", used_archetypes, scene_index, total_scenes)
                 return {
@@ -713,7 +695,6 @@ class WebMotionLearner:
                     "kpi_label": "قيمة استثنائية"
                 }
 
-            # 7. الاستثمار الأفضل للهاتف (أفضل استثمار ممكن نديروه في تليفونك)
             if any(w in t_low for w in ["استثمار", "افضل", "أفضل", "تليفونك", "هاتفك", "كابل هذا"]):
                 arch = self._pick_next_non_outro_archetype("saas_typewriter_mechanism", used_archetypes, scene_index, total_scenes)
                 return {
@@ -731,7 +712,6 @@ class WebMotionLearner:
                     "kpi_label": "جودة تدوم طويلاً"
                 }
 
-            # 8. المقارنة والتساؤل (علاش كاين بزاف من خاوتنا مازال ما يلقاوش)
             if any(w in t_low for w in ["علاش", "بزاف", "خاوتنا", "مازال", "تلقاوش", "يلقاوش"]):
                 arch = self._pick_next_non_outro_archetype("stage_balance_scale", used_archetypes, scene_index, total_scenes)
                 return {
@@ -749,7 +729,6 @@ class WebMotionLearner:
                     "kpi_label": "تفوق واضح"
                 }
 
-            # 9. الخطاف الافتتاحي أو أي مشهد آخر في إعلان المنتج (Hook / General Product Scene)
             arch = self._pick_next_non_outro_archetype("stage_trust_bubbles", used_archetypes, scene_index, total_scenes)
             return {
                 "archetype": arch,
@@ -766,9 +745,6 @@ class WebMotionLearner:
                 "kpi_label": "منتج أصلي مبتكر"
             }
 
-        # =====================================================================
-        # المجال الثاني والثالث: التقنية وصناعة المحتوى والمونتاج بالذكاء الاصطناعي
-        # =====================================================================
         is_problem_or_pain = any(w in t_low for w in ["مشكل", "مشكلة", "يعاني", "يعانيوا", "ضيق", "صعيب"])
         is_time_comparison = any(w in t_low for w in ["ما عندها وقت", "ما عندهمش وقت", "أغلب الناس", "اغلب الناس", "تصور الفيديوهات", "وقت تمنتج"])
         is_productivity_or_social = any(w in t_low for w in ["انتاجية", "إنتاجية", "التواصل الاجتماعي", "انستغرام", "ريلز", "تيك توك", "مشاهدات", "تفاعل", "ريتش", "نشر"])
@@ -828,7 +804,6 @@ class WebMotionLearner:
                 }
 
         if is_time_comparison and not is_platform_intro:
-            # إذا تم استخدام stage_balance_scale في المشهد السابق، نختار saas_folder_reorder بعنوان فريد ومكمل!
             if "stage_balance_scale" not in used_archetypes:
                 return {
                     "archetype": "stage_balance_scale",
@@ -962,9 +937,6 @@ class WebMotionLearner:
                 "kpi_label": "جودة إخراج عالية"
             }
 
-        # =====================================================================
-        # المولد السياقي الديناميكي العام لأي فيديو مستقبلي في أي مجال (Universal Dynamic Synthesizer)
-        # =====================================================================
         arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
         all_kws = extract_clean_keywords(f"{scene_text} {next_scene_text}", max_words=6)
         main_kw = " ".join(all_kws[:3]) if all_kws else "الفكرة المحورية"
@@ -1000,14 +972,6 @@ class WebMotionLearner:
 
 
 class MotionQualityAuditor:
-    """
-    المدقق الذاتي الصارم لمنع تكرار الأخطاء في أي فيديو مستقبلي (Universal Anti-Error Quality Auditor):
-    1. يمنع تكرار نفس `badge_label` أو `concept_title` أو `kpi_value` بين أي مشهدين في الفيديو.
-    2. يمنع ظهور `interactive_cta_outro` قبل المشهد الأخير، ويمنع تكرار نفس الـ `archetype` في مشاهد متقاربة.
-    3. يمنع تسرب مصطلحات المونتاج إلى فيديوهات التجارة الإلكترونية أو المجالات الأخرى.
-    4. يمنع أي عبارات حشو عامة أو كلمات مبتورة.
-    """
-
     @staticmethod
     def audit_and_heal_storyboard(
         scenes: List[Dict[str, Any]],
@@ -1067,7 +1031,6 @@ class MotionQualityAuditor:
             "تطوير الأداء وصناعة المحتوى", "منهجية ذكية لتحقيق أفضل النتائج",
             "المونت ", "الاج ", "أهلاً لاحظت", "جبت لكم", "صورته ذكاء"
         ]
-        # إذا كان المجال تجارة إلكترونية، نمنع أي مصطلح خاص ببرامج مونتاج الفيديو
         if domain == "ecommerce":
             banned_phrases.extend(["قص الصمت", "تعديل الفيديو", "تحرير شامل", "مونتاج احترافي", "موشن جرافيك بضغطة زر"])
 
@@ -1084,7 +1047,6 @@ class MotionQualityAuditor:
 
             fb_badge, fb_concept, fb_kv, fb_kl = fb_list[idx % len(fb_list)]
 
-            # 1. فحص الشارة العلوية وضمان عدم تكرارها في أي مشهد آخر
             if (
                 not badge
                 or any(bp in badge for bp in banned_phrases)
@@ -1098,7 +1060,6 @@ class MotionQualityAuditor:
                     kw_str = " ".join(kws[:2]) if kws else f"النقطة {idx + 1}"
                     badge = f"{fb_badge.split('•')[0].strip()} • {kw_str}"
 
-            # 2. فحص عنوان المفهوم وضمان عدم تكراره
             if (
                 not concept
                 or any(bp in concept for bp in banned_phrases)
@@ -1112,7 +1073,6 @@ class MotionQualityAuditor:
                     kw_str = " ".join(kws[:3]) if kws else f"الخطوة العملية {idx + 1}"
                     concept = kw_str
 
-            # 3. فحص مؤشر الأداء KPI وضمان عدم تكراره
             if not kpi_v or any(bp in kpi_v for bp in banned_phrases) or "خطوة #" in kpi_v or kpi_v in used_kpis:
                 if fb_kv not in used_kpis:
                     kpi_v = fb_kv
@@ -1121,7 +1081,6 @@ class MotionQualityAuditor:
                     extra_kpis = ["اطلب الآن", "ضمان 100%", "توصيل سريع", "جودة أصلية", "سعر ممتاز"] if domain == "ecommerce" else ["ابدأ الآن", "جاهز للنشر", "دقة 30FPS", "توفير 95%", "ذكاء سياقي"]
                     kpi_v = extra_kpis[idx % len(extra_kpis)]
 
-            # 4. جدولة الكوريغرافيا: منع interactive_cta_outro قبل النهاية، ومنع تكرار القوالب
             arch = str(item.get("archetype", "")).strip()
             if idx == total_scenes - 1 and total_scenes >= 2:
                 arch = "interactive_cta_outro"
@@ -1147,20 +1106,11 @@ class MotionQualityAuditor:
             used_archs.append(arch)
             healed.append(item)
 
-        # 5. تطبيق محرك وأوراكل اللقطة الواحدة المتصلة (OneTakeContinuityOracle - onetakemotion.com)
         healed = OneTakeContinuityOracle.plan_and_verify_one_take_continuity(healed)
         return healed
 
 
 class OneTakeContinuityOracle:
-    """
-    أوراكل قياس وتصميم الاتصال البصري المستمر بلقطة كاميرا واحدة (One-Take Motion Continuity Oracle)
-    مستوحى من معمارية `onetakemotion.com` (`feitangyuan/onetake` - `probe.py` & `verify.py`):
-    - يصمم الحدود الفاصلة بين كل مشهدين بحيث يبقى عنصر حي على الشاشة (`surviving_element`) ويتحول فيزيائياً
-      إلى المشهد التالي، أو تغوص الكاميرا بداخله (`camera_dive_into_portal`) أو تخرج منه (`camera_pull_out_reveal`).
-    - يقيس درجة الاتصال (`carry_score`) لكل انتقال ويتحقق من تجاوز عتبة القبول الصارمة (`>= 0.75`، ويحقق `0.88+`).
-    """
-
     @staticmethod
     def _select_handoff_between(prev_arch: str, curr_arch: str, idx: int, total_scenes: int) -> Tuple[str, str, float]:
         if idx == 0:
@@ -1247,7 +1197,7 @@ class OneTakeContinuityOracle:
             sc["surviving_element_ar"] = survivor_desc
             sc["carry_score"] = round(score, 3)
             sc["portal_row_index"] = idx % 3
-            sc["handoff_duration_sec"] = 0.42
+            sc["handoff_duration_sec"] = 0.38
             carry_scores.append(score)
 
         avg_carry = round(sum(carry_scores) / max(1, len(carry_scores)), 3)
@@ -1303,7 +1253,7 @@ def extract_global_video_context(full_transcript: str) -> dict:
     social_kw = ["انستغرام", "انستقرام", "تيك توك", "ريلز", "شورتس", "فيسبوك", "يوتيوب", "متابعين", "مشاهدات", "تفاعل", "ريتش", "خوارزمية", "نشر", "محتوى", "صانع", "صناع", "كاميرا", "تصوير", "اكسبلور", "ستوري", "بايو"]
     tech_kw = ["برمجة", "كود", "تطبيق", "منصة", "موقع", "سحابي", "ذكاء", "الاصطناعي", "اصطناعي", "مونتاج", "تمنتج", "المونتاج", "تعديل الفيديو", "انتاجية", "إنتاجية", "الانتاجيه", "أوتوماتيكي", "سيرفر", "ديفلوبر", "سوفتوير", "api", "ai"]
     edu_kw = ["نصيحة", "نصائح", "تعلم", "دراسة", "معلومة", "فائدة", "كيفاش", "خطوات", "أسرار", "طريقة", "تحسين", "مهارة", "فكرة", "انتبه", "ركز"]
-    biz_kw = ["بزنس", "مشروع", "دراهم", "فلوس", "عمل حر", "فريلانس", "تسويق", "مبيعات", "استثمار", "أرباح", "تجارة", "خدمة", "عملاء", "شركة", "وظيفة"]
+    biz_kw = ["بزنس", "مشروع", "دراهم", "فلوس", "عمل حر", "فريلانس", "تسويق", "مبيعات", "استثمار", "أرباح", "تجارة", "خدمة", "عملاء", "شركة", "وظيفة", "سبونسور", "إشهار", "اشهار", "حملة", "إعلان", "اعلان"]
 
     for kw in ecom_kw:
         if kw in t_low:
@@ -1330,7 +1280,7 @@ def extract_global_video_context(full_transcript: str) -> dict:
         "social_media": "صناعة المحتوى وشبكات التواصل",
         "tech_software": "تطوير وتقنية وأنظمة ذكية",
         "education": "نصائح ومعلومات تعليمية",
-        "business": "أعمال وتجارة وخدمات",
+        "business": "أعمال وتسويق وحملات إعلانية",
         "general": "محتوى عام وتفاعلي"
     }
 
@@ -1447,7 +1397,6 @@ def analyze_contextual_storyboard(
         entry["global_domain"] = global_ctx["domain"]
         enriched_scenes.append(entry)
 
-    # دمج مخرجات context_engine.py (قاموس الدارجة الجزائرية وحارس عدم الاختلاق وتوقيت الكابشن الدقيق)
     if callable(build_grounded_context_storyboard):
         try:
             grounded_sb = build_grounded_context_storyboard(
@@ -1480,7 +1429,17 @@ def analyze_contextual_storyboard(
     except Exception as learn_err:
         logger.warning(f"Motion learner integration notice: {learn_err}")
 
-    # حقن معاملات التطور الذاتي والبصمة المرجعية المستنسخة (style_evolution_brain.py)
+    if callable(build_dynamic_scene_style_assignment):
+        try:
+            style_plan = build_dynamic_scene_style_assignment(len(enriched_scenes), advance_rotation_counter=True)
+            for idx, sc in enumerate(enriched_scenes):
+                if idx < len(style_plan):
+                    sc["scene_style_spec"] = style_plan[idx]
+                    sc["step_number"] = idx + 1
+                    sc["total_scenes_count"] = len(enriched_scenes)
+        except Exception as sp_err:
+            logger.debug(f"Scene style assignment notice: {sp_err}")
+
     if callable(load_evolution_memory) and callable(get_best_params_for_scene_type):
         try:
             mem = load_evolution_memory()
@@ -1494,8 +1453,8 @@ def analyze_contextual_storyboard(
                 sc.setdefault("card_padding", int(evolved_p.get("card_padding", 16)))
                 sc.setdefault("bg_blur_strength", int(evolved_p.get("bg_blur_strength", 14)))
                 sc.setdefault("accent_glow", float(evolved_p.get("accent_glow", 0.28)))
-                sc.setdefault("spring_stiffness", float(evolved_p.get("spring_stiffness", 185.0)))
-                sc.setdefault("spring_damping", float(evolved_p.get("spring_damping", 13.0)))
+                sc.setdefault("spring_stiffness", float(evolved_p.get("spring_stiffness", 195.0)))
+                sc.setdefault("spring_damping", float(evolved_p.get("spring_damping", 14.0)))
                 if isinstance(active_dna, dict) and active_dna.get("enabled", True):
                     if active_dna.get("theme_name"):
                         sc["theme_name"] = active_dna["theme_name"]
@@ -1551,7 +1510,6 @@ def analyze_media_file(
     visual_motion_score = 8.0
     video_duration = 0.0
 
-    # فحص خصائص الفيديو والصوت عبر FFmpeg مباشرة بدون تحميل الفيديو في الـ RAM
     if ext in SUPPORTED_VIDEO_EXTENSIONS:
         try:
             res = subprocess.run(
@@ -1599,7 +1557,7 @@ def analyze_media_file(
             del raw_b
             if duration_sec <= 0.1 and len(samples) > 0:
                 duration_sec = round(len(samples) / 8000.0, 2)
-            win = 800  # 100ms at 8kHz
+            win = 800
             n_w = len(samples) // win
             if n_w > 2:
                 arr = samples[:n_w * win].reshape((n_w, win))
@@ -1667,7 +1625,7 @@ def analyze_media_file(
         "optimal_whisper_model": optimal_whisper_model,
         "ai_provider_info": ai_info,
         "criteria_reasons": [
-            f"تم تفعيل مخ التحليل السياقي والسردي (Contextual Narrative Brain) مع حماية الذاكرة القصوى (Streaming Pipe Engine) للفيديوهات الكبيرة.",
+            f"تم تفعيل مخ التحليل السياقي والسردي (Contextual Narrative Brain) مع محرك الستايلات الاحترافية المتجددة وحماية الذاكرة القصوى (Streaming Pipe Engine).",
             f"تم ضبط عتبة السكوت الطبيعية عند ({optimal_silence_thresh} dBFS) وهامش حماية مخارج الحروف ({optimal_padding_ms}ms)."
         ]
     }
@@ -1689,12 +1647,6 @@ def generate_master_director_plan(
     openai_api_key: Optional[str] = None,
     **kwargs
 ) -> List[Dict[str, Any]]:
-    """
-    توليد مخطط المخرج الشامل بالاعتماد على مخ التحليل السياقي (Contextual Storyboard Brain):
-    - يفهم سياق الفيديو الكامل ويربط كل جملة بالمعنى العام.
-    - يحدد 3 إلى 4 مشاهد B-roll واقعية خالية من حقوق الملكية في اللحظات المناسبة.
-    - يوزع بقية اللقطات بين: شاشة كاملة موشن جرافيك، بطاقات علوية، شارات سفلية، ولقطات متحدث صافية.
-    """
     if not sentences_or_micro_scenes:
         return []
 
@@ -1726,8 +1678,6 @@ def generate_master_director_plan(
                     broll_candidate_indices.append(idx)
 
     selected_broll_indices = set()
-    # إذا كان الفيديو الأصلي يستعرض منتجاً حقيقياً أمام الكاميرا (ecommerce + has_video)،
-    # لا نخفي الكاميرا خلف لقطات خارجية أو دوائر افتراضية أبداً، بل نُبقي المنتج مرئياً مع شاشة الموشن المقسومة أو البطاقات العلوية!
     if enable_stock_broll and broll_candidate_indices and not (has_video and global_domain == "ecommerce"):
         target_broll_count = min(3, max(1, len(broll_candidate_indices) // 2))
         step = max(2, len(broll_candidate_indices) // target_broll_count)

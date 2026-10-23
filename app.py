@@ -1,14 +1,14 @@
 """
-app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، الموشن جرافيك السياقي، والعمل المستمر في الخلفية
-====================================================================================================
+app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، استنساخ الفيديوهات المرجعية، وتنويع الستايلات الاحترافية في الخلفية
+=======================================================================================================================
 التحديثات الجوهرية:
-1. محرك العمل المستمر في الخلفية وحفظ الجلسة التلقائي (`PersistentBackgroundJobManager` مدمج بالكامل):
-   - يستمر السيرفر في رندرة الفيديو حتى لو خرج المستخدم من متصفح Google Chrome أو أغلق شاشة الهاتف أو انقطع الإنترنت!
-   - بمجرد عودة المستخدم وفتح الموقع مرة أخرى، يسترجع النظام تلقائياً شريط التقدم الحي أو يعرض الفيديو المكتمل الجاهز للتحميل فوراً!
-2. حماية الذاكرة القصوى (Zero-OOM Upload & Streaming Engine):
-   - حفظ الفيديوهات المرفوعة (55MB و100MB+) بالتدفق المجزأ (512KB Chunks) بدون نسخها في الـ RAM (`getvalue()`)،
-     وتطبيعها فورياً عبر FFmpeg أحادي الخيط مع تحرير ذاكرة نظام التشغيل (`glibc malloc_trim`).
-3. مخ التحليل السياقي والسردي ذو المرحلتين (`Two-Pass Contextual & Narrative Brain`) + استيراد مشاهد B-Roll خالية من حقوق الملكية.
+1. زر ومحرّك "🎯 سوي لي نفس التصميم بالضبط (Clone Reference Video Design)":
+   - رفع أي فيديو مرجعي يعجبك بضغطة زر واحدة ليقوم النظام باستنساخ تصميمه الهندسي، مراحله اللونية المتعددة،
+     إيقاع حركته، وشكل بطاقاته وعناوينه بالضبط.
+2. محرك التنويع التلقائي للستايلات الاحترافية (`Auto-Vary Pro Studio Styles` - مستوحى من `6873.mp4` و `6842.mp4` و `6871.mp4`):
+   - يغير الستايل تلقائياً في كل مرة يُنتج فيها فيديو جديد، وينوّع أطوار الخلفيات والبطاقات داخل مشاهد الفيديو نفسه.
+3. محرك الهوية البصرية واستخراج ألوان اللوقو (`Logo & Brand Palette Extractor`) + الحفاظ على الفيديو الأصلي بملء الشاشة 100%.
+4. محرك العمل المستمر في الخلفية وحفظ الجلسة التلقائي (`PersistentBackgroundJobManager`) مع معمارية `Zero-OOM`.
 """
 
 import sys
@@ -310,7 +310,7 @@ st.markdown("""
         font-size: 2.2rem;
         font-weight: 800;
         text-align: center;
-        background: linear-gradient(90deg, #38BDF8, #FBBF24);
+        background: linear-gradient(90deg, #1BAECA, #38BDF8, #FBBF24);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 0.2rem;
@@ -322,8 +322,8 @@ st.markdown("""
         margin-bottom: 1.4rem;
     }
     .bg-shield-banner {
-        background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(2, 132, 199, 0.16));
-        border: 1px solid rgba(16, 185, 129, 0.45);
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(27, 174, 202, 0.16));
+        border: 1px solid rgba(27, 174, 202, 0.45);
         border-radius: 12px;
         padding: 12px 18px;
         text-align: center;
@@ -347,9 +347,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك السياقي</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك المتعدد الستايلات</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">محرك ون تيك موشن المتصل بلقطة كاميرا واحدة (One-Take Motion • onetakemotion.com) • تدخل الكاميرا في جدول الفيديو وتخرج منه بسلاسة 30fps • يعمل في الخلفية</div>',
+    '<div class="sub-title">استنساخ تصميم أي فيديو مرجعي بضغطة زر • تنويع تلقائي للستايلات الاحترافية في كل فيديو وداخل المشاهد • يعمل في الخلفية (Zero-OOM)</div>',
     unsafe_allow_html=True
 )
 st.markdown(
@@ -476,68 +476,20 @@ with st.sidebar:
     manim_flag = manim_quality_choice.split()[0]
 
     st.markdown("---")
-    st.subheader("🧬 التعلم الذاتي والفيديو المرجعي (Style Cloner & Auto-Evolution)")
+    st.subheader("🧬 مؤشر التطور الذاتي والذاكرة البصرية")
     try:
-        from style_evolution_brain import (
-            extract_reference_video_dna,
-            get_evolution_status_summary,
-            activate_cloned_reference_style
-        )
+        from style_evolution_brain import get_evolution_status_summary
         from manim_generator import load_manim_library
         evo_summary = get_evolution_status_summary()
         manim_lib = load_manim_library()
         manim_patterns_cnt = len(manim_lib.get("entries", []))
-        total_patterns_cnt = int(evo_summary.get("learned_scene_types_count", 1)) + manim_patterns_cnt
-        avg_q_score = float(evo_summary.get("average_quality_score", 0.91))
+        total_patterns_cnt = int(evo_summary.get("learned_scene_types_count", 6)) + manim_patterns_cnt
+        avg_q_score = float(evo_summary.get("average_quality_score", 0.94))
 
-        st.caption("📊 **مستوى تطور الذاكرة البصرية الذاتية:**")
         ev_c1, ev_c2 = st.columns(2)
-        ev_c1.metric("الأنماط المتعلمة", f"{total_patterns_cnt} نمط")
+        ev_c1.metric("الستايلات والأنماط", f"{total_patterns_cnt} ستايل")
         ev_c2.metric("تقييم الناقد الذاتي", f"{int(round(avg_q_score * 100))}%")
         st.progress(min(1.0, max(0.1, avg_q_score)))
-
-        cloned_styles = evo_summary.get("cloned_styles_list", [])
-        active_ref = evo_summary.get("active_reference_dna")
-        active_ref_id = active_ref.get("style_id") if isinstance(active_ref, dict) else "none"
-
-        style_choices = ["تلقائي (ثيمات الأستوديو المتطورة ذاتياً)"] + [f"🎬 ستايل مستنسخ: {sid}" for sid in cloned_styles]
-        default_idx = 0
-        for idx_s, sid in enumerate(cloned_styles):
-            if sid == active_ref_id:
-                default_idx = idx_s + 1
-                break
-
-        chosen_ref_label = st.selectbox("اختر البصمة البصرية النشطة:", options=style_choices, index=default_idx)
-        if chosen_ref_label.startswith("🎬 ستايل مستنسخ: "):
-            target_sid = chosen_ref_label.replace("🎬 ستايل مستنسخ: ", "").strip()
-            if target_sid != active_ref_id:
-                activate_cloned_reference_style(target_sid)
-        else:
-            if active_ref_id != "none":
-                activate_cloned_reference_style("none")
-
-        with st.expander("📹 استنساخ فيديو مرجعي جديد (Reference Video DNA Cloner)", expanded=False):
-            st.caption("ارفع أي فيديو مرجعي يعجبك ليستنسخ النظام إيقاع حركته (Optical Flow)، فيزياء النوابض، وبصمته اللونية (K-Means Palette):")
-            ref_uploaded = st.file_uploader(
-                "اختر فيديو مرجعي للاستنساخ (MP4, MOV, MKV)",
-                type=["mp4", "mov", "mkv", "webm"],
-                key="ref_dna_uploader"
-            )
-            if ref_uploaded is not None:
-                if st.button("🧬 استخراج واستنساخ بصمة الفيديو المرجعي الآن", use_container_width=True):
-                    ref_hash = hashlib.md5(f"{ref_uploaded.name}_{getattr(ref_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
-                    ref_save_path = os.path.join(INPUTS_DIR, f"ref_video_{ref_hash}.mp4")
-                    ref_uploaded.seek(0)
-                    with open(ref_save_path, "wb") as rf:
-                        shutil.copyfileobj(ref_uploaded, rf, length=524288)
-                    force_free_ram()
-                    with st.spinner("🔬 جاري تحليل التدفق البصري والبصمة اللونية للفيديو المرجعي..."):
-                        dna = extract_reference_video_dna(ref_save_path, style_alias=f"ref_{ref_hash}")
-                    st.success(
-                        f"✅ تم استنساخ البصمة `{dna['style_id']}`! "
-                        f"(متوسط اللقطة: `{dna['avg_shot_duration_sec']}s` | صلابة النابض: `{dna['spring_stiffness']}`)"
-                    )
-                    st.rerun()
     except Exception as evo_ui_err:
         logger.debug(f"Evolution UI notice: {evo_ui_err}")
 
@@ -567,7 +519,7 @@ STYLE_OPTIONS = [
     "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
     "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
-    "🚀 موشن جرافيك ون تيك متصل بلقطة واحدة (One-Take Studio Motion • onetakemotion.com)",
+    "🚀 موشن جرافيك احترافي متعدد الستايلات (Pro Multi-Style Studio Motion • 6873 / 6842 / 6871)",
     "📐 موشن جرافيك هندسي ذكي (Manim + AI Infographics)",
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
     "✂️ قص الصمت الطبيعي وتنظيف الصوت فقط (Natural Jump-cuts)"
@@ -626,7 +578,7 @@ def run_selected_pipeline(
             dialect_mode=dialect,
             pexels_api_key=pexels_key,
             groq_api_key=groq_key,
-            gemini_api_key=gemini_key,
+            gemini_api_key=gemini_api_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
             caption_mode=caption_mode
@@ -783,9 +735,9 @@ if job_manager.is_running():
 
 
 # ==============================================================================
-# 5. جسم الصفحة: رفع ملف ومحرر الإعدادات (باستهلاك ذاكرة صفري للرفع!)
+# 5. جسم الصفحة: رفع ملف ومحرر الستايلات واستنساخ التصميم المرجعي
 # ==============================================================================
-col1, col2 = st.columns([1.08, 1.0], gap="large")
+col1, col2 = st.columns([1.05, 1.05], gap="large")
 
 with col1:
     st.subheader("1. رفع الفيديو أو الملف الصوتي / تسجيل مباشر")
@@ -896,9 +848,8 @@ with col2:
     if selected_style == STYLE_OPTIONS[0]:
         st.info(
             "🧠 **النمط التلقائي الشامل (Smart Director All-in-One):**\n"
-            "- **مخ تحليل سياقي:** يفهم القصة الكاملة للفيديو ومعنى الجمل المترابطة.\n"
-            "- **استيراد 3-4 مشاهد B-Roll حقيقية خالية من حقوق الملكية** في اللحظات المناسبة لكسر الملل.\n"
-            "- **يعمل في الخلفية:** يمكنك الخروج من كروم والعودة لاحقاً لتجد الفيديو جاهزاً."
+            "- يحافظ على الفيديو الأصلي بملء الشاشة 100% دون تقليص أو إزعاج.\n"
+            "- يدمج بطاقات الوكالة العائمة الأنيقة ومشاهد B-Roll خالية من حقوق الملكية."
         )
     elif selected_style == STYLE_OPTIONS[1]:
         st.info("🛍️ **إعلانات المنتجات والتجارة الإلكترونية:** خطاف Hook 0-3s، إبراز المشكلة، ميزات المنتج، شارات الثقة (58 ولاية / دفع عند الاستلام)، ولافتة الشراء CTA.")
@@ -906,26 +857,99 @@ with col2:
             product_custom_hook = st.text_input("عنوان الخطاف العلوي (Hook Banner):", placeholder="مثال: 🔥 المنتج الأقوى في الجزائر!")
             product_custom_cta = st.text_input("نص نداء الشراء السفلي (Call To Action):", placeholder="مثال: 🛒 اطلب الآن والدفع عند الاستلام!")
     elif selected_style == STYLE_OPTIONS[2]:
-        st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات زجاجية علوية ومشاهد B-Roll واقعية وكابشن بالثلث السفلي.")
+        st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات وكالة عائمة مرقمة (`01, 02, 03`) بدون تقليص الفيديو الأصلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك ون تيك متصل بلقطة كاميرا واحدة (One-Take Motion - onetakemotion.com):** الكاميرا لا تقطع بين المشاهد أبداً، بل تغوص داخل العناصر وخلايا جدول الفيديو وتخرج منها بسلاسة مع تحول العناصر الناجية عبر الحدود (Carry Score >= 0.90)!")
+        st.info("🚀 **موشن جرافيك احترافي متعدد الستايلات (بمستوى 6873 و 6842 و 6871):** بطاقات بيضاء مائلة، فواتير وتقارير أداء، ستيكر الكلمة المفتاحية، وخطوات مرقمة.")
     elif selected_style == STYLE_OPTIONS[4]:
         st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
-        st.info("🔍 **مونتاج ديناميكي:** قص صمت طبيعي مع زوم 15% متناوب وكابشن أصفر.")
+        st.info("🔍 **مونتاج ديناميكي:** قص صمت طبيعي مع زوم 15% متناوب وكابشن تفاعلي.")
     else:
         st.info("✂️ **قص الصمت الطبيعي:** إزالة فترات السكوت الطويلة مع الحفاظ على طبيعية الكلام البشري.")
 
+    # ==========================================================================
+    # القسم الجديد البارز: استنساخ تصميم فيديو مرجعي أو تنويع الستايلات الاحترافية
+    # ==========================================================================
     st.markdown("---")
-    st.subheader("🎨 3. الهوية البصرية: اللوقو وألوان الثيم (Logo & Theme Colors)")
+    st.subheader("🎯 3. استنساخ تصميم فيديو مرجعي أو تنويع الستايلات الاحترافية")
     with st.container():
         from style_evolution_brain import (
+            extract_reference_video_dna,
+            set_active_studio_style_mode,
+            get_active_studio_style_mode,
+            load_evolution_memory,
             extract_brand_palette_from_image,
             apply_custom_brand_colors,
             get_active_brand_theme,
             clear_active_brand_theme
         )
 
+        studio_mode_map = {
+            "🎲 تغيير وتنويع الستايلات الاحترافية تلقائياً (كل مرة ستايل مختلف + تنويع داخل الفيديو نفسه)": "auto_vary_pro",
+            "🎯 سوي لي نفس تصميم الفيديو المرجعي بالضبط (Clone Reference Video Design)": "clone_reference",
+            "🎬 ستايل وكالة BYW السيان والتقارير والستيكر النصي (مطابق لفيديو 6873)": "byw_cyan_agency",
+            "📐 ستايل المخطط الهندسي السماوي والخطوات المرقمة 1-2-3-4 (مطابق لفيديو 6842)": "mazen_blueprint_collage",
+            "🟣 ستايل مختبر الإعلانات البنفسجي الفاخر والتبويبات العلوية (مطابق لفيديو 6871)": "baghdadi_luxury_plum",
+            "🌿 ستايل الفينتك الزمردي والأبيض النعناعي (بطاقات تقارير مالية)": "emerald_fintech_mint",
+            "👑 ستايل الكوبالت الملكي والذهبي السينمائي": "royal_cobalt_gold",
+            "🔥 ستايل الإديتوريال المرجاني الدافئ": "sunset_coral_editorial"
+        }
+
+        cur_studio_mode = get_active_studio_style_mode()
+        mode_labels = list(studio_mode_map.keys())
+        def_mode_idx = 0
+        for idx_m, lbl_m in enumerate(mode_labels):
+            if studio_mode_map[lbl_m] == cur_studio_mode:
+                def_mode_idx = idx_m
+                break
+
+        selected_studio_label = st.selectbox(
+            "اختر نظام تصميم الستايلات البصرية:",
+            options=mode_labels,
+            index=def_mode_idx,
+            key="main_studio_style_mode_selector"
+        )
+        chosen_studio_mode_code = studio_mode_map[selected_studio_label]
+        set_active_studio_style_mode(chosen_studio_mode_code)
+
+        # مربع وزر "سوي لي نفس التصميم بالضبط" مباشرة في الواجهة الرئيسية!
+        st.markdown("**📹 أو ارفع أي فيديو يعجبك واضغط الزر ليصنع لك المحرك نفس تصميمه بالضبط:**")
+        ref_vid_uploaded = st.file_uploader(
+            "ارفع فيديو مرجعي لنسخ تصميمه وألوانه وحركته (MP4, MOV, MKV, WEBM):",
+            type=["mp4", "mov", "mkv", "webm"],
+            key="main_panel_ref_video_uploader"
+        )
+
+        if ref_vid_uploaded is not None:
+            if st.button("🎯 سوي لي نفس التصميم بالضبط (استنساخ تصميم الفيديو المرجعي الآن)", use_container_width=True):
+                ref_hash = hashlib.md5(f"{ref_vid_uploaded.name}_{getattr(ref_vid_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
+                ref_save_path = os.path.join(INPUTS_DIR, f"ref_video_{ref_hash}.mp4")
+                ref_vid_uploaded.seek(0)
+                with open(ref_save_path, "wb") as rf:
+                    shutil.copyfileobj(ref_vid_uploaded, rf, length=524288)
+                force_free_ram()
+                with st.spinner("🔬 جاري تحليل واستنساخ هندسة البطاقات والمراحل اللونية وإيقاع الحركة من الفيديو المرجعي..."):
+                    dna = extract_reference_video_dna(ref_save_path, style_alias=f"ref_{ref_hash}")
+                    set_active_studio_style_mode("clone_reference")
+                st.success(
+                    f"✅ **تم استنساخ تصميم الفيديو المرجعي بنجاح!**\n"
+                    f"- العائلة البصرية المكتشفة: **{dna.get('detected_family_label_ar', dna.get('detected_design_family'))}**\n"
+                    f"- إيقاع اللقطة: `{dna['avg_shot_duration_sec']}s` | فيزياء النابض: `{dna['spring_stiffness']}`"
+                )
+                st.rerun()
+
+        mem_now = load_evolution_memory()
+        active_ref_dna = mem_now.get("active_reference_dna")
+        if chosen_studio_mode_code == "clone_reference" and isinstance(active_ref_dna, dict):
+            st.caption(
+                f"🎯 **التصميم المرجعي النشط حالياً:** `{active_ref_dna.get('source_video', active_ref_dna.get('style_id'))}` "
+                f"({active_ref_dna.get('detected_family_label_ar', '')})"
+            )
+
+    # ==========================================================================
+    # القسم 4: اللوقو وألوان الهوية البصرية المخصصة (اختياري)
+    # ==========================================================================
+    with st.expander("🎨 4. رفع لوقو (Logo) أو تخصيص ألوان الهوية البصرية يدوياً (اختياري)", expanded=False):
         active_brand_now = get_active_brand_theme() or {}
         logo_uploaded = st.file_uploader(
             "🖼️ ارفع اللوقو (Logo) أو صورة باليت ألوان (يستخرج منها ألوان الفيديو تلقائياً):",
@@ -963,41 +987,21 @@ with col2:
                     prefer_dark_bg=True
                 )
                 st.session_state["last_extracted_logo_hash"] = logo_hash
-                st.session_state["brand_primary_hex"] = extracted_prof.get("primary_hex", "#38BDF8")
-                st.session_state["brand_secondary_hex"] = extracted_prof.get("secondary_hex", "#FACC15")
-                st.session_state["brand_bg_hex"] = extracted_prof.get("bg_hex", "#0B1325")
-                st.session_state["theme_preset_mode"] = "🎨 ألوان اللوقو / الألوان المخصصة (Custom Brand Theme)"
+                st.session_state["brand_primary_hex"] = extracted_prof.get("primary_hex", "#1BAECA")
+                st.session_state["brand_secondary_hex"] = extracted_prof.get("secondary_hex", "#FFFFFF")
+                st.session_state["brand_bg_hex"] = extracted_prof.get("bg_hex", "#0B181F")
+                st.session_state["enable_custom_brand_colors"] = True
                 active_brand_now = extracted_prof
 
-        theme_presets = [
-            "🌌 داكن سينمائي فخم ومتنوع (Dark Studio Pro - تلقائي)",
-            "🎨 ألوان اللوقو / الألوان المخصصة (Custom Brand Theme)",
-            "⚡ نيون ذهبي وزبرجد (Cyber Gold & Emerald)",
-            "💎 أزرق كوبالت تقني (Electric Cobalt)",
-            "🔥 طاقة وإعلانات دافئة (Crimson & Sunset)",
-            "☀️ فاتح نظيف هادئ (Minimal Daylight)"
-        ]
-        default_preset_idx = 1 if (logo_uploaded is not None or active_brand_now.get("enabled")) else 0
-        chosen_preset = st.selectbox(
-            "اختر ستايل وثيم الفيديو:",
-            options=theme_presets,
-            index=default_preset_idx,
-            key="theme_preset_selector"
+        enable_custom_colors = st.checkbox(
+            "تفعيل تخصيص الألوان اليدوي أو ألوان اللوقو فوق الستايل",
+            value=bool(logo_uploaded is not None or st.session_state.get("enable_custom_brand_colors", False))
         )
+        st.session_state["enable_custom_brand_colors"] = enable_custom_colors
 
-        preset_palettes = {
-            theme_presets[2]: ("#FFD700", "#00F5D4", "#070B16", "dark_stage_pro"),
-            theme_presets[3]: ("#38BDF8", "#FACC15", "#080E1E", "dark_stage_pro"),
-            theme_presets[4]: ("#FFBE0B", "#FF006E", "#120810", "dark_stage_pro"),
-            theme_presets[5]: ("#2563EB", "#10B981", "#F1F5F9", "clean_saas_light"),
-        }
-
-        def_p = st.session_state.get("brand_primary_hex", active_brand_now.get("primary_hex", "#38BDF8"))
+        def_p = st.session_state.get("brand_primary_hex", active_brand_now.get("primary_hex", "#1BAECA"))
         def_s = st.session_state.get("brand_secondary_hex", active_brand_now.get("secondary_hex", "#FACC15"))
-        def_bg = st.session_state.get("brand_bg_hex", active_brand_now.get("bg_hex", "#0B1325"))
-
-        if chosen_preset in preset_palettes:
-            def_p, def_s, def_bg, _ = preset_palettes[chosen_preset]
+        def_bg = st.session_state.get("brand_bg_hex", active_brand_now.get("bg_hex", "#0B181F"))
 
         cp1, cp2, cp3 = st.columns(3)
         with cp1:
@@ -1011,22 +1015,20 @@ with col2:
         st.session_state["brand_secondary_hex"] = picked_secondary
         st.session_state["brand_bg_hex"] = picked_bg
 
-        if chosen_preset == theme_presets[0] and logo_uploaded is None:
+        if not enable_custom_colors and logo_uploaded is None:
             clear_active_brand_theme()
         else:
-            is_light_choice = (chosen_preset == theme_presets[5])
             apply_custom_brand_colors(
                 primary_hex=picked_primary,
                 secondary_hex=picked_secondary,
                 bg_hex=picked_bg,
-                style_mode="clean_saas_light" if is_light_choice else "dark_stage_pro",
+                style_mode="dark_stage_pro",
                 logo_path=saved_logo_path if (logo_uploaded is not None or saved_logo_path) else None,
                 show_logo_watermark=show_logo_flag,
                 logo_position=chosen_logo_pos if show_logo_flag else "top_right"
             )
             st.caption(
-                f"✅ **الثيم النشط:** أساسي `{picked_primary}` • ثانوي `{picked_secondary}` • خلفية `{picked_bg}`"
-                + (f" • مع شعار اللوقو ({logo_pos_label})" if (saved_logo_path and show_logo_flag) else "")
+                f"✅ **ثيم البراند المخصص مفعل:** أساسي `{picked_primary}` • ثانوي `{picked_secondary}` • خلفية `{picked_bg}`"
             )
 
     st.markdown("<br>", unsafe_allow_html=True)
