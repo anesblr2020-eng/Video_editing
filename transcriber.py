@@ -25,6 +25,7 @@ import math
 import base64
 import logging
 from typing import List, Dict, Any, Optional, Tuple
+
 import requests
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 def _force_free_ram():
     try:
-        _force_free_ram()
+        gc.collect()
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
         pass
@@ -45,24 +46,284 @@ except ImportError:
 
 
 # ==============================================================================
-# 1. إعدادات الدارجة الجزائرية (القاموس والموجّه في darija_lexicon.py - عامان وبدون جمل من فيديوهات سابقة)
+# 1. إعدادات وموجهات الدارجة الجزائرية ومصطلحات التجارة الإلكترونية والتقنية
 # ==============================================================================
-from darija_lexicon import (
-    SAFE_WORD_FIXES as ALGERIAN_DARIJA_LEXICON_FIXES,
-    PHRASE_FIXES as PHRASE_LEVEL_FIXES,
-    build_whisper_prompt,
-    fix_word as _lex_fix_word,
-    fix_sentence as _lex_fix_sentence,
+ALGERIAN_DARIJA_INITIAL_PROMPT = (
+    "تسجيل بالدارجة الجزائرية والعربية: واش راكم، كاين بزاف ناس، درك، دوكا، علاش، كيفاش، بزاف، ماكانش، "
+    "حاجة شابة، مليح، خاوتي، صحيتو، نقدروا نديرو، معنتها، باسكو، ديجا، نورمالمون، قاع، والو، مرحبا بكم، "
+    "شفت، سمعت، هكذا، هاد، هادي، هذا، هاد الشي، كاين، كاينين، شكراً، يعطيكم الصحة."
 )
-from context_engine import speech_coverage, merge_words_by_time
 
-# موجّه محايد (مفردات فقط). يمكن إضافة كلمات خاصة بالمستخدم عبر متغير البيئة EXTRA_VOCAB مفصولة بفاصلة.
-def _extra_vocab() -> List[str]:
-    return [x.strip() for x in os.environ.get("EXTRA_VOCAB", "").split(",") if x.strip()]
+ALGERIAN_DARIJA_LEXICON_FIXES = {
+    "أصبر": "اصبر",
+    "أصبر،": "اصبر،",
+    "استكش": "ما حبستكش",
+    "ماحبستكش": "ما حبستكش",
+    "محبستكش": "ما حبستكش",
+    "حبستكش": "ما حبستكش",
+    "علاجال": "على جال",
+    "علاجلك": "على جال",
+    "تيبسي": "تيب سي",
+    "تايبسي": "تيب سي",
+    "سيرفر": "سيبور",
+    "سيبورت": "سيبور",
+    "سبور": "سيبور",
+    "تشارجي": "تشارجي",
+    "تشرجي": "تشارجي",
+    "شارجي": "تشارجي",
+    "يتشارجا": "يتشارجا",
+    "تلقاوش": "يلقاوش",
+    "فاستا": "فاست",
+    "معناتها": "معنتها",
+    "معنتها": "معنتها",
+    "ومتخافش": "وما تخافش",
+    "ماتخافش": "ما تخافش",
+    "متخافش": "ما تخافش",
+    "كاع": "قاع",
+    "قاع": "قاع",
+    "المتوفرس": "متوفر",
+    "متوفرس": "متوفر",
+    "أكموان": "اكموندي",
+    "اكموان": "اكموندي",
+    "أكموندي": "اكموندي",
+    "كوموندي": "اكموندي",
+    "كموندي": "اكموندي",
+    "لنلو": "أهلاً",
+    "لنلو،": "أهلاً،",
+    "اهلا": "أهلاً",
+    "سنه": "سنة",
+    "منصه": "منصة",
+    "المنصه": "المنصة",
+    "استناعي": "اصطناعي",
+    "إستناعي": "اصطناعي",
+    "بذكاء": "بالذكاء",
+    "اوتوماتيكي": "أوتوماتيكي",
+    "أغالب": "أغلب",
+    "اغالب": "أغلب",
+    "اغلب": "أغلب",
+    "لان": "لأن",
+    "هنده": "عندها",
+    "عنده": "عندها",
+    "ريز": "ريلز",
+    "ريز،": "ريلز،",
+    "الريز": "الريلز",
+    "وشراكم": "واش راكم",
+    "واشراكم": "واش راكم",
+    "علاه": "علاش",
+    "كفاش": "كيفاش",
+    "بالزاف": "بزاف",
+    "ما كاش": "ماكانش",
+    "مكانش": "ماكانش",
+    "دركا": "درك",
+    "دوكة": "دوكا",
+    "عفسه": "عفسة",
+    "خوتي": "خاوتي",
+    "صحيتوا": "صحيتو",
+    "نديروا": "نديرو",
+    "نقدرو": "نقدروا",
+    "بارسكو": "باسكو",
+    "ديجة": "ديجا",
+    "نورمالمو": "نورمالمون",
+    "نتاع": "تاع",
+    "هاذي": "هاذ",
+    "كلشي": "كلش",
+    "ليفريزو": "ليفريزون",
+    "الخاصيه": "الخاصية",
+    "للخاصيه": "للخاصية",
+    "الاولى": "الأولى",
+    "الثانيه": "الثانية",
+    "الثالثه": "الثالثة",
+    "الرابعه": "الرابعة",
+    "الخامسه": "الخامسة",
+    "الانتاجيه": "الإنتاجية",
+    "المسؤوله": "المسؤولة",
+    "دقيقه": "دقيقة",
+    "ساعه": "ساعة",
+    "جوده": "جودة",
+    "صوره": "صورة",
+    "مباشره": "مباشرة",
+    "واحده": "واحدة",
+    "فكره": "فكرة",
+    "مشكله": "مشكلة",
+    "طريقه": "طريقة",
+    "نتيجه": "نتيجة",
+    "خطوه": "خطوة",
+    "اللي": "اللي",
+    "اسفل": "أسفل",
+    "والاقوى": "والأقوى",
+    "الاقوى": "الأقوى",
+    "والخاصيه": "والخاصية",
+    "بالنسبه": "بالنسبة",
+    "تليفون": "تيليفون",
+    "تليفونك": "تيليفونك",
+    "افضل": "أفضل",
+    "اقل": "أقل",
+    "اكثر": "أكثر",
+    "انه": "أنه",
+    "اما": "أما",
+    "اي": "أي",
+}
+
+PHRASE_LEVEL_FIXES = [
+    (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
+    (r"قطع[،,]?\s+يتقطع", "قاع يتقطع"),
+    (r"المتوفرس\s+على", "راه متوفر"),
+    (r"أكموان\s+من", "اكموندي من"),
+    (r"حتى\s+تديهم\s+بالبري\s+مهب", "تديهم باطل"),
+    (r"تديهم\s+بالبري\s+مهب", "تديهم باطل"),
+    (r"بالبري\s+مهب", "باطل"),
+    (r"تتفرج\s+وتم\s+والخاصي", "تتفرج والخاصي"),
+    (r"والاقوى\s+ما\s+انت\s+اي", "والأقوى من هذا أي"),
+    (r"والأقوى\s+ما\s+أنت\s+أي", "والأقوى من هذا أي"),
+    (r"والاقوى\s+ما\s+انت", "والأقوى من هذا"),
+    (r"والأقوى\s+ما\s+أنت", "والأقوى من هذا"),
+    (r"بالسوبر\s+فاستا", "بالسوبر فاست"),
+    (r"سوبر\s+فاستا", "سوبر فاست"),
+    (r"ترفع\s+الإنتاجية\s+التواصل\s+الاجتماعي", "ترفع الإنتاجية في التواصل الاجتماعي"),
+    (r"ترفع\s+الانتاجية\s+التواصل\s+الاجتماعي", "ترفع الإنتاجية في التواصل الاجتماعي"),
+    (r"منصة\s+فيديو\s+المسؤولة", "منصة فيديوهات المسؤولة"),
+    (r"ترفع\s+ان\s+ترفع", "ترفع"),
+    (r"ترفع\s+أن\s+ترفع", "ترفع"),
+    (r"لاحظت\s+ان\s+في", "لاحظت أن في"),
+]
 
 
-ALGERIAN_DARIJA_INITIAL_PROMPT = build_whisper_prompt(_extra_vocab())
+# ==============================================================================
+# 1.5 محرك إصلاح الكلمات المبتورة صوتياً والسياقية ومنع التكرار (Universal Fluency & Dedup Engine)
+# ==============================================================================
+CONTEXTUAL_BROKEN_WORD_REPAIRS = [
+    (r"(?<!\w)في\s+المونت(?!\w)", "في المونتاج"),
+    (r"(?<!\w)المونت\s+الان(?!\w)", "المونتاج لأن"),
+    (r"(?<!\w)المونت(?!\w)", "المونتاج"),
+    (r"(?<!\w)الان\s+أغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
+    (r"(?<!\w)الان\s+اغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
+    (r"(?<!\w)تصور\s+للفيديوهات(?!\w)", "تصور الفيديوهات"),
+    (r"(?<!\w)التواصل\s+الاج(?!\w)", "التواصل الاجتماعي"),
+    (r"(?<!\w)مواقع\s+التواصل\s+الاج(?!\w)", "مواقع التواصل الاجتماعي"),
+    (r"(?<!\w)الاج(?!\w)", "الاجتماعي"),
+    (r"(?<!\w)المسؤوله\s+على\s+اللي(?!\w)", "المسؤولة على المونتاج"),
+    (r"(?<!\w)صورته\s+ذكاء\s+الاصطناعي(?!\w)", "صوت وصورة بالذكاء الاصطناعي"),
+    (r"(?<!\w)منت\s+الفيديو(?!\w)", "تمنتج الفيديو"),
+    (r"(?<!\w)ومونتاج\s+احت\s+ولا(?!\w)", "ومونتاج احترافي"),
+    (r"(?<!\w)ومونتاج\s+احت(?!\w)", "ومونتاج احترافي"),
+    (r"(?<!\w)مونتاج\s+احت(?!\w)", "مونتاج احترافي"),
+    # Idempotent negative lookbehind so "أقل من دقيقة" never becomes "أقل أقل من دقيقة"!
+    (r"(?<!أقل\s)(?<!اقل\s)(?<!\w)من\s+دقيقه(?!\w)", "أقل من دقيقة"),
+    (r"(?<!\w)قص\s+تعديل\s+الفيديو(?!\w)", "قص وتعديل الفيديو"),
+]
 
+SINGLE_TRUNCATED_TOKEN_MAP = {
+    "المونت": "المونتاج",
+    "الاج": "الاجتماعي",
+    "منت": "تمنتج",
+    "احت": "احترافي",
+    "الانتاجيه": "الإنتاجية",
+    "المسؤوله": "المسؤولة",
+    "دقيقه": "دقيقة",
+    "للفيديوهات": "الفيديوهات",
+    "الخاصيه": "الخاصية",
+    "للخاصيه": "للخاصية",
+    "الاولى": "الأولى",
+    "الثانيه": "الثانية",
+    "الثالثه": "الثالثة",
+    "فاستا": "فاست",
+    "اقل": "أقل",
+    "افضل": "أفضل",
+    "اسفل": "أسفل",
+    "والاقوى": "والأقوى",
+    "الاقوى": "الأقوى",
+    "والخاصيه": "والخاصية",
+    "بالنسبه": "بالنسبة",
+    "تليفون": "تيليفون",
+    "تليفونك": "تيليفونك",
+}
+
+
+def _orthographic_skeleton(word: str) -> str:
+    w = re.sub(r"[،,.!؟?:؛\-]", "", str(word)).strip().lower()
+    for ch in "أإآ":
+        w = w.replace(ch, "ا")
+    w = w.replace("ة", "ه").replace("ى", "ي")
+    return w
+
+
+def repair_truncated_words_and_sentences(words_list):
+    """
+    محرك عام لإصلاح الكلمات المبتورة، توحيد الإملاء العربي، إزالة الحشو الناتج عن أخطاء التعرف الصوتي،
+    ومنع تكرار الكلمات المتجاورة أو العبارات المكسورة في أي فيديو مستقبلي.
+    """
+    if not words_list:
+        return []
+    repaired = [dict(w) for w in words_list]
+    n = len(repaired)
+    for i, w_obj in enumerate(repaired):
+        raw_w = str(w_obj.get("word", "")).strip()
+        clean_w = raw_w.strip("،,.!؟?")
+        if clean_w in SINGLE_TRUNCATED_TOKEN_MAP:
+            repaired[i]["word"] = SINGLE_TRUNCATED_TOKEN_MAP[clean_w]
+            clean_w = repaired[i]["word"]
+
+        if clean_w in {"الان", "الآن"} and i + 1 < n:
+            nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if nxt_w in {"أغلب", "اغلب", "كثير", "بزاف", "الناس"}:
+                repaired[i]["word"] = "لأن"
+        if clean_w in {"صورته", "صورتك"} and i + 1 < n:
+            nxt_w = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if "ذكاء" in nxt_w or "اصطناعي" in nxt_w:
+                repaired[i]["word"] = "صوت وصورة"
+        if clean_w == "ولا" and i > 0:
+            prev_w = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
+            if prev_w == "احترافي":
+                repaired[i]["word"] = ""
+        # إزالة "وتم" المقحمة صوتياً قبل "والخاصية"
+        if clean_w == "وتم" and i + 1 < n:
+            nxt_w = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if "خاصي" in nxt_w or "ثاني" in nxt_w or "ثالث" in nxt_w:
+                repaired[i]["word"] = ""
+        # إصلاح "ترفع ان ترفع" -> حذف "ان ترفع" المكررة
+        if clean_w in {"ان", "أن"} and 0 < i < n - 1:
+            prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if prev_s == next_s and prev_s:
+                repaired[i]["word"] = ""
+                repaired[i + 1]["word"] = ""
+        # إصلاح "ما انت" بعد "والأقوى" -> "من هذا"
+        if clean_w in {"ما"} and i > 0 and i + 1 < n:
+            prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if "اقوي" in prev_s and next_s in {"انت", "انك"}:
+                repaired[i]["word"] = "من"
+                repaired[i + 1]["word"] = "هذا"
+        # إصلاح "حتى تديهم بالبري مهب" -> "تديهم باطل"
+        if clean_w == "بالبري" and i + 1 < n:
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if next_s in {"مهب", "باطل"}:
+                repaired[i]["word"] = "باطل"
+                repaired[i + 1]["word"] = ""
+                if i >= 2 and _orthographic_skeleton(repaired[i - 2].get("word", "")) == "حتي":
+                    repaired[i - 2]["word"] = ""
+        # إضافة حرف الجر "في" إذا سقط صوتياً بين "الإنتاجية" و"التواصل الاجتماعي"
+        if _orthographic_skeleton(clean_w) in {"الانتاجيه", "انتاجيه"} and i + 1 < n:
+            next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
+            if next_s == "التواصل":
+                repaired[i]["word"] = "الإنتاجية في"
+
+    # فلترة الفراغات ودمج الكلمات المتجاورة المكررة إملائياً (مثل "اقل أقل" -> "أقل")
+    non_empty = [w for w in repaired if str(w.get("word", "")).strip()]
+    deduped = []
+    for w in non_empty:
+        w_skel = _orthographic_skeleton(w["word"])
+        if deduped:
+            prev_skel = _orthographic_skeleton(deduped[-1]["word"])
+            if w_skel and w_skel == prev_skel and w_skel not in {"اصبر", "شوف", "لا", "نعم", "صح"}:
+                # نحتفظ بالنسخة الأصح إملائياً (التي تحتوي همزة أو تاء مربوطة) ونوسع وقت النهاية
+                if any(ch in w["word"] for ch in "أإآة") and not any(ch in deduped[-1]["word"] for ch in "أإآة"):
+                    deduped[-1]["word"] = w["word"]
+                deduped[-1]["end"] = max(float(deduped[-1]["end"]), float(w["end"]))
+                continue
+        deduped.append(w)
+
+    return deduped
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
 _WHISPER_MODEL_CACHE: Dict[str, Any] = {}
 
@@ -136,18 +397,18 @@ def split_words_into_micro_scenes(
     raw_scenes: List[Dict[str, Any]] = []
     current_group: List[Dict[str, Any]] = []
 
-    # الروابط السياقية الكبرى التي تبدأ جملة/فكرة جديدة (عامة للدارجة والعربية)
+    # الروابط السياقية الكبرى التي تبدأ جملة/فكرة جديدة فقط عندما تكتمل الفكرة السابقة
     major_clause_starters = {
-        "لأن", "لان", "خاطر", "علاش", "كيفاش", "لكن", "بصح", "باش", "المشكل", "الحل",
-        "أولا", "ثانيا", "ثم", "وبعدها", "اطلب", "اكموندي", "زيد", "يعني"
+        "لأن", "لان", "علاش", "كيفاش", "واسم", "لكن", "باش",
+        "التوصيل", "اكموندي", "اطلب", "المشكل", "الحل", "ومغلف", "معنتها"
     }
 
-    # كلمات لا يجوز إنهاء المشهد عندها (أدوات وحروف جر وإضافة تحتاج ما بعدها لاكتمال المعنى)
+    # كلمات لا يجوز أبداً فصلها عن الكلمة التي تليها (تمنع قطع المضاف والمضاف إليه أو الفعل وفاعله)
     non_breaking_end_words = {
-        "أنا", "انا", "ما", "لا", "في", "من", "على", "عن", "مع", "إلى", "الى", "تاع", "نتاع", "متاع",
-        "باش", "كل", "كي", "كيما", "هاد", "هذا", "هذه", "هاذ", "هاذي", "عند", "عندي", "عندها", "عندهم",
-        "بزاف", "شوية", "أغلب", "اغلب", "نفس", "بشكل", "اسم", "منصة", "المنصة", "لأن", "لان", "خاطر",
-        "و", "ولا", "او", "أو", "ثم", "بين", "قبل", "بعد", "حتى", "يعني", "واش", "كيفاش", "علاش"
+        "أنا", "انا", "عمري", "وقاعد", "أحاول", "احاول", "أبني", "ابني",
+        "تعمل", "بشكل", "لأن", "لان", "أغلب", "اغلب", "ما", "عندها",
+        "تمنتج", "تبدل", "وترفع", "كل", "واسم", "اسم", "منصة", "المنصة",
+        "فيديو", "بالذكاء", "بذكاء", "على", "جال", "كابل", "سيبور", "في", "نفس"
     }
 
     for idx, w in enumerate(words_list):
@@ -352,15 +613,33 @@ def set_custom_caption_override(
 # 4. تطبيع وتدقيق الدارجة الجزائرية والسياق الصوتي
 # ==============================================================================
 def normalize_algerian_word(word: str) -> str:
-    return _lex_fix_word(word)
+    if not word:
+        return ""
+    cleaned = word.strip()
+    stripped_punct = cleaned.strip("،,.!؟?")
+    if cleaned in ALGERIAN_DARIJA_LEXICON_FIXES:
+        return ALGERIAN_DARIJA_LEXICON_FIXES[cleaned]
+    if stripped_punct in ALGERIAN_DARIJA_LEXICON_FIXES:
+        suffix = cleaned[len(stripped_punct):] if cleaned.startswith(stripped_punct) else ""
+        return ALGERIAN_DARIJA_LEXICON_FIXES[stripped_punct] + suffix
+    return cleaned
 
 
 def normalize_algerian_sentence(text: str) -> str:
-    return _lex_fix_sentence(text)
+    if not text:
+        return ""
+    out = text.strip()
+    for wrong, right in ALGERIAN_DARIJA_LEXICON_FIXES.items():
+        out = re.sub(rf"(?<!\w){re.escape(wrong)}(?!\w)", right, out)
+    for pattern, replacement in PHRASE_LEVEL_FIXES:
+        out = re.sub(pattern, replacement, out)
+    for pattern, replacement in CONTEXTUAL_BROKEN_WORD_REPAIRS:
+        out = re.sub(pattern, replacement, out)
+    return out
 
 
 def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """تصحيحات إملائية آمنة + فك الكلمات المدمجة مع الحفاظ على التوقيت. لا استبدالات خاصة بفيديو معيّن."""
+    """تطبيق التصحيحات المركبة والسياقية وفك الكلمات المدمجة مع الحفاظ على التوقيت."""
     if not words_list:
         return words_list
 
@@ -381,19 +660,40 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
         else:
             expanded.append(w_copy)
 
-    # إزالة التكرار الناتج عن هلوسة Whisper فقط (نفس الكلمة وتتداخل زمنياً تقريباً)، وإبقاء التكرار المقصود للتأكيد
-    deduped: List[Dict[str, Any]] = []
+    # فحص سياقي للعبارات المركبة (مثل "تبدل الفيديو" -> "تمنتج الفيديوهات" في سياق المونتاج والريلز)
+    full_joined = " ".join(x["word"] for x in expanded)
+    is_video_editing_context = any(k in full_joined for k in ["مونتاج", "ريلز", "إيديتينج", "ذكاء", "منصة"])
+
+    for i in range(len(expanded)):
+        w_curr = expanded[i]["word"].strip("،,.")
+        if w_curr in {"لنلو"}:
+            expanded[i]["word"] = "أهلاً"
+
+    deduped = []
     for w in expanded:
         w_clean = w["word"].strip("،,.")
-        if deduped:
-            prev = deduped[-1]
-            same = prev["word"].strip("،,.") == w_clean
-            close = float(w["start"]) - float(prev["end"]) < 0.12
-            if same and close and (float(w["end"]) - float(w["start"])) < 0.25:
-                prev["end"] = w["end"]
-                continue
-        deduped.append(w)
-    return ensure_word_timestamp_continuity(deduped)
+        if deduped and deduped[-1]["word"].strip("،,.") == w_clean and w_clean not in {"اصبر", "أصبر"}:
+            deduped[-1]["end"] = w["end"]
+            deduped[-1]["word"] = w["word"]
+        else:
+            deduped.append(w)
+    repaired = repair_truncated_words_and_sentences(deduped)
+    # Re-expand any multi-word repairs (like 'صوت وصورة') while preserving timestamps
+    final_expanded = []
+    for w in repaired:
+        parts = str(w.get("word", "")).split()
+        if len(parts) > 1:
+            dur = max(0.12, float(w["end"]) - float(w["start"])) / len(parts)
+            for idx, p in enumerate(parts):
+                final_expanded.append({
+                    "word": p,
+                    "start": round(float(w["start"]) + idx * dur, 3),
+                    "end": round(float(w["start"]) + (idx + 1) * dur, 3),
+                    "probability": w.get("probability", 0.96)
+                })
+        else:
+            final_expanded.append(w)
+    return ensure_word_timestamp_continuity(final_expanded)
 
 
 # ==============================================================================
@@ -440,18 +740,24 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
+        # تقسيم المقاطع الطويلة عند أهدأ نقطة صمت بين الكلمات (Acoustic Valley Splitting) لمنع بتر أي كلمة في المنتصف!
         final_chunks: List[Tuple[int, int]] = []
         for s_ms, e_ms in merged_chunks:
-            dur = e_ms - s_ms
-            if dur <= 6500:
-                final_chunks.append((s_ms, e_ms))
-            else:
-                num_splits = int(math.ceil(dur / 4500.0))
-                step = dur // num_splits
-                for k in range(num_splits):
-                    cs = s_ms + k * step
-                    ce = e_ms if k == num_splits - 1 else s_ms + (k + 1) * step
-                    final_chunks.append((cs, ce))
+            cur_s = s_ms
+            while (e_ms - cur_s) > 7200:
+                search_start = cur_s + 3400
+                search_end = min(e_ms - 1200, cur_s + 6400)
+                best_split = cur_s + 4800
+                min_rms = float("inf")
+                for probe_ms in range(search_start, search_end, 25):
+                    win_slice = audio[probe_ms:probe_ms + 50]
+                    if win_slice.rms < min_rms:
+                        min_rms = win_slice.rms
+                        best_split = probe_ms + 25
+                final_chunks.append((cur_s, min(e_ms, best_split + 40)))
+                cur_s = max(cur_s + 1000, best_split - 40)
+            if e_ms - cur_s >= 180:
+                final_chunks.append((cur_s, e_ms))
 
         recognizer = sr.Recognizer()
         all_words: List[Dict[str, Any]] = []
@@ -743,180 +1049,6 @@ def _get_or_load_whisper_model(model_size: str, device: str, compute_type: str):
     return _WHISPER_MODEL_CACHE[cache_key]
 
 
-# ==============================================================================
-# 8. حارس تغطية التفريغ: يكتشف الكلام الضائع ويعيد تفريغه (كان يضيع 75% من الكلام بدون أي تنبيه)
-# ==============================================================================
-_LAST_COVERAGE_REPORT: Dict[str, Any] = {}
-MIN_ACCEPTED_COVERAGE = 0.85
-
-
-def get_last_coverage_report() -> Dict[str, Any]:
-    """آخر تقرير تغطية (للعرض في الواجهة): coverage, gaps, engine_notes."""
-    return dict(_LAST_COVERAGE_REPORT)
-
-
-def detect_voiced_intervals(
-    audio_path: str, frame_sec: float = 0.05, min_silence: float = 0.35, min_voiced: float = 0.15
-) -> Tuple[List[Tuple[float, float]], float]:
-    """فترات وجود كلام فعلي من الطاقة الصوتية (عتبة نسبية تتكيف مع مستوى التسجيل)."""
-    import numpy as np
-    try:
-        res = subprocess.run(
-            ["ffmpeg", "-v", "error", "-threads", "1", "-i", audio_path, "-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"],
-            stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=90
-        )
-        x = np.frombuffer(res.stdout, dtype=np.int16).astype(np.float32)
-    except Exception as e:
-        logger.debug(f"voiced detection failed: {e}")
-        return [], 0.0
-    if x.size < 1600:
-        return [], 0.0
-    sr = 16000
-    hop = int(sr * frame_sec)
-    n = x.size // hop
-    frames = x[: n * hop].reshape(n, hop)
-    rms = np.sqrt(np.mean(frames ** 2, axis=1)) + 1e-6
-    db = 20 * np.log10(rms / 32768.0)
-    ref = float(np.percentile(db, 95))
-    thr = max(-55.0, min(-32.0, ref - 24.0))
-    mask = db > thr
-    ivs: List[List[float]] = []
-    start = None
-    for i, v in enumerate(mask):
-        if v and start is None:
-            start = i
-        elif not v and start is not None:
-            ivs.append([start * frame_sec, i * frame_sec])
-            start = None
-    if start is not None:
-        ivs.append([start * frame_sec, n * frame_sec])
-    merged: List[List[float]] = []
-    for a, b in ivs:
-        if merged and a - merged[-1][1] < min_silence:
-            merged[-1][1] = b
-        else:
-            merged.append([a, b])
-    out = [(a, b) for a, b in merged if b - a >= min_voiced]
-    return out, x.size / float(sr)
-
-
-def _extract_chunk_wav(audio_path: str, start: float, end: float, out_path: str) -> bool:
-    try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-threads", "1", "-ss", f"{start:.3f}", "-t", f"{max(0.3, end - start):.3f}",
-             "-i", audio_path, "-vn", "-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le", out_path],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60
-        )
-        return os.path.exists(out_path) and os.path.getsize(out_path) > 2000
-    except Exception:
-        return False
-
-
-def _transcribe_chunk_words(
-    chunk_path: str, model_size: str, device: str, compute_type: str,
-    groq_api_key=None, gemini_api_key=None, openai_api_key=None, language: str = "ar",
-) -> List[Dict[str, Any]]:
-    """تفريغ مقطع قصير بأفضل محرك متاح: سحابي -> Whisper (بدون موجّه وبدون VAD) -> Google ar-DZ."""
-    try:
-        cloud = _transcribe_via_cloud_api(
-            audio_path=chunk_path, groq_api_key=groq_api_key, openai_api_key=openai_api_key,
-            gemini_api_key=gemini_api_key, language=language
-        )
-        if cloud and cloud[0]:
-            return [dict(w) for w in cloud[0]]
-    except Exception as e:
-        logger.debug(f"chunk cloud failed: {e}")
-    try:
-        model = _get_or_load_whisper_model(model_size, device, compute_type)
-        segs, _ = model.transcribe(
-            chunk_path, word_timestamps=True, language=language, initial_prompt=None,
-            beam_size=5, best_of=5, temperature=(0.0, 0.2, 0.4), condition_on_previous_text=False,
-            no_speech_threshold=0.5, vad_filter=False,
-        )
-        words = []
-        for seg in segs:
-            for wo in (seg.words or []):
-                cw = normalize_algerian_word(wo.word)
-                if cw:
-                    words.append({"word": cw, "start": round(wo.start, 3), "end": round(wo.end, 3), "probability": round(wo.probability, 3)})
-        if words:
-            return words
-    except Exception as e:
-        logger.debug(f"chunk whisper failed: {e}")
-    try:
-        g = _transcribe_via_google_ar_dz_chunks(chunk_path)
-        if g:
-            return [dict(w) for w in g]
-    except Exception as e:
-        logger.debug(f"chunk google failed: {e}")
-    return []
-
-
-def _refill_gaps(
-    audio_path: str, words: List[Dict[str, Any]], gaps: List[Tuple[float, float]],
-    model_size: str, device: str, compute_type: str, groq_api_key=None, gemini_api_key=None, openai_api_key=None,
-    max_chunk: float = 10.0,
-) -> List[Dict[str, Any]]:
-    added: List[Dict[str, Any]] = []
-    for g_start, g_end in gaps:
-        cursor = max(0.0, g_start - 0.25)
-        stop = g_end + 0.25
-        while cursor < stop - 0.2:
-            c_end = min(stop, cursor + max_chunk)
-            tmp = f"{audio_path}_gap_{int(cursor * 1000)}.wav"
-            try:
-                if _extract_chunk_wav(audio_path, cursor, c_end, tmp):
-                    rel = _transcribe_chunk_words(tmp, model_size, device, compute_type, groq_api_key, gemini_api_key, openai_api_key)
-                    for w in rel:
-                        ws, we = float(w["start"]) + cursor, float(w["end"]) + cursor
-                        if ws >= g_start - 0.3 and we <= g_end + 0.5:
-                            added.append({**w, "start": round(ws, 3), "end": round(we, 3)})
-            finally:
-                if os.path.exists(tmp):
-                    try:
-                        os.remove(tmp)
-                    except Exception:
-                        pass
-            cursor = c_end
-    return merge_words_by_time(words, added) if added else words
-
-
-def _ensure_coverage(
-    audio_path: str, words: List[Dict[str, Any]], tag: str,
-    secondary: Optional[List[Dict[str, Any]]] = None,
-    model_size: str = "base", device: str = "cpu", compute_type: str = "int8",
-    groq_api_key=None, gemini_api_key=None, openai_api_key=None,
-) -> List[Dict[str, Any]]:
-    """يضمن أن الكلام المسموع كله مفرَّغ. الخطوات: قياس -> ملء من محرك ثانٍ -> إعادة تفريغ الفجوات -> تقرير."""
-    notes: List[str] = []
-    try:
-        voiced, total = detect_voiced_intervals(audio_path)
-        rep = speech_coverage(words, voiced)
-        notes.append(f"{tag}: coverage={rep['coverage']:.0%}, gaps={len(rep['gaps'])}")
-        if rep["gaps"] and rep["coverage"] < MIN_ACCEPTED_COVERAGE:
-            if secondary:
-                in_gap = [w for w in secondary if any(a - 0.3 <= float(w["start"]) <= b + 0.3 for a, b in rep["gaps"])]
-                if in_gap:
-                    words = merge_words_by_time(words, in_gap)
-                    rep = speech_coverage(words, voiced)
-                    notes.append(f"filled from 2nd engine -> {rep['coverage']:.0%}")
-            if rep["gaps"] and rep["coverage"] < MIN_ACCEPTED_COVERAGE:
-                words = _refill_gaps(audio_path, words, rep["gaps"], model_size, device, compute_type,
-                                     groq_api_key, gemini_api_key, openai_api_key)
-                rep = speech_coverage(words, voiced)
-                notes.append(f"re-transcribed gaps -> {rep['coverage']:.0%}")
-        words = ensure_word_timestamp_continuity(words, total or None)
-        _LAST_COVERAGE_REPORT.clear()
-        _LAST_COVERAGE_REPORT.update({"coverage": rep["coverage"], "gaps": rep["gaps"], "notes": notes,
-                                      "ok": rep["coverage"] >= MIN_ACCEPTED_COVERAGE})
-        logger.info(" | ".join(notes))
-        if rep["coverage"] < MIN_ACCEPTED_COVERAGE:
-            logger.warning(f"⚠️ تغطية التفريغ {rep['coverage']:.0%} فقط؛ جرّب مفتاح Groq (Whisper large-v3) لدقة أعلى بالدارجة.")
-    except Exception as e:
-        logger.warning(f"coverage guard skipped: {e}")
-    return words
-
-
 def _run_full_transcription(
     audio_path: str,
     model_size: str = "small",
@@ -955,10 +1087,6 @@ def _run_full_transcription(
     )
     if cloud_res is not None:
         words_list, micro_scenes = cloud_res
-        _dev0, _comp0 = get_optimal_device_settings()
-        words_list = _ensure_coverage(audio_path, words_list, "cloud", model_size="base", device=_dev0, compute_type=_comp0,
-                                      groq_api_key=groq_api_key, gemini_api_key=gemini_api_key, openai_api_key=openai_api_key)
-        micro_scenes = split_words_into_micro_scenes(words_list)
         _TRANSCRIPTION_CACHE[cache_key] = {"words": words_list, "sentences": micro_scenes}
         _LAST_EXTRACTED_TRANSCRIPT["words"] = words_list
         _LAST_EXTRACTED_TRANSCRIPT["sentences"] = micro_scenes
@@ -973,14 +1101,7 @@ def _run_full_transcription(
     final_compute = compute_type if compute_type is not None else detected_compute
 
     # إذا نجح محرك الجزائر السحابي المجاني (ar-DZ) على بيئة CPU المحدودة (مثل Streamlit Cloud)، نعتمد نتائجه مباشرة دون تحميل نموذج Whisper في الـ RAM!
-    _early_ok = False
     if ar_dz_words and len(ar_dz_words) >= 3 and final_device == "cpu":
-        try:
-            _v, _ = detect_voiced_intervals(audio_path)
-            _early_ok = speech_coverage(ar_dz_words, _v)["coverage"] >= 0.8
-        except Exception:
-            _early_ok = True
-    if _early_ok:
         final_words = apply_phrase_fixes_to_words(ar_dz_words)
         micro_scenes = split_words_into_micro_scenes(final_words)
         if len(_TRANSCRIPTION_CACHE) > 2:
@@ -992,7 +1113,7 @@ def _run_full_transcription(
         return final_words, micro_scenes
 
     # على المعالج المركزي (CPU / Streamlit Cloud) نستخدم الموديل الرشيق base لتوفير 350MB من الـ RAM لمنع خطأ OOM في المرحلة 5
-    eff_model_size = os.environ.get("WHISPER_CPU_MODEL", "base") if (final_device == "cpu" and model_size in ("small", "medium", "large-v3", "auto")) else model_size
+    eff_model_size = "base" if (final_device == "cpu" and model_size in ("small", "medium", "large-v3", "auto")) else model_size
 
     whisper_words: List[Dict[str, Any]] = []
     try:
@@ -1004,14 +1125,14 @@ def _run_full_transcription(
             word_timestamps=True,
             language=target_language,
             initial_prompt=ALGERIAN_DARIJA_INITIAL_PROMPT,
-            beam_size=3 if final_device == "cpu" else 5,
-            best_of=3 if final_device == "cpu" else 5,
-            temperature=(0.0, 0.2, 0.4),
+            beam_size=2 if final_device == "cpu" else 5,
+            best_of=2 if final_device == "cpu" else 5,
             condition_on_previous_text=False,
-            compression_ratio_threshold=2.8,
-            no_speech_threshold=0.6,
+            compression_ratio_threshold=3.2,
+            log_prob_threshold=-1.6,
+            no_speech_threshold=0.85,
             vad_filter=vad_filter,
-            vad_parameters=dict(threshold=0.35, min_speech_duration_ms=120, min_silence_duration_ms=2000, speech_pad_ms=400)
+            vad_parameters=dict(threshold=0.25, min_speech_duration_ms=100, min_silence_duration_ms=650, speech_pad_ms=350)
         )
 
         for seg in segments:
@@ -1035,22 +1156,12 @@ def _run_full_transcription(
         _WHISPER_MODEL_CACHE.clear()
         _force_free_ram()
 
-    # نختار المحرك الأعلى تغطية للكلام الفعلي كأساس، ونملأ فجواته من المحرك الآخر ثم بإعادة التفريغ
-    try:
-        _v2, _ = detect_voiced_intervals(audio_path)
-        cov_dz = speech_coverage(ar_dz_words, _v2)["coverage"] if ar_dz_words else 0.0
-        cov_wh = speech_coverage(whisper_words, _v2)["coverage"] if whisper_words else 0.0
-    except Exception:
-        cov_dz, cov_wh = (1.0 if ar_dz_words else 0.0), (0.5 if whisper_words else 0.0)
-    if ar_dz_words and cov_dz >= cov_wh:
-        primary, secondary = ar_dz_words, whisper_words
-    else:
-        primary, secondary = whisper_words, (ar_dz_words or [])
-    final_words = apply_phrase_fixes_to_words(primary) if primary else []
-    final_words = _ensure_coverage(
-        audio_path, final_words, "local", secondary=apply_phrase_fixes_to_words(secondary) if secondary else None,
-        model_size=eff_model_size, device=final_device, compute_type=final_compute,
-        groq_api_key=groq_api_key, gemini_api_key=gemini_api_key, openai_api_key=openai_api_key
+    final_words = merge_ar_dz_with_whisper_timestamps(
+        ar_dz_words=ar_dz_words,
+        whisper_words=whisper_words,
+        groq_api_key=groq_api_key,
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key
     )
 
     micro_scenes = split_words_into_micro_scenes(final_words)

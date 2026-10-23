@@ -339,27 +339,34 @@ def _execute_master_director_pipeline(
         update_progress(0.42, f"3/5: تحضير {broll_scenes_count} مشاهد B-Roll حقيقية خالية من حقوق الملكية...")
 
         for sc in master_plan:
-            if sc.get("layout_mode") == "stock_broll" and enable_stock_broll and callable(get_stock_broll_clip):
-                try:
-                    cat = sc.get("stock_category", "video_editor")
-                    dur = max(0.5, float(sc.get("end", 2.5)) - float(sc.get("start", 0.0)))
-                    raw_broll = get_stock_broll_clip(
-                        category=cat,
-                        target_duration=dur,
-                        cache_dir=stock_dir,
-                        width=video_w,
-                        height=video_h,
-                        pexels_api_key=pexels_api_key
-                    )
-                    if raw_broll and os.path.exists(raw_broll):
-                        sc["broll_file_path"] = raw_broll
-                except Exception as b_err:
-                    logger.warning(f"تعذر تحميل مشهد B-Roll: {b_err}")
+            if sc.get("layout_mode") == "stock_broll":
+                if enable_stock_broll and callable(get_stock_broll_clip):
+                    try:
+                        cat = sc.get("stock_category", "video_editor")
+                        dur = max(0.5, float(sc.get("end", 2.5)) - float(sc.get("start", 0.0)))
+                        raw_broll = get_stock_broll_clip(
+                            category=cat,
+                            target_duration=dur,
+                            cache_dir=stock_dir,
+                            width=video_w,
+                            height=video_h,
+                            pexels_api_key=pexels_api_key
+                        )
+                        if raw_broll and os.path.exists(raw_broll) and not os.path.basename(raw_broll).startswith("proc_"):
+                            sc["broll_file_path"] = raw_broll
+                        else:
+                            # ترقية تلقائية إلى المسرح المقسوم التفاعلي بدلاً من تغطية الفيديو بدوائر افتراضية
+                            sc["layout_mode"] = "split_screen_stage"
+                    except Exception as b_err:
+                        logger.warning(f"تعذر تحميل مشهد B-Roll: {b_err}")
+                        sc["layout_mode"] = "split_screen_stage"
+                else:
+                    sc["layout_mode"] = "split_screen_stage"
 
         bg_cache: Dict[str, np.ndarray] = {}
         force_free_ram()
 
-        fps = 24
+        fps = 30
         frame_bytes_len = video_w * video_h * 3
         total_frames = max(1, int(round(video_duration * fps)))
 
@@ -380,7 +387,7 @@ def _execute_master_director_pipeline(
             "-map", "0:v:0", "-map", "1:a:0?",
             "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
             "-x264-params", "rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0",
-            "-crf", "24", "-pix_fmt", "yuv420p", "-threads", "1",
+            "-crf", "21", "-pix_fmt", "yuv420p", "-threads", "1",
             "-c:a", "aac", "-b:a", "96k", "-ac", "1", "-ar", "16000",
             "-movflags", "+faststart", "-shortest",
             output_path

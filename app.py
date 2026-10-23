@@ -229,6 +229,11 @@ class PersistentBackgroundJobManager:
 
 
 for _m in [
+    "physics_easing",
+    "style_evolution_brain",
+    "vector_lottie_engine",
+    "darija_lexicon",
+    "context_engine",
     "auto_cut",
     "transcriber",
     "stock_video_finder",
@@ -344,7 +349,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك السياقي</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">مخ تحليل سياقي يفهم معنى الجمل • معالجة مستمرة في الخلفية لا تتوقف عند الخروج من كروم • حماية قصوى للذاكرة (Zero-OOM)</div>',
+    '<div class="sub-title">محرك ون تيك موشن المتصل بلقطة كاميرا واحدة (One-Take Motion • onetakemotion.com) • تدخل الكاميرا في جدول الفيديو وتخرج منه بسلاسة 30fps • يعمل في الخلفية</div>',
     unsafe_allow_html=True
 )
 st.markdown(
@@ -471,6 +476,72 @@ with st.sidebar:
     manim_flag = manim_quality_choice.split()[0]
 
     st.markdown("---")
+    st.subheader("🧬 التعلم الذاتي والفيديو المرجعي (Style Cloner & Auto-Evolution)")
+    try:
+        from style_evolution_brain import (
+            extract_reference_video_dna,
+            get_evolution_status_summary,
+            activate_cloned_reference_style
+        )
+        from manim_generator import load_manim_library
+        evo_summary = get_evolution_status_summary()
+        manim_lib = load_manim_library()
+        manim_patterns_cnt = len(manim_lib.get("entries", []))
+        total_patterns_cnt = int(evo_summary.get("learned_scene_types_count", 1)) + manim_patterns_cnt
+        avg_q_score = float(evo_summary.get("average_quality_score", 0.91))
+
+        st.caption("📊 **مستوى تطور الذاكرة البصرية الذاتية:**")
+        ev_c1, ev_c2 = st.columns(2)
+        ev_c1.metric("الأنماط المتعلمة", f"{total_patterns_cnt} نمط")
+        ev_c2.metric("تقييم الناقد الذاتي", f"{int(round(avg_q_score * 100))}%")
+        st.progress(min(1.0, max(0.1, avg_q_score)))
+
+        cloned_styles = evo_summary.get("cloned_styles_list", [])
+        active_ref = evo_summary.get("active_reference_dna")
+        active_ref_id = active_ref.get("style_id") if isinstance(active_ref, dict) else "none"
+
+        style_choices = ["تلقائي (ثيمات الأستوديو المتطورة ذاتياً)"] + [f"🎬 ستايل مستنسخ: {sid}" for sid in cloned_styles]
+        default_idx = 0
+        for idx_s, sid in enumerate(cloned_styles):
+            if sid == active_ref_id:
+                default_idx = idx_s + 1
+                break
+
+        chosen_ref_label = st.selectbox("اختر البصمة البصرية النشطة:", options=style_choices, index=default_idx)
+        if chosen_ref_label.startswith("🎬 ستايل مستنسخ: "):
+            target_sid = chosen_ref_label.replace("🎬 ستايل مستنسخ: ", "").strip()
+            if target_sid != active_ref_id:
+                activate_cloned_reference_style(target_sid)
+        else:
+            if active_ref_id != "none":
+                activate_cloned_reference_style("none")
+
+        with st.expander("📹 استنساخ فيديو مرجعي جديد (Reference Video DNA Cloner)", expanded=False):
+            st.caption("ارفع أي فيديو مرجعي يعجبك ليستنسخ النظام إيقاع حركته (Optical Flow)، فيزياء النوابض، وبصمته اللونية (K-Means Palette):")
+            ref_uploaded = st.file_uploader(
+                "اختر فيديو مرجعي للاستنساخ (MP4, MOV, MKV)",
+                type=["mp4", "mov", "mkv", "webm"],
+                key="ref_dna_uploader"
+            )
+            if ref_uploaded is not None:
+                if st.button("🧬 استخراج واستنساخ بصمة الفيديو المرجعي الآن", use_container_width=True):
+                    ref_hash = hashlib.md5(f"{ref_uploaded.name}_{getattr(ref_uploaded, 'size', 0)}".encode()).hexdigest()[:8]
+                    ref_save_path = os.path.join(INPUTS_DIR, f"ref_video_{ref_hash}.mp4")
+                    ref_uploaded.seek(0)
+                    with open(ref_save_path, "wb") as rf:
+                        shutil.copyfileobj(ref_uploaded, rf, length=524288)
+                    force_free_ram()
+                    with st.spinner("🔬 جاري تحليل التدفق البصري والبصمة اللونية للفيديو المرجعي..."):
+                        dna = extract_reference_video_dna(ref_save_path, style_alias=f"ref_{ref_hash}")
+                    st.success(
+                        f"✅ تم استنساخ البصمة `{dna['style_id']}`! "
+                        f"(متوسط اللقطة: `{dna['avg_shot_duration_sec']}s` | صلابة النابض: `{dna['spring_stiffness']}`)"
+                    )
+                    st.rerun()
+    except Exception as evo_ui_err:
+        logger.debug(f"Evolution UI notice: {evo_ui_err}")
+
+    st.markdown("---")
     st.subheader("💬 تحكم الكابشن وشارات الفيديو")
     cap_choice = st.selectbox(
         "شكل وموضع الكابشن في الفيديو:",
@@ -496,7 +567,7 @@ STYLE_OPTIONS = [
     "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
     "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
-    "🚀 موشن جرافيك نصي وأنفوجرافيك احترافي (Studio Kinetic Typography)",
+    "🚀 موشن جرافيك ون تيك متصل بلقطة واحدة (One-Take Studio Motion • onetakemotion.com)",
     "📐 موشن جرافيك هندسي ذكي (Manim + AI Infographics)",
     "🔍 مونتاج ديناميكي (Auto-Zoom + Jump-cuts + TikTok Captions)",
     "✂️ قص الصمت الطبيعي وتنظيف الصوت فقط (Natural Jump-cuts)"
@@ -837,7 +908,7 @@ with col2:
     elif selected_style == STYLE_OPTIONS[2]:
         st.info("🎨 **دمج الموشن جرافيك وB-Roll بالفيديو الأصلي:** بطاقات زجاجية علوية ومشاهد B-Roll واقعية وكابشن بالثلث السفلي.")
     elif selected_style == STYLE_OPTIONS[3]:
-        st.info("🚀 **موشن جرافيك نصي احترافي موجه بالسياق:** بطاقات Bento زجاجية ورسومات فيكتور تعبر عن الفكرة الكاملة للجملة.")
+        st.info("🚀 **موشن جرافيك ون تيك متصل بلقطة كاميرا واحدة (One-Take Motion - onetakemotion.com):** الكاميرا لا تقطع بين المشاهد أبداً، بل تغوص داخل العناصر وخلايا جدول الفيديو وتخرج منها بسلاسة مع تحول العناصر الناجية عبر الحدود (Carry Score >= 0.90)!")
     elif selected_style == STYLE_OPTIONS[4]:
         st.info("📐 **موشن جرافيك هندسي (Manim + AI):** رسوم ومخططات بيانية متحركة.")
     elif selected_style == STYLE_OPTIONS[5]:
