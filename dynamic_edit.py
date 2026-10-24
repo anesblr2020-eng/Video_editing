@@ -489,10 +489,29 @@ def _execute_master_director_pipeline(
             enc_proc = None
 
         force_free_ram()
-        update_progress(1.0, f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} مشاهد سياقية و {broll_scenes_count} مشاهد B-Roll)!")
+        sfx_cues_mixed = 0
+        try:
+            from sound_designer import apply_intelligent_sound_design_to_video
+            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click) في الثانية المناسبة...")
+            output_path, sfx_rep = apply_intelligent_sound_design_to_video(
+                video_path=output_path,
+                planned_scenes=master_plan,
+                total_duration=video_duration,
+                output_path=output_path
+            )
+            sfx_cues_mixed = int(sfx_rep.get("cues_count", 0))
+        except Exception as sfx_err:
+            logger.warning(f"ملاحظة في مرحلة الساوند ديزاين: {sfx_err}")
+
+        force_free_ram()
+        update_progress(
+            1.0,
+            f"اكتمل إخراج الفيديو بنجاح ({len(master_plan)} مشاهد سياقية، {broll_scenes_count} مشاهد B-Roll، و {sfx_cues_mixed} مؤثر صوتي)!"
+        )
         return output_path, {
             "director_scenes": len(master_plan),
             "broll_scenes_count": broll_scenes_count,
+            "sfx_cues_count": sfx_cues_mixed,
             "duration": video_duration
         }
 

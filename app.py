@@ -240,7 +240,8 @@ for _m in [
     "motion_text",
     "smart_analyzer",
     "dynamic_edit",
-    "manim_generator"
+    "manim_generator",
+    "sound_designer"
 ]:
     if _m in sys.modules:
         try:
@@ -1009,6 +1010,85 @@ with col2:
             st.caption(
                 f"✅ **ثيم البراند المخصص مفعل:** أساسي `{picked_primary}` • ثانوي `{picked_secondary}` • خلفية `{picked_bg}`"
             )
+
+    # ==========================================================================
+    # القسم 5: مصمم الساوند ديزاين الآلي واستخراج المؤثرات من Google Drive
+    # ==========================================================================
+    with st.expander("🔊 5. مصمم الساوند ديزاين الآلي واستخراج حزمة المؤثرات من Google Drive (مفعّل تلقائياً)", expanded=True):
+        from sound_designer import (
+            get_sound_design_settings,
+            set_sound_design_settings,
+            import_sfx_pack_from_google_drive,
+            import_sfx_archive_or_files,
+            ensure_builtin_sfx_pack
+        )
+        ensure_builtin_sfx_pack()
+        sfx_cfg_now = get_sound_design_settings()
+
+        st.caption(
+            "🎯 **يعمل بعد انتهاء الموشن جرافيك بالكامل:** يحلل كل لقطة وانتقال وحركة مؤشر وعداد رقمي، "
+            "ويضع المؤثر الصوتي المناسب (`1-Click`, `2-UI Click`, `3-UI Style`, `4-Button`, `5-Riser`, `6-Whooch`) "
+            "في الثانية والمللي ثانية المناسبة مع خفض تلقائي (Auto-Ducking) تحت صوتك."
+        )
+
+        sfx_c1, sfx_c2 = st.columns([1.2, 1.0])
+        with sfx_c1:
+            sfx_enabled_ui = st.toggle(
+                "🔊 تفعيل مصمم الساوند ديزاين الآلي بعد الرندرة",
+                value=bool(sfx_cfg_now.get("enabled", True)),
+                key="sfx_enabled_toggle"
+            )
+        with sfx_c2:
+            sfx_vol_ui = st.slider(
+                "مستوى صوت المؤثرات (SFX Volume)",
+                min_value=0.10,
+                max_value=1.30,
+                value=float(sfx_cfg_now.get("master_volume", 0.85)),
+                step=0.05,
+                key="sfx_master_vol_slider"
+            )
+
+        set_sound_design_settings(
+            enabled=sfx_enabled_ui,
+            master_volume=sfx_vol_ui
+        )
+
+        drive_sfx_url_input = st.text_input(
+            "🔗 الصق رابط Google Drive لحزمة الساوند ديزاين (أو اتركه فارغاً لاستخدام حزمة الـ 24 مؤثر الاحترافية المدمجة):",
+            value=str(sfx_cfg_now.get("drive_url", "")),
+            placeholder="https://drive.google.com/drive/folders/... أو https://drive.google.com/file/d/...",
+            key="gdrive_sfx_url_input"
+        )
+
+        sfx_uploaded_files = st.file_uploader(
+            "📦 أو ارفع ملف ZIP / ملفات المؤثرات الصوتية مباشرة (WAV, MP3, ZIP):",
+            type=["zip", "wav", "mp3", "ogg", "m4a"],
+            accept_multiple_files=True,
+            key="sfx_pack_files_uploader"
+        )
+
+        if st.button("📥 استخراج وتصنيف الساوند ديزاين من الرابط / الملفات المرفوعة", use_container_width=True):
+            with st.spinner("🔊 جاري استخراج وتصنيف المؤثرات الصوتية إلى الأقسام الـ 6 (Click, UI Click, UI Style, Button, Riser, Whooch)..."):
+                total_added = 0
+                msg_parts = []
+                if drive_sfx_url_input.strip():
+                    res_drv = import_sfx_pack_from_google_drive(drive_sfx_url_input.strip())
+                    total_added += int(res_drv.get("total_imported", 0))
+                    msg_parts.append(res_drv.get("message_ar", ""))
+                if sfx_uploaded_files:
+                    saved_sfx_uploads = []
+                    for uf in sfx_uploaded_files:
+                        tmp_uf_p = os.path.join(TEMP_DIR, f"upload_sfx_{uf.name}")
+                        uf.seek(0)
+                        with open(tmp_uf_p, "wb") as out_uf:
+                            shutil.copyfileobj(uf, out_uf)
+                        saved_sfx_uploads.append(tmp_uf_p)
+                    res_loc = import_sfx_archive_or_files(saved_sfx_uploads)
+                    total_added += int(res_loc.get("total_imported", 0))
+                    msg_parts.append(f"تم استيراد {res_loc.get('total_imported', 0)} ملف صوتي مرفوع.")
+                if not drive_sfx_url_input.strip() and not sfx_uploaded_files:
+                    msg_parts.append("حزمة الاستوديو المدمجة (24 مؤثر صوتي احترافي في 8 أقسام) جاهزة ومفعلة بالكامل!")
+                st.success("✅ " + " | ".join(p for p in msg_parts if p))
 
     st.markdown("<br>", unsafe_allow_html=True)
     start_btn = st.button(

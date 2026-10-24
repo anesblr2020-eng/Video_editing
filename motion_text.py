@@ -1134,7 +1134,7 @@ def _render_dynamic_archetype_stage(
     is_light_bg = bool(pal.get("is_light_bg", True))
 
     step_num = int(scene_meta.get("step_number") or style_spec.get("step_number") or 1)
-    total_scenes = int(scene_meta.get("total_scenes_count") or 8)
+    total_scenes = int(scene_meta.get("total_scenes_count") or 999)
     badge_label = str(scene_meta.get("badge_label") or "محور أساسي")
     concept_title = str(scene_meta.get("concept_title") or scene_meta.get("short_title") or "فكرة محورية ذكية")
     kpi_val = str(scene_meta.get("kpi_value") or "+44")
@@ -1357,13 +1357,14 @@ def _render_dynamic_archetype_stage(
             [(lcx - bsz // 2, pocket_y1), (lcx + bsz // 2, pocket_y2)],
             radius=24, fill=(245, 208, 108, 228), outline=(255, 255, 255, 190), width=2
         )
+        mid_pocket_y = (pocket_y1 + pocket_y2) // 2
         draw_contained_arabic_text(
-            pdraw, (lcx - bsz // 2 + 8, pocket_y1 + 4, lcx + bsz // 2 - 8, pocket_y2 - 22),
-            kpi_lbl, initial_font_size=16, fill=(255, 255, 255, 255), stroke_width=1, stroke_fill=(24, 24, 27, 140)
+            pdraw, (lcx - bsz // 2 + 10, pocket_y1 + 4, lcx + bsz // 2 - 10, mid_pocket_y),
+            kpi_lbl, initial_font_size=15, min_font_size=10, fill=(255, 255, 255, 255), stroke_width=1, stroke_fill=(24, 24, 27, 150)
         )
         draw_contained_arabic_text(
-            pdraw, (lcx - bsz // 2 + 8, pocket_y2 - 26, lcx + bsz // 2 - 8, pocket_y2 - 4),
-            kpi_val, initial_font_size=15, fill=(*dark_navy, 255)
+            pdraw, (lcx - bsz // 2 + 10, mid_pocket_y + 2, lcx + bsz // 2 - 10, pocket_y2 - 4),
+            kpi_val, initial_font_size=14, min_font_size=10, fill=(*dark_navy, 255)
         )
 
         tilted_pack = pack_layer.rotate(4.5 * math.sin(min(1.0, choreo_u * 1.4) * math.pi * 0.5), resample=Image.Resampling.BICUBIC, expand=False)
@@ -2778,7 +2779,22 @@ def create_kinetic_typography_video(
         enc_proc.wait(timeout=120)
         enc_proc = None
 
-        update_progress(1.0, "اكتمل تصيير الموشن جرافيك الاحترافي بنجاح!")
+        # المرحلة 5 (بعد انتهاء الموشن جرافيك بالكامل): دور مصمم الساوند ديزاين الآلي (sound_designer.py)
+        try:
+            from sound_designer import apply_intelligent_sound_design_to_video
+            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click) في الثانية المناسبة...")
+            output_path, sfx_rep = apply_intelligent_sound_design_to_video(
+                video_path=output_path,
+                planned_scenes=planned_scenes,
+                total_duration=total_dur,
+                output_path=output_path
+            )
+            sfx_cnt = sfx_rep.get("cues_count", 0)
+            update_progress(1.0, f"اكتمل تصيير الموشن جرافيك ومزج {sfx_cnt} مؤثر صوتي احترافي بنجاح!")
+        except Exception as sfx_err:
+            logger.warning(f"ملاحظة في مرحلة الساوند ديزاين: {sfx_err}")
+            update_progress(1.0, "اكتمل تصيير الموشن جرافيك الاحترافي بنجاح!")
+
         return output_path
 
     finally:
