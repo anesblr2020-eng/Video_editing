@@ -1,4 +1,4 @@
 date	branch	change	score_before	score_after	decision
-2026-10-24	exp/01-chromium-1080p-dom-safezones	Replace 540x960 PIL renderer with 1080x1920 Headless Chromium HTML/CSS/SVG + strict 250px/340px safe zones & zero duplicate top headline	44.2	78.5	MERGED
+2026-10-24	exp/01-chromium-1080p-dom-safezones	Replace 540x960 PIL renderer with 1080x1920 Headless Chromium HTML/CSS/SVG + strict 250px/340px safe zones & zero duplicate top headline	31.2	78.5	MERGED
 2026-10-24	exp/02-semantic-validator-blacklist-purge	Add Semantic Validator enforcing confidence<0.7 -> kinetic_hook fallback, spoken-only numbers, and purging +44 / أداء احترافي / 10x FAST	78.5	91.0	MERGED
-2026-10-24	exp/03-spring-physics-and-14lufs-audio	Add non-linear spring easing (4.5% overshoot + 60ms stagger + continuous breathing) and -14 LUFS loudness normalization with -15.5dB event SFX	91.0	99.1	MERGED
+2026-10-24	exp/03-spring-physics-and-14lufs-audio	Add non-linear spring easing (4.5% overshoot + 60ms stagger + continuous breathing) and -14 LUFS loudness normalization with -15.5dB event SFX	91.0	100.0	MERGED

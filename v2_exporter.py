@@ -1,12 +1,12 @@
+# -*- coding: utf-8 -*-
 """
-v2/exporter.py — التصدير المتكامل (المرحلة 4):
+v2_exporter.py — التصدير المتكامل (المرحلة 4 — بدون اعتماد على cv2):
 1. استخراج صورة غلاف احترافية (thumbnail.png) بدقة 1080×1920 من ذروة مشهد الخطاف البصري.
 2. توليد ملف وصف الفيديو والهاشتاقات الجاهزة للنشر (post_copy.txt) على Reels / TikTok / Shorts.
-3. توليد لوحة المعاينة (Contact Sheet كل 0.5 ثانية) كدليل بصري.
+3. توليد لوحة المعاينة (Contact Sheet كل 0.5 ثانية) عبر أنبوب FFmpeg + PIL كدليل بصري.
 """
 import os
 import subprocess
-import cv2
 import numpy as np
 from PIL import Image, ImageDraw
 from typing import List, Dict, Any
@@ -14,30 +14,37 @@ from typing import List, Dict, Any
 
 def generate_contact_sheet_05s(video_path: str, output_sheet_path: str, label_prefix: str = "v2") -> str:
     """
-    يستخرج فريماً كل 0.5 ثانية من الفيديو الناتج ويجمعها في Contact Sheet واضح للمعاينة والنقد البصري.
+    يستخرج فريماً كل 0.5 ثانية من الفيديو الناتج باستخدام أنبوب FFmpeg المباشر (بدون cv2)
+    ويجمعها في Contact Sheet واضح للمعاينة والنقد البصري.
     """
-    cap = cv2.VideoCapture(video_path)
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    duration = total_frames / fps if fps else 23.6
+    if not video_path or not os.path.exists(video_path):
+        return output_sheet_path
 
-    target_indices = {
-        min(int(round(t * fps)), max(0, total_frames - 1)): round(float(t), 1)
-        for t in np.arange(0.0, duration, 0.5)
-    }
+    tw, th = 210, 378
+    frame_bytes = tw * th * 3
+    cmd = [
+        "ffmpeg", "-v", "error", "-threads", "1",
+        "-i", video_path,
+        "-vf", f"fps=2,scale={tw}:{th}",
+        "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+    ]
     frames = []
-    f_idx = 0
-    safe_limit = max(1, total_frames - 2)
-    while f_idx < safe_limit:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        if f_idx in target_indices:
-            t = target_indices[f_idx]
-            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frames.append((t, rgb))
-        f_idx += 1
-    cap.release()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    idx = 0
+    try:
+        while True:
+            raw = proc.stdout.read(frame_bytes)
+            if not raw or len(raw) < frame_bytes:
+                break
+            rgb = np.frombuffer(raw, dtype=np.uint8).reshape((th, tw, 3)).copy()
+            frames.append((round(idx * 0.5, 1), rgb))
+            idx += 1
+            if idx >= 96:
+                break
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        proc.kill()
 
     if not frames:
         return output_sheet_path
@@ -48,16 +55,16 @@ def generate_contact_sheet_05s(video_path: str, output_sheet_path: str, label_pr
     sheet = Image.new("RGB", (cols * thumb_w, rows * (thumb_h + 28)), (10, 14, 24))
     draw = ImageDraw.Draw(sheet)
 
-    for idx, (t, rgb) in enumerate(frames):
-        r = idx // cols
-        c = idx % cols
-        pil_img = Image.fromarray(rgb).resize((thumb_w - 6, thumb_h - 6), Image.Resampling.LANCZOS)
+    for i_f, (t, rgb) in enumerate(frames):
+        r = i_f // cols
+        c = i_f % cols
+        pil_img = Image.fromarray(rgb)
         x0 = c * thumb_w + 3
         y0 = r * (thumb_h + 28) + 25
         sheet.paste(pil_img, (x0, y0))
         draw.text((x0 + 8, y0 - 20), f"{label_prefix} t={t:.1f}s", fill=(250, 204, 21))
 
-    os.makedirs(os.path.dirname(output_sheet_path), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(output_sheet_path)), exist_ok=True)
     sheet.save(output_sheet_path)
     return output_sheet_path
 
@@ -76,7 +83,6 @@ def export_social_package(
     thumb_path = os.path.join(output_dir, "thumbnail.png")
     copy_path = os.path.join(output_dir, "post_copy.txt")
 
-    # استخراج فريم الغلاف من الثانية 0.8s (ذروة استقرار الخطاف البصري الأول)
     subprocess.run(
         [
             "ffmpeg", "-y", "-v", "error",
@@ -84,7 +90,7 @@ def export_social_package(
             "-frames:v", "1",
             thumb_path,
         ],
-        check=True,
+        check=False,
     )
 
     post_text = """🔥 تعاني من ضيق الوقت وحسابك في السوشيال ميديا متوقف بسبب صعوبة المونتاج؟

@@ -3182,6 +3182,22 @@ def create_kinetic_typography_video(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     **kwargs
 ) -> str:
+    try:
+        from v2_run import run_v2_pipeline_programmatic
+        from style_evolution_brain import get_active_storyboard_state
+        sb_st = get_active_storyboard_state()
+        sb_img = sb_st.get("source_image") if (sb_st.get("enabled") and sb_st.get("source_image")) else None
+        rep = run_v2_pipeline_programmatic(
+            input_path=input_path,
+            output_mp4_path=output_path,
+            theme_name="obsidian_gold",
+            storyboard_path=sb_img,
+            custom_scenes=kwargs.get("custom_planned_scenes"),
+            progress_callback=progress_callback,
+        )
+        return rep["deliverables"]["final_video"]
+    except Exception as _v2_e:
+        logger.warning(f"v2 delegation notice: {_v2_e}")
     from smart_analyzer import analyze_contextual_storyboard
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)

@@ -563,26 +563,24 @@ def run_selected_pipeline(
 ) -> str:
     force_free_ram()
 
-    if style_name == STYLE_OPTIONS[0]:
-        from dynamic_edit import apply_smart_director_all_in_one
-        res = _safe_call(
-            apply_smart_director_all_in_one,
+    if style_name in (STYLE_OPTIONS[0], STYLE_OPTIONS[3]):
+        from v2_run import run_v2_pipeline_programmatic
+        from style_evolution_brain import get_active_storyboard_state, load_evolution_memory
+        sb_st = get_active_storyboard_state()
+        sb_img = sb_st.get("source_image") if (sb_st.get("enabled") and sb_st.get("source_image")) else None
+        mem_st = load_evolution_memory()
+        rot_c = int(mem_st.get("style_rotation_counter", 0))
+        v2_themes = ["obsidian_gold", "emerald_studio", "royal_cobalt"]
+        chosen_v2_theme = v2_themes[rot_c % len(v2_themes)]
+        rep = run_v2_pipeline_programmatic(
             input_path=input_path,
-            output_path=output_path,
-            media_analysis=media_analysis,
-            whisper_model=eff_whisper_model,
-            ollama_model=ollama_model,
-            dialect_mode=dialect,
-            pexels_api_key=pexels_key,
-            groq_api_key=groq_key,
-            gemini_api_key=gemini_key,
-            openai_api_key=openai_key,
+            output_mp4_path=output_path,
+            theme_name=chosen_v2_theme,
+            storyboard_path=sb_img,
+            custom_scenes=custom_planned_scenes,
             progress_callback=progress_cb,
-            caption_mode=caption_mode,
-            custom_planned_scenes=custom_planned_scenes,
-            custom_sfx_cues=custom_sfx_cues
         )
-        return _unwrap_path(res)
+        return rep["deliverables"]["final_video"]
 
     elif style_name == STYLE_OPTIONS[1]:
         from dynamic_edit import apply_product_ad_mode
@@ -1543,10 +1541,7 @@ if result_path and os.path.exists(result_path):
             if st.button("💾 حفظ التقييم في ذاكرة ذوق القناة (v2/preferences.json)", use_container_width=True):
                 try:
                     sys.path.insert(0, os.path.join(BASE_DIR, "v2"))
-                    try:
-                        from v2_director import save_channel_feedback
-                    except ImportError:
-                        from director import save_channel_feedback
+                    from v2_director import save_channel_feedback
                     save_channel_feedback(vote="up" if "👍" in fb_vote else "down", reason=fb_reason)
                     st.success("✅ تم حفظ تقييمك في `v2/preferences.json` وسيتم تمريره للمخرج الذكي في التشغيلات القادمة!")
                 except Exception as e_fb:

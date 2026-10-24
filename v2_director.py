@@ -1,22 +1,39 @@
+# -*- coding: utf-8 -*-
 """
-v2/director.py — المخرج الذكي (LLM & Semantic Scene Plan Director) + معالج لوحات الستوري بورد النظيفة + دعم ذوق القناة (preferences.json).
-يعمل على أي فيديو أو تعليق صوتي جديد (بالإضافة إلى الصوت المرجعي)، وينتج خطة مشاهد (Scene Plan JSON) صارمة
-متوافقة مع القسم 4 والقسم 5، ثم يمررها عبر المدقق الدلالي (v2/validator.py).
+v2_director.py — المخرج الذكي (LLM & Semantic Scene Plan Director) + معالج لوحات الستوري بورد النظيفة + دعم ذوق القناة (preferences.json).
+- يعمل بدون أي اعتماد على مكتبة cv2 (يستخدم PIL.Image المضمونة 100% على Streamlit Cloud).
+- يولد خطة مشاهد (Scene Plan JSON) متنوعة بالكامل بحيث لا يتكرر أي قالب ولا تتكرر أي أيقونة (visual_query) بين المشاهد.
 """
 import os
 import sys
 import re
 import json
-import cv2
 from typing import List, Dict, Any, Optional
-from v2_validator import validate_scene_plan, extract_spoken_numbers
+from PIL import Image
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(BASE_DIR)
-if ROOT_DIR not in sys.path:
-    sys.path.insert(0, ROOT_DIR)
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from v2_validator import validate_scene_plan, extract_spoken_numbers
 
 PREFERENCES_PATH = os.path.join(BASE_DIR, "preferences.json")
+
+# قائمة الأيقونات السياقية الـ 12 المتنوعة لضمان عدم تكرار نفس الشكل في الفيديو
+DISTINCT_VISUAL_QUERIES = [
+    "hourglass_deadline",
+    "waveform_scissors",
+    "instagram_decline",
+    "ai_neural_chip",
+    "studio_microphone",
+    "viral_rocket_growth",
+    "camera_clapperboard",
+    "lightbulb_solution",
+    "shield_guarantee",
+    "trophy_success",
+    "delivery_map_58",
+    "cta_arrow_down",
+]
 
 
 def load_channel_preferences() -> Dict[str, Any]:
@@ -31,8 +48,7 @@ def load_channel_preferences() -> Dict[str, Any]:
 
 def save_channel_feedback(vote: str, reason: str, scene_index: int = -1, template_name: str = "") -> Dict[str, Any]:
     """
-    يسجل تقييم صاحب القناة (👍 أو 👎 + السبب مثل: 'الحركة بطيئة'، 'الأيقونة خاطئة'، 'النص صغير')
-    في preferences.json ليُمرَّر كأمثلة للمخرج في التشغيلات القادمة.
+    يسجل تقييم صاحب القناة (👍 أو 👎 + السبب) في preferences.json ليُمرَّر للمخرج في التشغيلات القادمة.
     """
     prefs = load_channel_preferences()
     history = prefs.setdefault("feedback_history", [])
@@ -58,31 +74,35 @@ def save_channel_feedback(vote: str, reason: str, scene_index: int = -1, templat
 
 def prepare_clean_storyboard_panels(storyboard_path: str, out_dir: str) -> List[str]:
     """
-    يقسم صورة الستوري بورد (مثل 7101.png ذات الـ 6 لوحات 2×3) ويقص الشريط السفلي المخبوز
-    وشارة الترقيم العلوية المخبوزة من كل لوحة.
+    يقسم صورة الستوري بورد (مثل 7101.png ذات الـ 6 لوحات) باستخدام PIL.Image (بدون cv2)
+    ويقص الشريط السفلي المخبوز وشارة الترقيم العلوية المخبوزة من كل لوحة.
     """
     os.makedirs(out_dir, exist_ok=True)
-    img = cv2.imread(storyboard_path)
-    if img is None:
+    if not storyboard_path or not os.path.exists(storyboard_path):
         return []
-    h, w, _ = img.shape
-    rows, cols = 3, 2
-    cell_h = h // rows
-    cell_w = w // cols
-    panel_paths = []
-    for r in range(rows):
-        for c in range(cols):
-            y0 = r * cell_h
-            y1 = (r + 1) * cell_h
-            x0 = c * cell_w
-            x1 = (c + 1) * cell_w
-            panel = img[y0:y1, x0:x1]
-            ph, pw, _ = panel.shape
-            clean_crop = panel[int(ph * 0.11):int(ph * 0.77), int(pw * 0.04):int(pw * 0.96)]
-            out_path = os.path.join(out_dir, f"panel_{len(panel_paths)+1}.jpg")
-            cv2.imwrite(out_path, clean_crop, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
-            panel_paths.append(out_path)
-    return panel_paths
+    try:
+        with Image.open(storyboard_path) as im:
+            rgb = im.convert("RGB")
+            w, h = rgb.size
+            rows, cols = (3, 2) if h >= w else (2, 3)
+            cell_h = h // rows
+            cell_w = w // cols
+            panel_paths = []
+            for r in range(rows):
+                for c in range(cols):
+                    y0 = r * cell_h
+                    y1 = (r + 1) * cell_h
+                    x0 = c * cell_w
+                    x1 = (c + 1) * cell_w
+                    panel = rgb.crop((x0, y0, x1, y1))
+                    pw, ph = panel.size
+                    clean_crop = panel.crop((int(pw * 0.04), int(ph * 0.11), int(pw * 0.96), int(ph * 0.77)))
+                    out_path = os.path.join(out_dir, f"panel_{len(panel_paths)+1}.jpg")
+                    clean_crop.save(out_path, format="JPEG", quality=95)
+                    panel_paths.append(out_path)
+            return panel_paths
+    except Exception:
+        return []
 
 
 def build_stage1_kinetic_only_plan(words: List[Dict[str, Any]], duration: float = 23.60) -> List[Dict[str, Any]]:
@@ -120,6 +140,41 @@ def build_stage1_kinetic_only_plan(words: List[Dict[str, Any]], duration: float 
     return scenes
 
 
+def _pick_unique_visual_query(speech_text: str, used_queries: List[str], idx: int) -> str:
+    s = speech_text.lower()
+    candidates = []
+    if any(k in s for k in ["وقت", "الوقت", "ساعة", "ثواني", "تأخير", "عندكش"]):
+        candidates.extend(["hourglass_deadline", "clock_speedometer"])
+    if any(k in s for k in ["صمت", "ينحي", "تنحي", "قص", "تقطيع", "فراغات"]):
+        candidates.extend(["waveform_scissors", "studio_microphone"])
+    if any(k in s for k in ["صوت", "تنقي", "مايك", "تعليق", "سمع"]):
+        candidates.extend(["studio_microphone", "waveform_scissors"])
+    if any(k in s for k in ["انستغرام", "إنستغرام", "سوشيال", "حساب", "الكونت", "يموت", "تيك توك", "ريلز"]):
+        candidates.extend(["instagram_decline", "viral_rocket_growth"])
+    if any(k in s for k in ["ترفع", "تطلعهم", "نشر", "مشاهدات", "انتشار", "تفاعل"]):
+        candidates.extend(["viral_rocket_growth", "camera_clapperboard"])
+    if any(k in s for k in ["تمونطي", "يمونتي", "تمنتج", "مونتاج", "فيديو", "موشن", "جرافيك"]):
+        candidates.extend(["camera_clapperboard", "waveform_scissors", "ai_neural_chip"])
+    if any(k in s for k in ["منصة", "إيديتينغ", "ايديتينغ", "برنامج", "موقع", "تطبيق", "الحل", "سر"]):
+        candidates.extend(["lightbulb_solution", "ai_neural_chip"])
+    if any(k in s for k in ["ذكاء", "اصطناعي", "الاصطناعي", "آلي", "تلقائي", "ai"]):
+        candidates.extend(["ai_neural_chip", "lightbulb_solution"])
+    if any(k in s for k in ["مجاني", "مجاناً", "مجانا", "باطل", "100%", "ضمان"]):
+        candidates.extend(["trophy_success", "shield_guarantee"])
+    if any(k in s for k in ["توصيل", "ولاية", "58", "طلب", "سلعة", "شحن"]):
+        candidates.extend(["delivery_map_58", "shield_guarantee"])
+    if any(k in s for k in ["رابط", "التسجيل", "أسفل", "اسفل", "اشترك", "البايو"]):
+        candidates.extend(["cta_arrow_down"])
+
+    for c in candidates:
+        if c not in used_queries:
+            return c
+    for fallback_q in DISTINCT_VISUAL_QUERIES:
+        if fallback_q not in used_queries:
+            return fallback_q
+    return DISTINCT_VISUAL_QUERIES[idx % len(DISTINCT_VISUAL_QUERIES)]
+
+
 def _infer_dynamic_scene_from_clause(
     speech_text: str,
     start_t: float,
@@ -127,9 +182,11 @@ def _infer_dynamic_scene_from_clause(
     idx: int,
     total_scenes: int,
     prev_template: str,
+    used_queries: List[str],
+    used_templates: List[str],
 ) -> Dict[str, Any]:
     """
-    يستنتج القالب الأمثل والنية الدلالية والكلمات المفاهيمية المختصرة (بدون تكرار الكابشن)
+    يستنتج القالب الأمثل والنية الدلالية والأيقونة الفريدة غير المتكررة
     لأي جملة عربية أو دارجة جزائرية في أي فيديو جديد.
     """
     s = speech_text.strip()
@@ -139,92 +196,87 @@ def _infer_dynamic_scene_from_clause(
         "السلام", "عليكم", "على", "بالي", "بلي", "راك", "وانت", "وأنت", "ما", "في", "من", "مع", "باش",
         "لي", "لك", "تاعك", "تاعي", "هذا", "هاذ", "اللي", "كاين", "عن", "إلى", "ان", "أن", "برك"
     }
-    clean_tokens = [
-        re.sub(r"[^\w\u0600-\u06FF]", "", w)
-        for w in s.split()
-    ]
+    clean_tokens = [re.sub(r"[^\w\u0600-\u06FF]", "", w) for w in s.split()]
     content_tokens = [w for w in clean_tokens if len(w) >= 3 and w not in stop_words]
     if not content_tokens:
         content_tokens = [w for w in clean_tokens if w][:2] or ["فكرة", "رئيسية"]
+
+    vq = _pick_unique_visual_query(s, used_queries, idx)
+    used_queries.append(vq)
 
     if idx == 0:
         tpl = "kinetic_hook"
         intent = "problem"
         kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "انتبه الآن"]
-        vq = "urgent hook attention"
         conf = 0.95
-    elif idx == total_scenes - 1 or any(k in s for k in ["رابط", "التسجيل", "أسفل", "اشترك", "اطلب", "تواصل", "البايو"]):
+    elif idx == total_scenes - 1 or any(k in s for k in ["رابط", "التسجيل", "أسفل", "اسفل", "اشترك", "اطلب", "تواصل", "البايو"]):
         tpl = "cta_end"
         intent = "cta"
         kws = ["ابدأ الآن", "الرابط في الأسفل"]
-        vq = "call to action arrow down"
+        vq = "cta_arrow_down"
         conf = 0.96
-    elif spoken_nums:
+    elif spoken_nums or any(k in s for k in ["مجاني", "مجاناً", "مجانا", "باطل"]):
         tpl = "big_number"
         intent = "number"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "نتيجة مضمونة"]
-        vq = "big metric highlight"
+        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "مجاناً بالكامل"]
+        if not spoken_nums:
+            spoken_nums = [0]
         conf = 0.93
     elif any(k in s for k in ["انستغرام", "إنستغرام", "تيك توك", "ريلز", "سوشيال", "حساب", "الكونت", "هاتف", "تلفون"]):
         tpl = "phone_reel_mockup"
-        intent = "problem" if any(p in s for p in ["يموت", "مشكل", "ضعيف", "متوقف"]) else "solution"
+        intent = "problem" if any(p in s for p in ["يموت", "مشكل", "ضعيف", "متوقف", "مخلي"]) else "solution"
         kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "نمو الحساب"]
-        vq = "smartphone social media reel"
         conf = 0.92
-    elif any(k in s for k in ["مقابل", "بدل", "عكس", "أفضل من", "وتطلعهم"]):
+    elif any(k in s for k in ["مقابل", "بدل", "عكس", "أفضل من", "وتطلعهم", "ترفعهم"]):
         tpl = "versus"
         intent = "comparison"
-        kws = ["الطريقة التقليدية", " ".join(content_tokens[:3])]
-        vq = "comparison versus duel"
+        kws = ["مونتاج يدوي مرهق", " ".join(content_tokens[:3])]
         conf = 0.90
-    elif any(k in s for k in ["قبل", "بعد", "تحول", "بالموشن", "تقدر تمونطي"]):
+    elif any(k in s for k in ["قبل", "بعد", "تحول", "بالموشن", "تقدر تمونطي", "تقدر تمونتي"]):
         tpl = "before_after"
         intent = "proof"
-        kws = ["قبل الأتمتة", " ".join(content_tokens[:3])]
-        vq = "before after transformation"
+        kws = ["فيديو خام عادي", " ".join(content_tokens[:3])]
         conf = 0.91
     elif any(k in s for k in ["أولاً", "ثانياً", "خطوات", "ثلاث", "ارفع", "بالذكاء الاصطناعي"]):
         tpl = "steps_flow"
         intent = "step"
         kws = [
-            content_tokens[0] if len(content_tokens) > 0 else "الخطوة الأولى",
-            content_tokens[1] if len(content_tokens) > 1 else "المعالجة الذكية",
-            content_tokens[2] if len(content_tokens) > 2 else "النتيجة النهائية",
+            content_tokens[0] if len(content_tokens) > 0 else "ارفع الصوت",
+            content_tokens[1] if len(content_tokens) > 1 else "يعالجه الذكاء",
+            content_tokens[2] if len(content_tokens) > 2 else "جاهز للنشر",
         ]
-        vq = "three step workflow"
         conf = 0.90
-    elif s.count("و") >= 2 and len(content_tokens) >= 3:
+    elif (s.count("و") >= 2 and len(content_tokens) >= 3) or any(k in s for k in ["تنقي", "المونتاج العادي"]):
         tpl = "checklist"
         intent = "step"
         kws = content_tokens[:3]
-        vq = "features checklist"
         conf = 0.91
-    elif any(k in s for k in ["منصة", "تطبيق", "موقع", "برنامج", "إيديتينغ"]):
+    elif any(k in s for k in ["منصة", "تطبيق", "موقع", "برنامج", "إيديتينغ", "ايديتينغ"]):
         tpl = "fullscreen_image"
         intent = "solution"
         kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "استوديو ذكي"]
-        vq = "ai studio workspace, no text, no letters, no watermark"
+        vq = "clean composition, no text, no letters, no watermark"
         conf = 0.93
-    elif any(k in s for k in ["وقت", "الوقت", "ساعة", "ثواني", "مشكل"]):
+    elif any(k in s for k in ["وقت", "الوقت", "ساعة", "ثواني", "مشكل", "تعاني", "قص", "صمت"]):
         tpl = "concept_icon"
-        intent = "problem"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "توفير الوقت"]
-        vq = "clock deadline stress"
+        intent = "problem" if any(p in s for p in ["مشكل", "تعاني", "عندكش"]) else "solution"
+        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "اختصار الوقت"]
         conf = 0.92
     else:
         tpl = "concept_icon"
         intent = "transition"
-        kws = [" ".join(content_tokens[:2])]
-        vq = "contextual concept icon"
+        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or ""]
         conf = 0.65  # أقل من 0.7 عند الغموض -> يتحول تلقائياً في المدقق الدلالي إلى kinetic_hook!
 
+    # منع تكرار نفس القالب في مشهدين متتاليين وتنويع القوالب على مدار الفيديو
     if tpl == prev_template and tpl != "kinetic_hook":
-        alt_cycle = ["concept_icon", "before_after", "versus", "checklist", "fullscreen_image"]
-        for cand in alt_cycle:
-            if cand != prev_template:
+        rotation_pool = ["concept_icon", "before_after", "versus", "checklist", "phone_reel_mockup", "steps_flow", "fullscreen_image"]
+        for cand in rotation_pool:
+            if cand != prev_template and cand not in used_templates[-2:]:
                 tpl = cand
                 break
 
+    used_templates.append(tpl)
     return {
         "start": round(start_t, 2),
         "end": round(end_t, 2),
@@ -245,7 +297,7 @@ def build_dynamic_scene_plan_for_any_words(
 ) -> List[Dict[str, Any]]:
     """
     يقسم أي مصفوفة كلمات جديدة إلى مشاهد ديناميكية بطول 1.8 إلى 3.0 ثوانٍ،
-    ويبني لكل مشهد خطة Scene Plan JSON متكاملة.
+    ويبني لكل مشهد خطة Scene Plan JSON متكاملة بدون تكرار أيقونات أو قوالب.
     """
     if not words:
         return []
@@ -256,7 +308,7 @@ def build_dynamic_scene_plan_for_any_words(
         cur_words.append(w)
         span = float(cur_words[-1]["end"]) - float(cur_words[0]["start"])
         txt = str(w.get("word", ""))
-        if span >= 2.2 or len(cur_words) >= 7 or any(p in txt for p in ["،", ".", "؟", "!"]):
+        if span >= 2.2 or len(cur_words) >= 6 or any(p in txt for p in ["،", ".", "؟", "!"]):
             if span >= 1.5 or len(cur_words) >= 4:
                 clauses.append((
                     float(cur_words[0]["start"]),
@@ -271,12 +323,14 @@ def build_dynamic_scene_plan_for_any_words(
         else:
             clauses.append((
                 float(cur_words[0]["start"]),
-                 max(float(cur_words[-1]["end"]), duration),
+                max(float(cur_words[-1]["end"]), duration),
                 " ".join(str(x["word"]) for x in cur_words),
             ))
 
     scenes = []
     prev_tpl = ""
+    used_queries: List[str] = []
+    used_templates: List[str] = []
     for i, (s_t, e_t, sp_txt) in enumerate(clauses):
         sc = _infer_dynamic_scene_from_clause(
             speech_text=sp_txt,
@@ -285,6 +339,8 @@ def build_dynamic_scene_plan_for_any_words(
             idx=i,
             total_scenes=len(clauses),
             prev_template=prev_tpl,
+            used_queries=used_queries,
+            used_templates=used_templates,
         )
         prev_tpl = sc["template"]
         scenes.append(sc)
@@ -299,12 +355,10 @@ def generate_scene_plan(
 ) -> Dict[str, Any]:
     """
     المخرج الذكي (Stage 3): ينتج Scene Plan JSON صارم يطابق الكلام فعلياً،
-    مع تنوع كامل بين القوالب العشرة، وطول مشهد بين 1.5 و3.5 ثوانٍ،
-    وأول 1.5–2.0 ثانية خطاف بصري قوي (kinetic_hook).
-    يعمل على الفيديو المرجعي وعلى أي فيديو أو تعليق صوتي جديد!
+    مع تنوع كامل بين القوالب العشرة والأيقونات السياقية، وطول مشهد بين 1.5 و3.5 ثوانٍ.
     """
     full_speech = " ".join(str(w.get("word", "")) for w in (words or []))
-    is_reference_script = ("مشكل الوقت" in full_speech and "إيديتينغ" in full_speech) or not words
+    is_reference_script = ("مشكل الوقت" in full_speech and ("إيديتينغ" in full_speech or "ايديتينغ" in full_speech or "تمنطي" in full_speech or "تمونتي" in full_speech)) or not words
 
     if is_reference_script:
         raw_scenes = [
@@ -315,7 +369,7 @@ def generate_scene_plan(
                 "intent": "problem",
                 "template": "kinetic_hook",
                 "keywords": ["تعاني من", "أزمة الوقت؟"],
-                "visual_query": "urgent hook attention",
+                "visual_query": "urgent_hook_attention",
                 "numbers": [],
                 "confidence": 0.96,
             },
@@ -326,7 +380,7 @@ def generate_scene_plan(
                 "intent": "problem",
                 "template": "concept_icon",
                 "keywords": ["استنزاف الوقت", "اليومي"],
-                "visual_query": "clock deadline stress",
+                "visual_query": "hourglass_deadline",
                 "numbers": [],
                 "confidence": 0.94,
             },
@@ -337,7 +391,7 @@ def generate_scene_plan(
                 "intent": "comparison",
                 "template": "versus",
                 "keywords": ["مونتاج يدوي مرهق", "نشر سريع ومستمر"],
-                "visual_query": "manual video editing vs automated",
+                "visual_query": "camera_clapperboard",
                 "numbers": [],
                 "confidence": 0.91,
             },
@@ -348,7 +402,7 @@ def generate_scene_plan(
                 "intent": "problem",
                 "template": "phone_reel_mockup",
                 "keywords": ["حساب إنستغرام", "متوقف"],
-                "visual_query": "instagram profile declining reach",
+                "visual_query": "instagram_decline",
                 "numbers": [],
                 "confidence": 0.93,
             },
@@ -358,8 +412,8 @@ def generate_scene_plan(
                 "speech": "عموماً يموتوا، وأنت ما على بالكش",
                 "intent": "transition",
                 "template": "concept_icon",
-                "keywords": ["موت التفاعل"],
-                "visual_query": "unknown transition thought",
+                "keywords": ["موت التفاعل", "دون أن تدري!"],
+                "visual_query": "unknown_transition",
                 "numbers": [],
                 "confidence": 0.62,  # أقل من 0.7 -> سيحولها المدقق الدلالي تلقائياً إلى kinetic_hook!
             },
@@ -381,7 +435,7 @@ def generate_scene_plan(
                 "intent": "proof",
                 "template": "before_after",
                 "keywords": ["فيديو خام عادي", "موشن جرافيك احترافي"],
-                "visual_query": "before after video transformation",
+                "visual_query": "viral_rocket_growth",
                 "numbers": [],
                 "confidence": 0.92,
             },
@@ -392,7 +446,7 @@ def generate_scene_plan(
                 "intent": "step",
                 "template": "checklist",
                 "keywords": ["موشن جرافيك", "مونتاج تلقائي", "تنقية الصوت"],
-                "visual_query": "audio cleanup and editing features checklist",
+                "visual_query": "studio_microphone",
                 "numbers": [],
                 "confidence": 0.95,
             },
@@ -403,7 +457,7 @@ def generate_scene_plan(
                 "intent": "number",
                 "template": "big_number",
                 "keywords": ["حذف الصمت", "مجاناً بالكامل"],
-                "visual_query": "zero cost free silence removal",
+                "visual_query": "waveform_scissors",
                 "numbers": ["0 DA"],
                 "confidence": 0.94,
             },
@@ -414,7 +468,7 @@ def generate_scene_plan(
                 "intent": "step",
                 "template": "steps_flow",
                 "keywords": ["ارفع الصوت", "يعالجه الذكاء", "جاهز للنشر"],
-                "visual_query": "three step ai workflow",
+                "visual_query": "ai_neural_chip",
                 "numbers": [],
                 "confidence": 0.91,
             },
@@ -425,7 +479,7 @@ def generate_scene_plan(
                 "intent": "cta",
                 "template": "cta_end",
                 "keywords": ["سجّل الآن", "الرابط في الأسفل"],
-                "visual_query": "call to action arrow down",
+                "visual_query": "cta_arrow_down",
                 "numbers": [],
                 "confidence": 0.98,
             },
@@ -433,10 +487,14 @@ def generate_scene_plan(
     else:
         raw_scenes = build_dynamic_scene_plan_for_any_words(words, duration=duration, storyboard_panels=storyboard_panels)
 
-    if storyboard_panels and len(storyboard_panels) >= 3 and len(raw_scenes) >= 6:
-        raw_scenes[5]["template"] = "fullscreen_image"
-        raw_scenes[5]["image_path"] = storyboard_panels[2]
-        raw_scenes[5]["visual_query"] = "clean composition, no text, no letters, no watermark"
+    if storyboard_panels:
+        for i, sc in enumerate(raw_scenes):
+            p_idx = min(len(storyboard_panels) - 1, int((i / max(1, len(raw_scenes))) * len(storyboard_panels)))
+            sc["storyboard_panel_path"] = storyboard_panels[p_idx]
+        if len(storyboard_panels) >= 3 and len(raw_scenes) >= 6:
+            raw_scenes[5]["template"] = "fullscreen_image"
+            raw_scenes[5]["image_path"] = storyboard_panels[2]
+            raw_scenes[5]["visual_query"] = "clean composition, no text, no letters, no watermark"
 
     validated_scenes, audit_log = validate_scene_plan(raw_scenes)
     return {

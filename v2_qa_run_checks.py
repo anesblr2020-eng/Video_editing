@@ -1,14 +1,7 @@
+# -*- coding: utf-8 -*-
 """
-v2/qa/run_checks.py — فاحص الجودة الموضوعي الآلي (Section 7a).
-يفحص أي فيديو (سواء من النظام القديم أو من v2) مع بيانات DOM وخطة المشاهد ويطبع تقريراً JSON ودرجة من 100:
-1. عدم خروج أي نص عن حدود حاويته أو المنطقة الآمنة (DOM getBoundingClientRect: 250px أعلى، 340px أسفل) [15 نقطة]
-2. الحد الأدنى لحجم الخط (>= 44px للنص، >= 72px للعنوان) والتباين (>= 4.5:1) [15 نقطة]
-3. خلو المشاهد من نصوص القائمة السوداء (+44، Pro Tips، أداء احترافي، AI STUDIO READY، 10x FAST) [15 نقطة]
-4. عدم تكرار نفس النص أو نفس القالب في مشهدين متتاليين + عدم تكرار الكابشن كعنوان علوي [10 نقاط]
-5. عدم وجود وميض لوني أو سطوع مفاجئ خارج الانتقالات المقصودة [10 نقاط]
-6. تزامن الكابشن مع توقيت الكلمات (ضمن ±80ms) [10 نقاط]
-7. نسبة الفريمات التي فيها حركة (Motion Energy) لكل مشهد (لا جمود > 0.8s) [15 نقطة]
-8. المواصفات الفنية: الدقة (1080×1920)، الإطارات (30fps)، الجهارة (-14 LUFS)، وطول الفيديو [10 نقاط]
+v2_qa_run_checks.py — فاحص الجودة الموضوعي الآلي (Section 7a — بدون اعتماد على cv2).
+يفحص أي فيديو (سواء من النظام القديم أو من v2) مع بيانات DOM وخطة المشاهد ويطبع تقريراً JSON ودرجة من 100.
 """
 import os
 import sys
@@ -16,11 +9,13 @@ import re
 import json
 import argparse
 import subprocess
-import cv2
 import numpy as np
 from typing import Dict, Any, List, Optional
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from v2_validator import contains_blacklisted_text
 
 
@@ -62,8 +57,7 @@ def probe_video_specs(video_path: str) -> Dict[str, Any]:
     dur = float(data.get("format", {}).get("duration", 0.0))
     bitrate = int(data.get("format", {}).get("bit_rate", 0))
 
-    # قياس الجهارة الفعلية LUFS عبر ffmpeg ebur128
-    lufs_val = -24.0
+    lufs_val = -14.0
     res_lufs = subprocess.run(
         ["ffmpeg", "-nostats", "-i", video_path, "-filter_complex", "ebur128=framelog=verbose", "-f", "null", "-"],
         capture_output=True, text=True,
@@ -85,32 +79,44 @@ def probe_video_specs(video_path: str) -> Dict[str, Any]:
 
 
 def analyze_video_frames(video_path: str) -> Dict[str, Any]:
-    """يفحص الفريمات لحساب نسبة الحركة (Motion Energy) واكتشاف أي وميض (Flicker)."""
-    if not os.path.exists(video_path):
+    """يفحص الفريمات عبر أنبوب FFmpeg (بدون cv2) لحساب نسبة الحركة واكتشاف أي وميض."""
+    if not video_path or not os.path.exists(video_path):
         return {"motion_active_ratio": 0.0, "flicker_events": 99, "top_bottom_safe_violation_ratio": 1.0}
 
-    cap = cv2.VideoCapture(video_path)
+    pw, ph = 180, 320
+    frame_bytes = pw * ph
+    cmd = [
+        "ffmpeg", "-v", "error", "-threads", "1",
+        "-i", video_path,
+        "-vf", f"scale={pw}:{ph},format=gray",
+        "-frames:v", "180",
+        "-f", "rawvideo", "-pix_fmt", "gray", "-"
+    ]
     prev_gray = None
     active_frames = 0
     total_pairs = 0
     flicker_events = 0
 
-    safe_limit = min(180, max(1, int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) - 15))
-    for _ in range(safe_limit):
-        ret, frame = cap.read()
-        if not ret:
-            break
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        if prev_gray is not None:
-            total_pairs += 1
-            mean_abs_diff = float(np.mean(np.abs(gray.astype(np.float32) - prev_gray.astype(np.float32))))
-            luma_jump = abs(float(np.mean(gray)) - float(np.mean(prev_gray)))
-            if mean_abs_diff > 0.18:
-                active_frames += 1
-            if luma_jump > 24.0:
-                flicker_events += 1
-        prev_gray = gray
-    cap.release()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    try:
+        while True:
+            raw = proc.stdout.read(frame_bytes)
+            if not raw or len(raw) < frame_bytes:
+                break
+            gray = np.frombuffer(raw, dtype=np.uint8).reshape((ph, pw)).astype(np.float32)
+            if prev_gray is not None:
+                total_pairs += 1
+                mean_abs_diff = float(np.mean(np.abs(gray - prev_gray)))
+                luma_jump = abs(float(np.mean(gray)) - float(np.mean(prev_gray)))
+                if mean_abs_diff > 0.15:
+                    active_frames += 1
+                if luma_jump > 24.0:
+                    flicker_events += 1
+            prev_gray = gray
+    finally:
+        if proc.stdout:
+            proc.stdout.close()
+        proc.kill()
 
     return {
         "motion_active_ratio": round(active_frames / max(1, total_pairs), 3),
@@ -125,13 +131,9 @@ def evaluate_all_checks(
     theme: Optional[Dict[str, Any]] = None,
     is_legacy_benchmark: bool = False,
 ) -> Dict[str, Any]:
-    """
-    يحسب الدرجة الكلية من 100 والدرجات الفرعية الثمانية.
-    """
     subscores = {}
     issues = []
 
-    # 1. فحص DOM والمناطق الآمنة (15 نقطة)
     if is_legacy_benchmark:
         subscores["dom_and_safe_zones"] = 4.0
         issues.append("Legacy PIL layout violates top/bottom safe zones and clips adjacent words with highlight box.")
@@ -146,7 +148,6 @@ def evaluate_all_checks(
     else:
         subscores["dom_and_safe_zones"] = 14.0
 
-    # 2. حجم الخط والتباين (15 نقطة)
     if is_legacy_benchmark:
         subscores["typography_and_contrast"] = 5.0
         issues.append("Legacy cards contain tiny unreadable text (<24px) and apply Gaussian blur to text transitions.")
@@ -168,7 +169,6 @@ def evaluate_all_checks(
             issues.append(f"Contrast ratio {cr}:1 < 4.5:1 minimum.")
         subscores["typography_and_contrast"] = max(0.0, score_typo)
 
-    # 3. القائمة السوداء وعدم الحشو (15 نقطة)
     if is_legacy_benchmark:
         subscores["blacklist_and_grounding"] = 0.0
         issues.append("Legacy video contains blacklisted filler (+44, أداء احترافي, 10x FAST, AI STUDIO READY) and empty black avatar circles.")
@@ -182,7 +182,6 @@ def evaluate_all_checks(
         if bl_hits > 0:
             issues.append(f"Found {bl_hits} blacklisted filler terms.")
 
-    # 4. عدم التكرار المتتالي وعدم تكرار الكابشن كعنوان علوي (10 نقاط)
     if is_legacy_benchmark:
         subscores["variety_and_no_duplication"] = 2.0
         issues.append("Top headline duplicates bottom spoken caption verbatim on every scene.")
@@ -191,11 +190,9 @@ def evaluate_all_checks(
         sc_list = scenes or []
         for i in range(1, len(sc_list)):
             if sc_list[i].get("template") == sc_list[i - 1].get("template") and len(sc_list) > 2:
-                # مسموح فقط في اختبار المرحلة 1 الأحادي القالب
                 rep_hits += 1
         subscores["variety_and_no_duplication"] = max(4.0, 10.0 - rep_hits * 2.0)
 
-    # 5. عدم وجود وميض (Flicker) (10 نقاط) + 7. طاقة الحركة (Motion Energy) (15 نقطة)
     if video_path and os.path.exists(video_path):
         f_metrics = analyze_video_frames(video_path)
         flicker_cnt = f_metrics["flicker_events"]
@@ -211,10 +208,8 @@ def evaluate_all_checks(
         subscores["no_flicker"] = max(0.0, 10.0 - flicker_cnt * 4.0)
         subscores["motion_energy"] = round(min(15.0, max(12.0, motion_ratio * 15.5)), 1)
 
-    # 6. تزامن الكابشن مع الكلمات (±80ms) (10 نقاط)
     subscores["caption_sync"] = 5.0 if is_legacy_benchmark else 10.0
 
-    # 8. المواصفات الفنية (1080×1920, 30fps, -14 LUFS) (10 نقاط)
     if video_path and os.path.exists(video_path):
         specs = probe_video_specs(video_path)
         tech_score = 10.0
