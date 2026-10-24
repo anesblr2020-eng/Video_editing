@@ -106,37 +106,51 @@ def prepare_clean_storyboard_panels(storyboard_path: str, out_dir: str) -> List[
 
 
 def build_stage1_kinetic_only_plan(words: List[Dict[str, Any]], duration: float = 23.60) -> List[Dict[str, Any]]:
-    """
-    يبني خطة المرحلة 1: قالب واحد فقط (kinetic_hook) + كابشن متزامن على الصوت المرجعي.
-    """
-    chunks = [
-        (0.00, 2.00, "السلام عليكم، على بالي بلي راك تعاني", ["تحدي صناع", "المحتوى"]),
-        (2.00, 4.15, "من مشكل الوقت وما عندكش الوقت", ["ضيق الوقت", "اليومي"]),
-        (4.15, 6.75, "باش تمونطي لي فيديو وتطلعهم في السوشيال", ["صعوبة المونتاج", "المستمر"]),
-        (6.75, 9.05, "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا", ["توقف نشر", "الحسابات"]),
-        (9.05, 11.25, "عموماً يموتوا، وأنت ما على بالكش", ["هبوط التفاعل", "والوصول"]),
-        (11.25, 13.65, "بلي كاين منصة اسمها فيديو إيديتينغ", ["منصة فيديو", "إيديتينغ"]),
-        (13.65, 16.05, "تقدر تمونطي لك لي فيديو تاعك بالموشن جرافيك", ["مونتاج ذكي", "وتلقائي"]),
-        (16.05, 18.25, "وبالمونتاج العادي وتنقي الصوت", ["تنقية الصوت", "والمشاهد"]),
-        (18.25, 20.35, "وتنحي الصمت من الفيديو بشكل مجاني", ["حذف الصمت", "مجاناً"]),
-        (20.35, 22.10, "وبالذكاء الاصطناعي برك،", ["بقوة الذكاء", "الاصطناعي"]),
-        (22.10, min(duration, 23.60), "رابط التسجيل في أسفل الفيديو.", ["سجّل الآن", "من الرابط"]),
-    ]
+    """Build a single-template plan from the actual transcript (never from a canned script)."""
+    if not words:
+        return []
+
+    groups = []
+    current = []
+    group_start = float(words[0].get("start", 0.0))
+    for word in words:
+        w_start = float(word.get("start", 0.0))
+        w_end = float(word.get("end", w_start + 0.25))
+        if current and ((w_end - group_start) >= 2.5 or len(current) >= 7):
+            groups.append(current)
+            current = []
+            group_start = w_start
+        current.append(word)
+    if current:
+        groups.append(current)
+
     scenes = []
-    for s, e, speech, kw in chunks:
-        if s >= duration:
-            break
+    for idx, group in enumerate(groups):
+        speech = " ".join(str(w.get("word", "")).strip() for w in group if str(w.get("word", "")).strip()).strip()
+        if not speech:
+            continue
+        start_t = 0.0 if idx == 0 else max(0.0, float(group[0].get("start", 0.0)))
+        end_t = duration if idx == len(groups) - 1 else min(duration, float(group[-1].get("end", start_t + 1.0)))
+        tokens = [re.sub(r"[^\w؀-ۿ]", "", t) for t in speech.split()]
+        tokens = [t for t in tokens if len(t) > 2]
+        keywords = tokens[:2] or speech.split()[:2]
+        if idx and start_t < scenes[-1]["end"]:
+            start_t = scenes[-1]["end"]
+        if end_t <= start_t:
+            end_t = min(duration, start_t + 0.35)
         scenes.append({
-            "start": round(s, 2),
-            "end": round(min(e, duration), 2),
+            "start": round(start_t, 3),
+            "end": round(end_t, 3),
             "speech": speech,
-            "intent": "hook" if s == 0 else "solution",
+            "intent": "hook" if idx == 0 else "explanation",
             "template": "kinetic_hook",
-            "keywords": kw,
-            "visual_query": "kinetic arabic typography",
-            "numbers": [],
-            "confidence": 0.95,
+            "keywords": keywords,
+            "visual_query": "kinetic typography " + " ".join(keywords[:2]),
+            "numbers": extract_spoken_numbers(speech),
+            "confidence": 0.90,
         })
+    if scenes:
+        scenes[-1]["end"] = round(max(scenes[-1]["start"] + 0.1, duration), 3)
     return scenes
 
 
@@ -175,6 +189,44 @@ def _pick_unique_visual_query(speech_text: str, used_queries: List[str], idx: in
     return DISTINCT_VISUAL_QUERIES[idx % len(DISTINCT_VISUAL_QUERIES)]
 
 
+def _semantic_headlines(speech_text: str, content_tokens: List[str], used_headlines: List[str]) -> List[str]:
+    """Create short, readable, meaning-led Arabic headlines; avoid generic repeated fragments."""
+    s = speech_text.lower()
+    rules = [
+        (["رابط", "التسجيل", "أسفل", "اسفل", "البايو", "اشترك"], ["رابط التسجيل", "أسفل الفيديو"]),
+        (["صمت", "فراغات", "تنحي", "ينحي", "قص الصمت"], ["الصمت الزائد", "صوت متصل"]),
+        (["ذكاء اصطناعي", "الذكاء الاصطناعي", "اصطناعي", "آلي"], ["الذكاء الاصطناعي", "مونتاج تلقائي"]),
+        (["مجاني", "مجاناً", "مجانا", "باطل"], ["استخدام مجاني", "جرّب المنصة"]),
+        (["وقت", "الوقت", "ساعة", "تعاني", "عندكش"], ["توفير الوقت", "مونتاج أسرع"]),
+        (["انستغرام", "إنستغرام", "سوشيال", "حساب", "الكونت", "ريلز", "تيك توك"], ["حسابك على السوشيال", "محتوى أكثر انتظاماً"]),
+        (["صوت", "تنقي", "مايك", "سمع"], ["تنقية الصوت", "صوت أوضح"]),
+        (["منصة", "إيديتينغ", "ايديتينغ", "برنامج", "موقع", "تطبيق"], ["منصة للمونتاج", "موشن غرافيك"]),
+        (["موشن", "جرافيك", "مونتاج", "تمونطي", "فيديو"], ["موشن غرافيك", "فيديو جذاب"]),
+    ]
+    chosen = []
+    for needles, labels in rules:
+        if any(n in s for n in needles):
+            chosen = list(labels)
+            break
+    if not chosen:
+        stop = {"السلام", "عليكم", "على", "بالي", "بلي", "راك", "وانت", "وأنت", "ما", "في", "من", "مع", "باش", "لي", "لك", "تاعك", "تاعي", "هذا", "هاذ", "اللي", "كاين", "عن", "إلى", "ان", "أن", "برك", "عموما", "عمومًا", "والسوشيال", "السوشيال", "ميديا"}
+        tokens = [t for t in content_tokens if t not in stop and len(t) >= 3]
+        chosen = tokens[:2] if tokens else ["الفكرة الرئيسية"]
+    # Prefer headlines not already used in this video; keep at most two compact labels.
+    unique = []
+    for item in chosen:
+        if item not in used_headlines and item not in unique:
+            unique.append(item)
+    if not unique:
+        for item in ["فكرة جديدة", "مشهد مختلف", "تفصيل مهم"]:
+            if item not in used_headlines:
+                unique.append(item)
+                break
+    for item in unique:
+        used_headlines.append(item)
+    return unique[:2]
+
+
 def _infer_dynamic_scene_from_clause(
     speech_text: str,
     start_t: float,
@@ -184,6 +236,7 @@ def _infer_dynamic_scene_from_clause(
     prev_template: str,
     used_queries: List[str],
     used_templates: List[str],
+    used_headlines: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     يستنتج القالب الأمثل والنية الدلالية والأيقونة الفريدة غير المتكررة
@@ -194,7 +247,8 @@ def _infer_dynamic_scene_from_clause(
 
     stop_words = {
         "السلام", "عليكم", "على", "بالي", "بلي", "راك", "وانت", "وأنت", "ما", "في", "من", "مع", "باش",
-        "لي", "لك", "تاعك", "تاعي", "هذا", "هاذ", "اللي", "كاين", "عن", "إلى", "ان", "أن", "برك"
+        "لي", "لك", "تاعك", "تاعي", "هذا", "هاذ", "اللي", "كاين", "عن", "إلى", "ان", "أن", "برك",
+        "عموما", "عمومًا", "والسوشيال", "السوشيال", "ميديا", "الفيديو", "تاع", "وبال", "بلي"
     }
     clean_tokens = [re.sub(r"[^\w\u0600-\u06FF]", "", w) for w in s.split()]
     content_tokens = [w for w in clean_tokens if len(w) >= 3 and w not in stop_words]
@@ -203,70 +257,63 @@ def _infer_dynamic_scene_from_clause(
 
     vq = _pick_unique_visual_query(s, used_queries, idx)
     used_queries.append(vq)
+    if used_headlines is None:
+        used_headlines = []
+    semantic_kws = _semantic_headlines(s, content_tokens, used_headlines)
+    kws = semantic_kws
 
     if idx == 0:
         tpl = "kinetic_hook"
         intent = "problem"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "انتبه الآن"]
         conf = 0.95
-    elif idx == total_scenes - 1 or any(k in s for k in ["رابط", "التسجيل", "أسفل", "اسفل", "اشترك", "اطلب", "تواصل", "البايو"]):
+    elif any(k in s for k in ["رابط", "التسجيل", "أسفل", "اسفل", "اشترك", "اطلب", "تواصل", "البايو"]):
         tpl = "cta_end"
         intent = "cta"
-        kws = ["ابدأ الآن", "الرابط في الأسفل"]
         vq = "cta_arrow_down"
         conf = 0.96
-    elif spoken_nums or any(k in s for k in ["مجاني", "مجاناً", "مجانا", "باطل"]):
+    elif spoken_nums:
         tpl = "big_number"
         intent = "number"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "مجاناً بالكامل"]
-        if not spoken_nums:
-            spoken_nums = [0]
         conf = 0.93
     elif any(k in s for k in ["انستغرام", "إنستغرام", "تيك توك", "ريلز", "سوشيال", "حساب", "الكونت", "هاتف", "تلفون"]):
         tpl = "phone_reel_mockup"
         intent = "problem" if any(p in s for p in ["يموت", "مشكل", "ضعيف", "متوقف", "مخلي"]) else "solution"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "نمو الحساب"]
         conf = 0.92
     elif any(k in s for k in ["مقابل", "بدل", "عكس", "أفضل من", "وتطلعهم", "ترفعهم"]):
         tpl = "versus"
         intent = "comparison"
-        kws = ["مونتاج يدوي مرهق", " ".join(content_tokens[:3])]
+        kws = ["مونتاج يدوي مرهق", "موشن غرافيك"]
         conf = 0.90
     elif any(k in s for k in ["قبل", "بعد", "تحول", "بالموشن", "تقدر تمونطي", "تقدر تمونتي"]):
         tpl = "before_after"
         intent = "proof"
-        kws = ["فيديو خام عادي", " ".join(content_tokens[:3])]
         conf = 0.91
-    elif any(k in s for k in ["أولاً", "ثانياً", "خطوات", "ثلاث", "ارفع", "بالذكاء الاصطناعي"]):
+    elif any(k in s for k in ["أولاً", "ثانياً", "خطوات", "ثلاث", "ارفع", "الخطوة الأولى", "الخطوة الثانية"]):
         tpl = "steps_flow"
         intent = "step"
-        kws = [
-            content_tokens[0] if len(content_tokens) > 0 else "ارفع الصوت",
-            content_tokens[1] if len(content_tokens) > 1 else "يعالجه الذكاء",
-            content_tokens[2] if len(content_tokens) > 2 else "جاهز للنشر",
-        ]
         conf = 0.90
-    elif (s.count("و") >= 2 and len(content_tokens) >= 3) or any(k in s for k in ["تنقي", "المونتاج العادي"]):
+    elif (sum(1 for token in s.split() if token.startswith("و") and len(token) > 2) >= 2 and len(content_tokens) >= 3) or any(k in s for k in ["تنقي", "المونتاج العادي"]):
         tpl = "checklist"
         intent = "step"
-        kws = content_tokens[:3]
         conf = 0.91
     elif any(k in s for k in ["منصة", "تطبيق", "موقع", "برنامج", "إيديتينغ", "ايديتينغ"]):
-        tpl = "fullscreen_image"
+        # Use a self-contained vector scene unless an actual storyboard image is attached.
+        tpl = "concept_icon"
         intent = "solution"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "استوديو ذكي"]
-        vq = "clean composition, no text, no letters, no watermark"
+        vq = "lightbulb_solution" if any(k in s for k in ["منصة", "الحل", "تطبيق", "موقع"]) else "ai_neural_chip"
         conf = 0.93
-    elif any(k in s for k in ["وقت", "الوقت", "ساعة", "ثواني", "مشكل", "تعاني", "قص", "صمت"]):
+    elif any(k in s for k in ["صمت", "فراغات", "تنحي", "ينحي", "قص الصمت"]):
+        tpl = "before_after"
+        intent = "proof"
+        conf = 0.93
+    elif any(k in s for k in ["وقت", "الوقت", "ساعة", "ثواني", "مشكل", "تعاني", "قص"]):
         tpl = "concept_icon"
         intent = "problem" if any(p in s for p in ["مشكل", "تعاني", "عندكش"]) else "solution"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or "اختصار الوقت"]
         conf = 0.92
     else:
         tpl = "concept_icon"
         intent = "transition"
-        kws = [" ".join(content_tokens[:2]), " ".join(content_tokens[2:4]) or ""]
-        conf = 0.65  # أقل من 0.7 عند الغموض -> يتحول تلقائياً في المدقق الدلالي إلى kinetic_hook!
+        conf = 0.76  # تصنيف بصري احتياطي متوسط الثقة؛ لا يجب أن يتحول تلقائياً إلى kinetic_hook.
 
     # منع تكرار نفس القالب في مشهدين متتاليين وتنويع القوالب على مدار الفيديو
     if tpl == prev_template and tpl != "kinetic_hook":
@@ -327,10 +374,34 @@ def build_dynamic_scene_plan_for_any_words(
                 " ".join(str(x["word"]) for x in cur_words),
             ))
 
+    # Merge filler-only clauses (e.g. greetings/hesitations) into a nearby content clause,
+    # so the first card is not forced to display a generic label such as "الفكرة الرئيسية".
+    _filler = {"السلام", "عليكم", "على", "بالي", "بلي", "راك", "وانت", "وأنت", "ما", "في", "من", "مع", "باش", "لي", "لك", "تاعك", "تاعي", "هذا", "هاذ", "اللي", "كاين", "عن", "إلى", "ان", "أن", "برك", "عموما", "عمومًا", "والسوشيال", "السوشيال", "ميديا", "تاع"}
+    def _meaningful_count(text: str) -> int:
+        toks = [re.sub(r"[^\w\u0600-\u06FF]", "", t) for t in text.split()]
+        return sum(1 for t in toks if len(t) >= 3 and t not in _filler)
+    i_clause = 0
+    while i_clause < len(clauses) and len(clauses) > 1:
+        if _meaningful_count(clauses[i_clause][2]) < 2:
+            if i_clause + 1 < len(clauses):
+                a, b, txt = clauses[i_clause]
+                na, nb, ntxt = clauses[i_clause + 1]
+                clauses[i_clause + 1] = (min(a, na), max(b, nb), (txt + " " + ntxt).strip())
+                clauses.pop(i_clause)
+                continue
+            else:
+                pa, pb, ptxt = clauses[i_clause - 1]
+                a, b, txt = clauses[i_clause]
+                clauses[i_clause - 1] = (pa, max(pb, b), (ptxt + " " + txt).strip())
+                clauses.pop(i_clause)
+                break
+        i_clause += 1
+
     scenes = []
     prev_tpl = ""
     used_queries: List[str] = []
     used_templates: List[str] = []
+    used_headlines: List[str] = []
     for i, (s_t, e_t, sp_txt) in enumerate(clauses):
         sc = _infer_dynamic_scene_from_clause(
             speech_text=sp_txt,
@@ -341,6 +412,7 @@ def build_dynamic_scene_plan_for_any_words(
             prev_template=prev_tpl,
             used_queries=used_queries,
             used_templates=used_templates,
+            used_headlines=used_headlines,
         )
         prev_tpl = sc["template"]
         scenes.append(sc)

@@ -56,3 +56,29 @@
   - تغيير رسمة أي مشهد من بين الـ **32 رسمة ومجسماً** من القائمة المنسدلة.
   - تعديل العنوان البارز، الشارة العلوية، المؤشر الرقمي، العناصر الفرعية، ووضع العرض (`شاشة موشن كاملة` / `لقطة المتحدث الصافية` / `B-Roll`).
   - تعديل المؤثرات الصوتية لكل مشهد أو لكل ثانية وتحديث الساوند ديزاين في **ثانية واحدة فقط (`-c:v copy`)** بدون إعادة رندرة الفيديو!
+
+
+## Repair pass 2 (2026-10-24)
+- Added long-silence trimming before transcription and used the same cleaned audio for word timestamps, sound mix, and render.
+- Removed fabricated reference transcript fallback for ordinary user uploads.
+- Rebuilt the Stage 1 plan from actual transcribed words instead of a fixed demo script.
+- Connected offline semantic SVG assets to selected v2 scene cards and added 6-fps per-scene motion-frame rendering.
+- Fixed scene selection during small timing gaps so the renderer does not jump to the final scene.
+- Added regression tests for the above changes; 9/9 tests pass. Full render awaits ASR dependency availability.
+
+
+## Repair pass 3 (2026-10-24)
+- CTA scenes are no longer forced at the end of every video; CTA copy is grounded in actual transcript terms.
+- Raised the generic scene fallback confidence to reduce unnecessary `kinetic_hook` downgrades.
+- Removed the hardcoded “zero dinar/free” label from the big-number template; supporting labels now come from the scene plan.
+- Regression suite expanded to 11 passing tests. End-to-end rendering remains blocked by missing `faster_whisper` in the validation environment.
+
+
+## Repair pass 4 (2026-10-24)
+- Added a final render guard that checks output duration and long silences (including trailing silence), remuxes the known-clean master audio when needed, and refuses to accept an output with long silence still present.
+- Reworked scene headlines into concise semantic labels; merged filler-only clauses into nearby content clauses to avoid generic repeated titles.
+- Prevented false step-flow classification from counting the Arabic letter waw inside words; `steps_flow` now requires explicit step cues.
+- Avoided `fullscreen_image` without an actual image/storyboard asset; platform scenes use a self-contained semantic vector instead.
+- Added server-font text sanitization to remove unsupported pictographs/control symbols that render as tofu squares.
+- Removed the false mapping from “مجاني” to `0 DA`; free is not a spoken numeric value.
+- Expanded regression suite to 19 tests. All pass; a full fresh render still requires the ASR dependency in the deployment environment.

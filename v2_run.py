@@ -39,6 +39,130 @@ def _probe_audio_duration(audio_path: str, fallback: float = 23.60) -> float:
     return fallback
 
 
+
+def _trim_long_silence_ffmpeg(input_wav: str, output_wav: str) -> Dict[str, Any]:
+    """Remove long pauses from a voice track while retaining short natural pauses.
+
+    The cleaned track is transcribed and rendered, so word timestamps and audio remain
+    on the same timeline. On filter failure, keep the original track and report why.
+    """
+    original_duration = _probe_audio_duration(input_wav, fallback=0.0)
+    report: Dict[str, Any] = {
+        "enabled": True,
+        "input_path": input_wav,
+        "output_path": output_wav,
+        "threshold_db": -40,
+        "min_silence_seconds": 0.35,
+        "retained_silence_seconds": 0.10,
+        "original_duration_seconds": round(original_duration, 3),
+        "cleaned_duration_seconds": round(original_duration, 3),
+        "removed_seconds": 0.0,
+        "status": "not_run",
+    }
+    # Keep pauses shorter than 450 ms; collapse longer pauses to ~140 ms.
+    af = (
+        "silenceremove=start_periods=1:start_duration=0.20:start_threshold=-40dB:"
+        "stop_periods=-1:stop_duration=0.35:stop_threshold=-40dB:"
+        "stop_silence=0.10:detection=rms"
+    )
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-y", "-v", "error", "-i", input_wav, "-af", af,
+             "-ac", "1", "-ar", "44100", "-c:a", "pcm_s16le", output_wav],
+            capture_output=True, text=True, timeout=180,
+        )
+        if proc.returncode != 0 or not os.path.exists(output_wav) or os.path.getsize(output_wav) < 1024:
+            raise RuntimeError((proc.stderr or "ffmpeg produced no cleaned audio")[-1200:])
+        cleaned_duration = _probe_audio_duration(output_wav, fallback=original_duration)
+        # Guard against a broken filter accidentally deleting most of the speech.
+        if original_duration > 1.0 and cleaned_duration < max(0.5, original_duration * 0.20):
+            raise RuntimeError(f"cleaned duration suspiciously short: {cleaned_duration:.2f}s")
+        report.update({
+            "cleaned_duration_seconds": round(cleaned_duration, 3),
+            "removed_seconds": round(max(0.0, original_duration - cleaned_duration), 3),
+            "status": "trimmed" if cleaned_duration < original_duration - 0.15 else "no_long_silence_detected",
+        })
+        return report
+    except Exception as exc:
+        try:
+            shutil.copy2(input_wav, output_wav)
+        except Exception:
+            output_wav = input_wav
+            report["output_path"] = input_wav
+        report["status"] = "fallback_original_audio"
+        report["error"] = str(exc)[:1200]
+        return report
+
+
+def _detect_long_silence(audio_path: str, threshold_db: int = -35, min_seconds: float = 0.80) -> List[Dict[str, float]]:
+    """Return silence intervals longer than min_seconds, including silence at EOF."""
+    if not audio_path or not os.path.exists(audio_path):
+        return []
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-i", audio_path, "-af", f"silencedetect=noise={threshold_db}dB:d={min_seconds}", "-f", "null", "-"],
+            capture_output=True, text=True, timeout=120,
+        )
+        log = (proc.stderr or "") + "\n" + (proc.stdout or "")
+        import re
+        intervals: List[Dict[str, float]] = []
+        open_start: Optional[float] = None
+        for line in log.splitlines():
+            m_start = re.search(r"silence_start:\s*([0-9.]+)", line)
+            if m_start:
+                open_start = float(m_start.group(1))
+            m_end = re.search(r"silence_end:\s*([0-9.]+).*silence_duration:\s*([0-9.]+)", line)
+            if m_end:
+                end_t = float(m_end.group(1))
+                dur = float(m_end.group(2))
+                start_t = open_start if open_start is not None else max(0.0, end_t - dur)
+                intervals.append({"start": round(start_t, 3), "end": round(end_t, 3), "duration": round(dur, 3)})
+                open_start = None
+        if open_start is not None:
+            end_t = _probe_audio_duration(audio_path, fallback=open_start)
+            dur = max(0.0, end_t - open_start)
+            if dur >= min_seconds:
+                intervals.append({"start": round(open_start, 3), "end": round(end_t, 3), "duration": round(dur, 3)})
+        return [item for item in intervals if item["duration"] >= min_seconds]
+    except Exception:
+        return []
+
+
+def _ensure_render_matches_clean_audio(video_path: str, clean_audio_path: str, expected_duration: float) -> Dict[str, Any]:
+    """Post-render guard: mux the cleaned master track and cap duration to its clean timeline."""
+    before = _probe_audio_duration(video_path, fallback=expected_duration)
+    pre_silences = _detect_long_silence(video_path)
+    report = {
+        "expected_duration_seconds": round(expected_duration, 3),
+        "rendered_duration_before_guard_seconds": round(before, 3),
+        "long_silences_before_guard": pre_silences,
+        "duration_guard_applied": False,
+        "clean_audio_remux_applied": False,
+    }
+    # Remux the known-clean master audio not only on duration mismatch but also if the
+    # encoded result still contains long pauses. This catches route/mux regressions.
+    needs_remux = abs(before - expected_duration) > 0.65 or bool(pre_silences)
+    if needs_remux and os.path.exists(clean_audio_path):
+        temp_out = video_path + ".duration_guard.mp4"
+        cmd = ["ffmpeg", "-y", "-v", "error", "-i", video_path, "-i", clean_audio_path,
+               "-map", "0:v:0", "-map", "1:a:0", "-t", f"{max(0.5, expected_duration):.3f}",
+               "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", temp_out]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=240)
+        if proc.returncode == 0 and os.path.exists(temp_out) and os.path.getsize(temp_out) > 1024:
+            os.replace(temp_out, video_path)
+            report["duration_guard_applied"] = abs(before - expected_duration) > 0.65
+            report["clean_audio_remux_applied"] = True
+        else:
+            report["duration_guard_error"] = (proc.stderr or "ffmpeg duration guard failed")[-800:]
+            try:
+                if os.path.exists(temp_out): os.remove(temp_out)
+            except Exception:
+                pass
+    after = _probe_audio_duration(video_path, fallback=expected_duration)
+    report["rendered_duration_after_guard_seconds"] = round(after, 3)
+    report["long_silences_after_render"] = _detect_long_silence(video_path)
+    return report
+
 def _normalize_custom_scenes_from_ui(custom_scenes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     يحوّل التعديلات القادمة من محرر المشاهد في واجهة Streamlit (app.py) إلى صيغة Scene Plan JSON القياسية للجيل الثاني (v2).
@@ -186,17 +310,23 @@ def run_v2_pipeline_programmatic(
         theme_name = theme_keys[0]
     theme = themes_data["themes"][theme_name]
 
-    _prog(0.10, "1/5: استخراج الصوت وتفريغ الكلمات مع التصحيح السياقي للدارجة...")
+    _prog(0.10, "1/5: استخراج الصوت، قص فترات الصمت الطويلة، ثم تفريغ الكلمات على التوقيت الجديد...")
     raw_wav = os.path.join(out_dir, "extracted_voice.wav")
-    if input_path and os.path.exists(input_path):
-        subprocess.run(
-            ["ffmpeg", "-y", "-v", "error", "-i", input_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", raw_wav],
-            check=False,
-        )
+    clean_wav = os.path.join(out_dir, "cleaned_voice.wav")
+    if not input_path or not os.path.exists(input_path):
+        raise FileNotFoundError(f"ملف الإدخال غير موجود: {input_path}")
+    extract_proc = subprocess.run(
+        ["ffmpeg", "-y", "-v", "error", "-i", input_path, "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", raw_wav],
+        capture_output=True, text=True, timeout=180,
+    )
+    if extract_proc.returncode != 0 or not os.path.exists(raw_wav) or os.path.getsize(raw_wav) < 1024:
+        raise RuntimeError("تعذر استخراج مسار صوت صالح من ملف الإدخال: " + (extract_proc.stderr or "unknown ffmpeg error")[-1000:])
 
-    duration = _probe_audio_duration(raw_wav if os.path.exists(raw_wav) else input_path, fallback=23.60)
+    silence_report = _trim_long_silence_ffmpeg(raw_wav, clean_wav)
+    voice_for_pipeline = silence_report.get("output_path") or clean_wav
+    duration = _probe_audio_duration(voice_for_pipeline, fallback=_probe_audio_duration(raw_wav, fallback=23.60))
     words, low_conf_alerts = transcribe_any_audio_or_video(
-        media_path=input_path or raw_wav,
+        media_path=voice_for_pipeline,
         duration=duration,
         user_overrides=user_word_overrides,
     )
@@ -229,6 +359,7 @@ def run_v2_pipeline_programmatic(
                 "duration": duration,
                 "theme": theme_name,
                 "low_confidence_words_for_review": low_conf_alerts,
+                "silence_removal": silence_report,
                 "validator_audit_log": audit_log,
                 "scenes": scenes,
             },
@@ -239,7 +370,8 @@ def run_v2_pipeline_programmatic(
 
     _prog(0.40, "3/5: هندسة الصوت المرتبطة بالأحداث (-15.5 dB) وضبط الجهارة القياسية (-14.0 LUFS)...")
     master_wav = os.path.join(out_dir, "master_14lufs.wav")
-    audio_report = build_master_audio(raw_wav, scenes, master_wav)
+    audio_report = build_master_audio(voice_for_pipeline, scenes, master_wav)
+    audio_report["silence_removal"] = silence_report
 
     _prog(0.55, "4/5: فحص حدود العناصر (DOM getBoundingClientRect) ورندر الفيديو 1080×1920 @ 30fps...")
     combined = verify_and_render_with_chromium(
@@ -251,8 +383,17 @@ def run_v2_pipeline_programmatic(
         fps=30,
         total_duration=duration,
     )
+    final_audio_guard = _ensure_render_matches_clean_audio(output_mp4_path, master_wav, duration)
     dom_report = combined["dom_report"]
     render_report = combined["render_report"]
+    render_report["final_audio_guard"] = final_audio_guard
+    if final_audio_guard.get("long_silences_after_render"):
+        longest = max(x.get("duration", 0.0) for x in final_audio_guard["long_silences_after_render"])
+        if longest >= 0.80:
+            raise RuntimeError(
+                f"فشل فحص الصوت النهائي: بقيت فترات صمت طويلة (أطولها {longest:.2f} ثانية). "
+                "تم إيقاف اعتماد الفيديو بدل تسليم نتيجة غير مطابقة. راجع سجل الصوت النهائي."
+            )
 
     _prog(0.82, "5/5: توليد Contact Sheet (فريم كل 0.5 ثانية) وصورة الغلاف (1080×1920) وفحص الجودة...")
     stem = os.path.splitext(os.path.basename(output_mp4_path))[0]

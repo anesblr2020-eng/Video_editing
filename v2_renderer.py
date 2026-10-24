@@ -20,6 +20,14 @@ from v2_templates_library import (
     exit_ease,
 )
 
+# The semantic vector engine is optional at import time, but its offline built-in SVG
+# fallback is used whenever available. Network fetching remains disabled by default.
+try:
+    from vector_lottie_engine import search_and_fetch_web_vectors, render_recolored_svg_motion_canvas
+except Exception:
+    search_and_fetch_web_vectors = None
+    render_recolored_svg_motion_canvas = None
+
 FONT_BOLD_PATH = "/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"
 FONT_REG_PATH = "/usr/share/fonts/truetype/noto/NotoSansArabic-Regular.ttf"
 FALLBACK_BOLD_PATH = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
@@ -39,6 +47,18 @@ def get_font(size: int, bold: bool = True, latin: bool = False) -> ImageFont.Fre
         _FONT_CACHE[key] = ImageFont.truetype(path, int(size))
     return _FONT_CACHE[key]
 
+
+
+def _safe_graphic_text(value: Any) -> str:
+    """Strip unsupported pictographs/control glyphs that render as tofu squares in server fonts."""
+    import unicodedata
+    text = unicodedata.normalize("NFC", str(value or ""))
+    kept = []
+    for ch in text:
+        cat = unicodedata.category(ch)
+        if ch.isspace() or cat[0] in {"L", "N", "M"} or ch in ".,!?؟،:;-%+()[]/\u2019\u2013\u2014":
+            kept.append(ch)
+    return " ".join("".join(kept).split()).strip()
 
 def hex_to_rgb(hex_color: str) -> Tuple[int, int, int]:
     h = hex_color.lstrip("#")
@@ -67,6 +87,8 @@ def draw_contextual_icon(
     يرسم 12 أيقونة ومجسم متجهي مختلف تماماً ومطابق لسياق الجملة المنطوقة (بدون أي تكرار ممل).
     """
     q = (visual_query or "").lower()
+    # Small continuous pulse so contextual illustrations do not freeze between scene cuts.
+    radius = max(12, int(radius * (1.0 + 0.035 * math.sin(float(local_t) * 2.0 * math.pi))))
 
     # هالة خلفية متوهجة متعددة الطبقات
     draw.ellipse(
@@ -208,6 +230,8 @@ def draw_contextual_icon(
 def render_scene_card_and_measure_dom(
     sc: Dict[str, Any],
     theme: Dict[str, Any],
+    animation_t: float = 0.5,
+    motion_svg: str = "",
 ) -> Tuple[np.ndarray, Dict[str, Any]]:
     """
     يرسم بطاقة المشهد بدقة متجهية أصلية ضمن حاوية العرض البصري (960×940 عند x=60, y=280)
@@ -218,8 +242,8 @@ def render_scene_card_and_measure_dom(
     draw = ImageDraw.Draw(img, "RGBA")
 
     tpl = sc.get("template", "kinetic_hook")
-    keywords = sc.get("keywords", ["تركيز بصري"])
-    numbers = sc.get("numbers", [])
+    keywords = [_safe_graphic_text(k) for k in sc.get("keywords", ["تركيز بصري"]) if _safe_graphic_text(k)]
+    numbers = [_safe_graphic_text(n) for n in sc.get("numbers", []) if _safe_graphic_text(n)]
     visual_query = sc.get("visual_query", "")
 
     accent = hex_to_rgb(theme["accent_primary"])
@@ -236,6 +260,7 @@ def render_scene_card_and_measure_dom(
     headlines_dom = []
 
     def add_centered_text(text: str, y_center: int, font_size: int, color_rgb: Tuple[int, int, int], is_headline: bool = True):
+        text = _safe_graphic_text(text)
         if not text:
             return
         fnt = get_font(font_size, bold=True)
@@ -264,6 +289,28 @@ def render_scene_card_and_measure_dom(
                 "fontSize": font_size,
             })
 
+    def draw_semantic_motion_asset(cx: int, cy: int, size: int) -> bool:
+        """Draw a speech-matched SVG with progressive path reveal; return whether it rendered."""
+        if not motion_svg or render_recolored_svg_motion_canvas is None:
+            return False
+        try:
+            palette = {"primary": accent, "secondary": secondary, "accent": success}
+            progress = min(1.0, max(0.08, float(animation_t) / 0.85))
+            vec = render_recolored_svg_motion_canvas(
+                svg_xml=motion_svg,
+                width=size,
+                height=size,
+                theme_palette=palette,
+                choreo_u=progress,
+                global_t=float(animation_t),
+            )
+            if vec.mode != "RGBA":
+                vec = vec.convert("RGBA")
+            img.alpha_composite(vec, dest=(int(cx - size // 2), int(cy - size // 2)))
+            return True
+        except Exception:
+            return False
+
     if tpl == "kinetic_hook":
         # إطار طاقة نيون مزدوج حول النص الحركي الضخم
         draw.rounded_rectangle([60, 170, cw - 60, 740], radius=42, fill=(14, 21, 38, 235), outline=(*accent, 220), width=5)
@@ -273,24 +320,28 @@ def render_scene_card_and_measure_dom(
             add_centered_text(kw1, 555, 84, accent, is_headline=True)
 
     elif tpl == "concept_icon":
-        draw_contextual_icon(draw, img, visual_query, cw // 2, 305, 138, accent, secondary, danger, success, 0.5)
+        if not draw_semantic_motion_asset(cw // 2, 305, 252):
+            draw_contextual_icon(draw, img, visual_query, cw // 2, 305, 138, accent, secondary, danger, success, animation_t)
         add_centered_text(kw0, 565, 82, (255, 255, 255), is_headline=True)
         if kw1:
             add_centered_text(kw1, 695, 74, accent, is_headline=True)
 
     elif tpl == "big_number":
         # رسم أيقونة مصاحبة للرقم (مثل مقص الصمت أو شارة المجاني) + الرقم المنطوق الضخم
-        draw_contextual_icon(draw, img, visual_query, cw // 2, 165, 86, accent, secondary, danger, success, 0.5)
+        if not draw_semantic_motion_asset(cw // 2, 165, 150):
+            draw_contextual_icon(draw, img, visual_query, cw // 2, 165, 86, accent, secondary, danger, success, animation_t)
         raw_num = str(numbers[0] if numbers else "0")
         digits_part = "".join(ch for ch in raw_num if ch in "0123456789%+") or "0"
         f_big = get_font(145, bold=True, latin=True)
         bbox = draw.textbbox((0, 0), digits_part, font=f_big)
         nw = bbox[2] - bbox[0]
         draw.text(((cw - nw) // 2, 315 - bbox[1]), digits_part, font=f_big, fill=(*accent, 255))
-        add_centered_text("صفر دينار مجاناً", 515, 74, secondary, is_headline=True)
-        add_centered_text(kw0, 645, 80, (255, 255, 255), is_headline=True)
+        # The number is grounded in spoken audio; supporting labels must also come from the scene.
+        add_centered_text(kw0, 515, 74, secondary, is_headline=True)
         if kw1:
-            add_centered_text(kw1, 765, 72, accent, is_headline=True)
+            add_centered_text(kw1, 665, 72, (255, 255, 255), is_headline=True)
+        if kw2:
+            add_centered_text(kw2, 785, 68, accent, is_headline=True)
 
     elif tpl == "phone_reel_mockup":
         px0, py0, px1, py1 = cw // 2 - 220, 65, cw // 2 + 220, 650
@@ -391,7 +442,7 @@ def render_scene_card_and_measure_dom(
     else:  # cta_end
         add_centered_text(kw0, 260, 88, (255, 255, 255), is_headline=True)
         draw.rounded_rectangle([100, 385, cw - 100, 540], radius=75, fill=(*accent, 255))
-        add_centered_text(kw1 or "الرابط في الأسفل", 462, 74, (9, 13, 22), is_headline=True)
+        add_centered_text(kw1 or kw0, 462, 74, (9, 13, 22), is_headline=True)
         ax, ay0, ay1 = cw // 2, 600, 775
         draw.line([ax, ay0, ax, ay1], fill=(*accent, 255), width=16)
         draw.line([ax - 55, ay1 - 55, ax, ay1 + 8, ax + 55, ay1 - 55], fill=(*accent, 255), width=16)
@@ -437,7 +488,7 @@ def render_caption_bar_and_measure_dom(
         w_idx = int(w.get("index", chunk_start + i_w))
         is_act = w_idx == active_idx
         fnt = f_active if is_act else f_normal
-        txt = str(w.get("word", ""))
+        txt = _safe_graphic_text(w.get("word", ""))
         bbox = draw.textbbox((0, 0), txt, font=fnt, direction="rtl")
         tw = bbox[2] - bbox[0]
         th = bbox[3] - bbox[1]
@@ -577,17 +628,46 @@ def verify_and_render_with_chromium(
     min_caption_font_px = 999.0
     min_headline_font_px = 999.0
 
-    scene_stage_crops: List[np.ndarray] = []
+    # Pre-render a lightweight 6-fps motion pass per scene. The final video remains 30 fps;
+    # the card animation advances independently while the camera/card transform stays smooth.
+    motion_fps = 6.0
+    scene_stage_frames: List[List[np.ndarray]] = []
     word_caption_crops: Dict[int, np.ndarray] = {}
 
     for idx, sc in enumerate(scenes):
-        mid_t = 0.5 * (float(sc["start"]) + float(sc["end"]))
+        scene_start = float(sc["start"])
+        scene_end = float(sc["end"])
+        mid_t = 0.5 * (scene_start + scene_end)
         html_doc = build_frame_html(sc, words, theme, mid_t, total_duration)
         with open(os.path.join(html_snapshots_dir, f"scene_{idx+1:02d}_{sc['template']}.html"), "w", encoding="utf-8") as f:
             f.write(html_doc)
 
-        stage_rgb, st_dom = render_scene_card_and_measure_dom(sc, theme)
-        scene_stage_crops.append(stage_rgb)
+        scene_dur = max(0.25, scene_end - scene_start)
+        motion_count = max(2, int(math.ceil(scene_dur * motion_fps)) + 1)
+        motion_frames: List[np.ndarray] = []
+        st_dom = None
+        semantic_svg = ""
+        if search_and_fetch_web_vectors is not None and sc.get("template") in {"concept_icon", "big_number"}:
+            try:
+                svg_candidates = search_and_fetch_web_vectors(
+                    scene_text_ar=str(sc.get("speech", "")),
+                    fallback_topic=str(sc.get("visual_query", "")),
+                    max_assets=1,
+                    allow_network=False,
+                )
+                if svg_candidates:
+                    semantic_svg = str(svg_candidates[0])
+            except Exception:
+                semantic_svg = ""
+        for motion_idx in range(motion_count):
+            anim_t = min(scene_dur, motion_idx / motion_fps)
+            stage_rgb, frame_dom = render_scene_card_and_measure_dom(
+                sc, theme, animation_t=anim_t, motion_svg=semantic_svg
+            )
+            motion_frames.append(stage_rgb)
+            if st_dom is None or abs(anim_t - scene_dur * 0.5) < abs((motion_idx - 1) / motion_fps - scene_dur * 0.5):
+                st_dom = frame_dom
+        scene_stage_frames.append(motion_frames)
 
         st_rect = st_dom["stage_rect"]
         if st_rect["top"] < 250:
@@ -677,10 +757,21 @@ def verify_and_render_with_chromium(
         t = f_idx / float(fps)
 
         sc_idx = len(scenes) - 1
-        for i, sc in enumerate(scenes):
-            if float(sc["start"]) <= t <= float(sc["end"]):
+        found_active = False
+        for i, candidate in enumerate(scenes):
+            if float(candidate["start"]) <= t <= float(candidate["end"]):
                 sc_idx = i
+                found_active = True
                 break
+        if scenes and not found_active:
+            # For tiny timing gaps between word groups, show the nearest scene rather than
+            # accidentally jumping to the final CTA for the rest of the video.
+            def _distance_to_scene(candidate):
+                start_v, end_v = float(candidate["start"]), float(candidate["end"])
+                if start_v <= t <= end_v:
+                    return 0.0
+                return min(abs(t - start_v), abs(t - end_v))
+            sc_idx = min(range(len(scenes)), key=lambda i: _distance_to_scene(scenes[i]))
         sc = scenes[sc_idx]
         local_t = max(0.0, t - float(sc["start"]))
         sc_dur = max(0.5, float(sc["end"]) - float(sc["start"]))
@@ -707,7 +798,9 @@ def verify_and_render_with_chromium(
             scale = max(0.2, min(1.08, env * breath_scale))
         dy = int(round((1.0 - min(1.0, env)) * 54.0 + breath_y))
 
-        stage_crop = scene_stage_crops[sc_idx]
+        scene_frames = scene_stage_frames[sc_idx]
+        motion_idx = min(len(scene_frames) - 1, max(0, int(round(local_t * motion_fps))))
+        stage_crop = scene_frames[motion_idx]
         sh, sw = stage_crop.shape[:2]
         warped_stage = _transform_stage_crop_numpy_pil(
             stage_rgb=stage_crop,

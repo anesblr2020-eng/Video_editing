@@ -163,7 +163,10 @@ def transcribe_any_audio_or_video(
         except Exception:
             raw_words = []
 
-    if not raw_words:
+    # A reference transcript is permitted only for explicitly named benchmark fixtures.
+    # Never fabricate a successful transcript for arbitrary user uploads: the caller must
+    # receive an empty list and stop production if the real ASR engine failed.
+    if not raw_words and is_benchmark:
         raw_words = get_reference_benchmark_words(duration=duration)
 
     return contextual_repair_words(raw_words, user_overrides=user_overrides)
