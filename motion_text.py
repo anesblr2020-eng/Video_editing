@@ -1875,7 +1875,150 @@ def _render_dynamic_archetype_stage(
         return img
 
     # =========================================================================
-    # Archetype 12 [6944 Shot 7]: kinetic_quote_dm_finale (الخاتمة الحركية السريعة بالكلمة المفتاحية وعلامات التنصيص)
+    # Archetype 12: floating_3d_stat_Compare (بطاقتا مقارنة ثلاثيتا الأبعاد مع مؤشر تحول مركزي حي)
+    # =========================================================================
+    if archetype == "floating_3d_stat_Compare":
+        ba_info = scene_meta.get("before_after") or ("الطريقة التقليدية", "3.8", kpi_lbl, "9.8")
+        card_w = int(st_w * 0.44)
+        card_h = int(st_h * 0.56)
+        top_y = st_y1 + int(st_h * 0.14)
+
+        for ci in range(2):
+            c_sp = _staggered_spring(choreo_u, delay=0.08 + ci * 0.16, duration=0.38, stiffness=200.0, damping=14.0)
+            if c_sp <= 0.05:
+                continue
+            bx1 = (st_x1 + 4 if ci == 0 else st_x2 - card_w - 4)
+            by1 = top_y + int(28 * (1.0 - c_sp))
+            bx2, by2 = bx1 + card_w, by1 + card_h
+
+            is_win = (ci == 0)
+            b_col = accent_c if is_win else (239, 68, 68)
+            img = _draw_soft_elevated_card(
+                img, (bx1, by1, bx2, by2), radius=22,
+                fill_rgba=(255, 255, 255, 253), shadow_offset_y=12, shadow_blur=14, shadow_alpha=44,
+                border_rgba=(*b_col, 210)
+            )
+            draw = ImageDraw.Draw(img, "RGBA")
+            draw.rounded_rectangle([(bx1 + 14, by1 + 14), (bx2 - 14, by1 + 52)], radius=12, fill=(*b_col, 240))
+            hdr_t = kpi_val if is_win else "السابق"
+            draw_contained_arabic_text(draw, (bx1 + 18, by1 + 14, bx2 - 18, by1 + 52), hdr_t, initial_font_size=16, fill=(255, 255, 255, 255))
+
+            ring_r = int(min(card_w, card_h) * 0.24)
+            rcx, rcy = (bx1 + bx2) // 2, by1 + int(card_h * 0.52)
+            draw.ellipse([(rcx - ring_r, rcy - ring_r), (rcx + ring_r, rcy + ring_r)], outline=(228, 228, 231, 255), width=8)
+            sweep = int((315 if is_win else 135) * min(1.0, max(0.2, choreo_u * 1.35)))
+            draw.arc([(rcx - ring_r, rcy - ring_r), (rcx + ring_r, rcy + ring_r)], start=-90, end=-90 + sweep, fill=(*b_col, 255), width=8)
+            score_txt = str(ba_info[3] if is_win else ba_info[1])
+            draw_contained_arabic_text(draw, (rcx - ring_r + 8, rcy - 18, rcx + ring_r - 8, rcy + 18), score_txt, initial_font_size=20, fill=(*dark_navy, 255))
+
+            lbl_t = str(ba_info[2] if is_win else ba_info[0])
+            draw_contained_arabic_text(draw, (bx1 + 10, by2 - 54, bx2 - 10, by2 - 12), lbl_t, initial_font_size=15, fill=(*dark_navy, 255))
+        return img
+
+    # =========================================================================
+    # Archetype 13: step_cascade_ribbon_cards (شرائط الخطوات المتدرجة ثلاثية الأبعاد بعلامات التحقق)
+    # =========================================================================
+    if archetype == "step_cascade_ribbon_cards":
+        num_steps = 4
+        rib_h = int((st_h - 44) // num_steps)
+        for si in range(num_steps):
+            s_sp = _staggered_spring(choreo_u, delay=0.06 + si * 0.12, duration=0.36, stiffness=205.0, damping=14.0)
+            if s_sp <= 0.05:
+                continue
+            indent = (num_steps - 1 - si) * 8
+            rx1 = st_x1 + indent + int(36 * (1.0 - s_sp))
+            rx2 = st_x2 - indent
+            ry1 = st_y1 + 8 + si * (rib_h + 8)
+            ry2 = ry1 + rib_h
+
+            img = _draw_soft_elevated_card(
+                img, (rx1, ry1, rx2, ry2), radius=18,
+                fill_rgba=(255, 255, 255, 253), shadow_offset_y=10, shadow_blur=12, shadow_alpha=42
+            )
+            draw = ImageDraw.Draw(img, "RGBA")
+            tag_w = 56
+            col_step = primary_c if si % 2 == 0 else secondary_c
+            draw.rounded_rectangle([(rx2 - tag_w - 10, ry1 + 10), (rx2 - 10, ry2 - 10)], radius=12, fill=(*col_step, 255))
+            draw_contained_arabic_text(draw, (rx2 - tag_w - 6, ry1 + 10, rx2 - 14, ry2 - 10), f"0{si + 1}", initial_font_size=18, fill=(255, 255, 255, 255))
+            _draw_checkmark_badge(draw, rx1 + 26, (ry1 + ry2) // 2, 11, color_rgb=accent_c)
+            draw_contained_arabic_text(draw, (rx1 + 48, ry1 + 8, rx2 - tag_w - 20, ry2 - 8), sub_items[si % len(sub_items)], initial_font_size=17, fill=(*dark_navy, 255))
+        return img
+
+    # =========================================================================
+    # Archetype 14: neural_hub_spoke_network (شبكة العقد الذكية المركزية المتصلة بنبضات ضوئية)
+    # =========================================================================
+    if archetype == "neural_hub_spoke_network":
+        hub_cy = st_y1 + int(st_h * 0.45)
+        hub_sp = _staggered_spring(choreo_u, delay=0.05, duration=0.38)
+        orbit_rx = int(st_w * 0.34 * max(0.6, hub_sp))
+        orbit_ry = int(st_h * 0.30 * max(0.6, hub_sp))
+
+        spoke_angles = [-math.pi * 0.78, -math.pi * 0.22, math.pi * 0.22, math.pi * 0.78]
+        spoke_coords = []
+        for ai, ang in enumerate(spoke_angles):
+            n_sp = _staggered_spring(choreo_u, delay=0.12 + ai * 0.10, duration=0.36)
+            nx = cx + int(orbit_rx * math.cos(ang) * n_sp)
+            ny = hub_cy + int(orbit_ry * math.sin(ang) * n_sp)
+            spoke_coords.append((nx, ny, n_sp))
+            if n_sp > 0.1:
+                draw.line([(cx, hub_cy), (nx, ny)], fill=(*primary_c, 210), width=4)
+                pulse_u = ((global_t * 1.8 + ai * 0.25) % 1.0)
+                px = int(cx + (nx - cx) * pulse_u)
+                py = int(hub_cy + (ny - hub_cy) * pulse_u)
+                draw.ellipse([(px - 5, py - 5), (px + 5, py + 5)], fill=(*accent_c, 255))
+
+        hr = int(min(st_w, st_h) * 0.15 * max(0.7, hub_sp))
+        img = _draw_soft_elevated_card(img, (cx - hr, hub_cy - hr, cx + hr, hub_cy + hr), radius=hr, fill_rgba=(*dark_navy, 255), shadow_offset_y=12, shadow_blur=14, shadow_alpha=50, border_rgba=(*primary_c, 255))
+        draw = ImageDraw.Draw(img, "RGBA")
+        draw_contained_arabic_text(draw, (cx - hr + 8, hub_cy - hr + 8, cx + hr - 8, hub_cy + hr - 8), kpi_val, initial_font_size=18, fill=(255, 255, 255, 255))
+
+        pw_node, ph_node = int(st_w * 0.40), 46
+        for ai, (nx, ny, n_sp) in enumerate(spoke_coords):
+            if n_sp <= 0.15:
+                continue
+            bx1 = max(st_x1, min(st_x2 - pw_node, nx - pw_node // 2))
+            by1 = ny - ph_node // 2
+            img = _draw_soft_elevated_card(img, (bx1, by1, bx1 + pw_node, by1 + ph_node), radius=14, fill_rgba=(255, 255, 255, 253), shadow_offset_y=8, shadow_blur=10, shadow_alpha=40)
+            draw = ImageDraw.Draw(img, "RGBA")
+            draw_contained_arabic_text(draw, (bx1 + 10, by1 + 4, bx1 + pw_node - 10, by1 + ph_node - 4), sub_items[ai % len(sub_items)], initial_font_size=14, fill=(*dark_navy, 255))
+        return img
+
+    # =========================================================================
+    # Archetype 15: dual_metric_gauge_pods (عدادا الأداء المزدوجان مع قائمة الفوائد السفلية)
+    # =========================================================================
+    if archetype == "dual_metric_gauge_pods":
+        pod_w = (st_w - 16) // 2
+        pod_h = int(st_h * 0.46)
+        for pi in range(2):
+            p_sp = _staggered_spring(choreo_u, delay=0.08 + pi * 0.14, duration=0.38)
+            if p_sp <= 0.05:
+                continue
+            px1 = st_x1 + pi * (pod_w + 16)
+            py1 = st_y1 + 8 + int(24 * (1.0 - p_sp))
+            px2, py2 = px1 + pod_w, py1 + pod_h
+            img = _draw_soft_elevated_card(img, (px1, py1, px2, py2), radius=22, fill_rgba=(255, 255, 255, 253), shadow_offset_y=12, shadow_blur=14, shadow_alpha=44)
+            draw = ImageDraw.Draw(img, "RGBA")
+            gcx, gcy = (px1 + px2) // 2, py1 + int(pod_h * 0.46)
+            gr = int(min(pod_w, pod_h) * 0.30)
+            g_col = primary_c if pi == 0 else accent_c
+            draw.arc([(gcx - gr, gcy - gr), (gcx + gr, gcy + gr)], start=150, end=390, fill=(228, 228, 231, 255), width=10)
+            sweep_g = int(240 * min(1.0, max(0.25, choreo_u * 1.35)) * (0.95 if pi == 0 else 0.88))
+            draw.arc([(gcx - gr, gcy - gr), (gcx + gr, gcy + gr)], start=150, end=150 + sweep_g, fill=(*g_col, 255), width=10)
+            val_t = kpi_val if pi == 0 else "100%"
+            lbl_t = kpi_lbl if pi == 0 else sub_items[0]
+            draw_contained_arabic_text(draw, (gcx - gr + 8, gcy - 18, gcx + gr - 8, gcy + 18), val_t, initial_font_size=18, fill=(*dark_navy, 255))
+            draw_contained_arabic_text(draw, (px1 + 10, py2 - 42, px2 - 10, py2 - 8), lbl_t, initial_font_size=14, fill=(100, 116, 139, 255))
+
+        bot_y1 = st_y1 + pod_h + 24
+        bot_h = st_y2 - bot_y1 - 8
+        if choreo_u >= 0.24 and bot_h >= 48:
+            img = _draw_soft_elevated_card(img, (st_x1, bot_y1, st_x2, bot_y1 + bot_h), radius=20, fill_rgba=(255, 255, 255, 253), shadow_offset_y=10, shadow_blur=12, shadow_alpha=40)
+            draw = ImageDraw.Draw(img, "RGBA")
+            draw_contained_arabic_text(draw, (st_x1 + 18, bot_y1 + 8, st_x2 - 18, bot_y1 + bot_h - 8), f"✔ {sub_items[1]}   •   ✔ {sub_items[2]}", initial_font_size=16, fill=(*dark_navy, 255))
+        return img
+
+    # =========================================================================
+    # Archetype 16 [6944 Shot 7]: kinetic_quote_dm_finale (الخاتمة الحركية السريعة بالكلمة المفتاحية وعلامات التنصيص)
     # =========================================================================
     center_y = int(h * 0.46) + float_y
     q_sp = _staggered_spring(choreo_u, delay=0.04, duration=0.40, stiffness=210.0, damping=13.5)

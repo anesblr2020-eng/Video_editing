@@ -1,23 +1,22 @@
 # -*- coding: utf-8 -*-
-"""
-sound_designer.py - محرك ومصمم المؤثرات الصوتية الذكي لما بعد الرندرة (AI Post-Render Sound Effects & Foley Designer)
-=======================================================================================================================
-ملف رقم 22 في معمارية استوديو المونتاج والموشن جرافيك الذكي (Zero-OOM Architecture).
-يعمل هذا المحرك كـ مرحلة نهائية مستقلة بعد انتهاء رندرة الموشن جرافيك والفيديو بالكامل:
-1. استخراج وتصنيف حزم الساوند ديزاين من روابط Google Drive أو ملفات ZIP/WAV/MP3 المرفوعة إلى 6+2 مجلدات قياسية:
-   (1 - Click, 2 - UI Click, 3 - UI Style, 4 - Button, 5 - Riser, 6 - Whooch, 7 - Counter Tick, 8 - Sub Impact).
-2. توليد فيزيائي مدمج مسبقاً لـ 24 مؤثراً صوتياً بجودة استوديو (24kHz/16-bit WAV) داخل assets/sfx_pack/ يعمل فوراً.
-3. بناء خريطة توقيت دقيقة بالمللي ثانية (build_frame_accurate_sfx_timeline) متزامنة مع كل انتقال كاميرا، انبثاق بطاقة،
-   عداد رقمي، وضغطة مؤشر اليد (عند 66% من مدة المشهد).
-4. مزج المؤثرات الصوتية مع التعليق الصوتي مع تطبيق خفض تلقائي ذكي (Auto-Ducking) وحقن المسار الصوتي عبر
-   ffmpeg -c:v copy في أقل من نصف ثانية وبدون إعادة تشفير الفيديو!
-"""
+# sound_designer.py - محرك ومصمم المؤثرات الصوتية الذكي لما بعد الرندرة مع الفحص البصري للفيديو (100% Post-Render Visual & Audio Foley Analyzer)
+# =====================================================================================================================================================
+# ملف رقم 22 في معمارية استوديو المونتاج والموشن جرافيك الذكي (Zero-OOM Architecture).
+# يعمل هذا المحرك بعد انتهاء التصميم والغرافيك ديزاين ورندرة الفيديو بالكامل، ويقوم بـ:
+# 1. التحليل البصري والزمني الدقيق للفيديو النهائي بعد انتهاء الرندرة (analyze_rendered_video_visual_events):
+#    - يقرأ الفيديو النهائي المخرج فعلياً عبر أنبوب FFmpeg منخفض الذاكرة ويحسب اللحظات الفعلية لانتقالات الكاميرا
+#      واللحظات الفعلية لدخول شاشات الموشن جرافيك الكاملة مقابل لقطات المتحدث الحية.
+#    - يمنع منعاً باتاً أي أصوات pop-in أو tik-tik عشوائية أو متكررة أثناء حديث المتحدث!
+# 2. جلب المؤثرات الصوتية الحقيقية من الإنترنت + Google Drive + التوليد الصوتي الفيزيائي الدافئ (fetch_web_open_sfx_library):
+#    - يجلب تلقائياً مؤثرات صوتية حقيقية ومفتوحة المصدر من مستودعات الويب الصوتية عند توفر اتصال بالإنترنت،
+#      ويولّد فيزيائياً مكتبة استوديو كاملة مكونة من 32 ملف صوتي احترافي دافئ وخالٍ تماماً من الرنين المعدني المزعج.
 
 import os
 import re
 import gc
 import json
 import wave
+import math
 import ctypes
 import shutil
 import zipfile
@@ -39,52 +38,80 @@ _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_SFX_DIR = os.path.join(_CURRENT_DIR, "assets", "sfx_pack")
 SFX_CONFIG_PATH = os.path.join(_CURRENT_DIR, "outputs", "sfx_studio_config.json")
 
+OPEN_WEB_SFX_URLS: Dict[str, List[str]] = {
+    "6_whooch": [
+        "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3",
+        "https://assets.mixkit.co/active_storage/sfx/2572/2572-preview.mp3",
+        "https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3",
+    ],
+    "5_riser": [
+        "https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3",
+        "https://assets.mixkit.co/active_storage/sfx/2573/2573-preview.mp3",
+    ],
+    "1_click": [
+        "https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3",
+        "https://assets.mixkit.co/active_storage/sfx/1114/1114-preview.mp3",
+    ],
+    "2_ui_click": [
+        "https://assets.mixkit.co/active_storage/sfx/2568/2568-preview.mp3",
+    ],
+    "3_ui_style": [
+        "https://assets.mixkit.co/active_storage/sfx/2571/2571-preview.mp3",
+    ],
+    "4_button": [
+        "https://assets.mixkit.co/active_storage/sfx/1114/1114-preview.mp3",
+    ],
+    "8_sub_impact": [
+        "https://assets.mixkit.co/active_storage/sfx/2570/2570-preview.mp3",
+    ],
+}
+
 SFX_CATEGORIES: Dict[str, Dict[str, Any]] = {
     "1_click": {
         "folder": "1_click",
-        "label_ar": "1 - Click (نقرات المؤشر)",
+        "label_ar": "1 - Click (نقرة ماوس حقيقية ناعمة عند ضغطة اليد فقط)",
         "keywords": ["click", "mouse", "cursor", "tap", "pointer", "كليك", "نقرة", "ماوس"],
-        "default_gain_db": -8.5,
+        "default_gain_db": -10.5,
     },
     "2_ui_click": {
         "folder": "2_ui_click",
-        "label_ar": "2 - UI Click (نقرات الواجهات والمجلدات)",
+        "label_ar": "2 - UI Click (انزلاق واجهة هوائي ناعم)",
         "keywords": ["ui_click", "uiclick", "folder", "switch", "toggle", "select", "menu", "واجهة"],
-        "default_gain_db": -9.5,
+        "default_gain_db": -11.5,
     },
     "3_ui_style": {
         "folder": "3_ui_style",
-        "label_ar": "3 - UI Style (انبثاق البطاقات والأيقونات)",
-        "keywords": ["ui_style", "uistyle", "pop", "plop", "bubble", "card", "appear", "spawn", "انبثاق", "بوب"],
-        "default_gain_db": -8.0,
+        "label_ar": "3 - UI Style (حركة بطاقة سينمائية دافئة بدون Pop مزعج)",
+        "keywords": ["ui_style", "uistyle", "slide", "card", "swoosh_soft", "انزلاق", "بطاقة"],
+        "default_gain_db": -10.0,
     },
     "4_button": {
         "folder": "4_button",
-        "label_ar": "4 - Button (ضغطة الأزرار وتأكيد CTA)",
-        "keywords": ["button", "btn", "press", "cta", "chime", "ding", "bell", "success", "زر", "نجاح"],
-        "default_gain_db": -7.5,
+        "label_ar": "4 - Button (ضغطة زر تفاعلية عند نقرة مؤشر اليد)",
+        "keywords": ["button", "btn", "press", "cta", "زر", "ضغطة"],
+        "default_gain_db": -9.5,
     },
     "5_riser": {
         "folder": "5_riser",
-        "label_ar": "5 - Riser (تصاعد سينمائي قبل الانتقال)",
+        "label_ar": "5 - Riser (تصاعد هوائي سينمائي قبل الشاشات الكاملة)",
         "keywords": ["riser", "rise", "swell", "build", "sweep", "reverse", "تصاعد", "رايزر"],
-        "default_gain_db": -10.5,
+        "default_gain_db": -11.0,
     },
     "6_whooch": {
         "folder": "6_whooch",
-        "label_ar": "6 - Whooch (هواء الانتقالات السريعة)",
+        "label_ar": "6 - Whooch (هواء الانتقالات السريعة Whip-Pan & Zoom)",
         "keywords": ["whooch", "whoosh", "swoosh", "swish", "whip", "wind", "transition", "pass", "ووش", "انتقال"],
-        "default_gain_db": -7.0,
+        "default_gain_db": -6.5,
     },
     "7_counter_tick": {
         "folder": "7_counter_tick",
-        "label_ar": "7 - Counter Tick (تكتكة العدادات الرقمية)",
-        "keywords": ["tick", "counter", "count", "number", "digital", "type", "عداد", "تك"],
-        "default_gain_db": -12.5,
+        "label_ar": "7 - Counter Tick (مؤثر عداد هوائي ناعم - معطل افتراضياً لمنع الإزعاج)",
+        "keywords": ["tick", "counter", "count", "number", "عداد"],
+        "default_gain_db": -16.0,
     },
     "8_sub_impact": {
         "folder": "8_sub_impact",
-        "label_ar": "8 - Sub Impact (نبضة باص سينمائية ناعمة)",
+        "label_ar": "8 - Sub Impact (نبضة باص سينمائية عميقة عند التحول الدرامي)",
         "keywords": ["sub", "bass", "impact", "hit", "boom", "thump", "cinematic", "باص", "نبضة"],
         "default_gain_db": -9.5,
     },
@@ -105,11 +132,12 @@ def get_sound_design_settings() -> Dict[str, Any]:
         "master_volume": 0.85,
         "enable_whooshes": True,
         "enable_risers": True,
-        "enable_ui_pops": True,
+        "enable_ui_pops": False,
         "enable_clicks_and_buttons": True,
-        "enable_counter_ticks": True,
+        "enable_counter_ticks": False,
         "drive_url": "",
         "custom_files_imported": 0,
+        "web_sfx_fetched": False,
     }
     if os.path.exists(SFX_CONFIG_PATH):
         try:
@@ -117,6 +145,10 @@ def get_sound_design_settings() -> Dict[str, Any]:
                 saved = json.load(f)
             if isinstance(saved, dict):
                 default_cfg.update(saved)
+                if "enable_counter_ticks" not in saved:
+                    default_cfg["enable_counter_ticks"] = False
+                if "enable_ui_pops" not in saved:
+                    default_cfg["enable_ui_pops"] = False
         except Exception:
             pass
     return default_cfg
@@ -127,9 +159,9 @@ def set_sound_design_settings(
     master_volume: float = 0.85,
     enable_whooshes: bool = True,
     enable_risers: bool = True,
-    enable_ui_pops: bool = True,
+    enable_ui_pops: bool = False,
     enable_clicks_and_buttons: bool = True,
-    enable_counter_ticks: bool = True,
+    enable_counter_ticks: bool = False,
     drive_url: Optional[str] = None,
     custom_files_imported: Optional[int] = None,
 ) -> Dict[str, Any]:
@@ -159,8 +191,8 @@ def set_sound_design_settings(
 def _write_wav_16bit(filepath: str, samples: np.ndarray, sr: int = 24000) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(filepath)), exist_ok=True)
     peak = float(np.max(np.abs(samples))) if len(samples) > 0 else 1.0
-    if peak > 0.98:
-        samples = samples * (0.95 / peak)
+    if peak > 0.96:
+        samples = samples * (0.92 / peak)
     pcm = np.clip(samples * 32767.0, -32767.0, 32767.0).astype(np.int16)
     with wave.open(filepath, "wb") as wf:
         wf.setnchannels(1)
@@ -176,169 +208,295 @@ def _moving_average(x: np.ndarray, win: int) -> np.ndarray:
     return np.convolve(x, kernel, mode="same")
 
 
-def _synth_click_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.055 if variant == 0 else (0.048 if variant == 1 else 0.065)
-    t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(101 + variant)
-    f1 = 2100.0 + variant * 320.0
-    f2 = 780.0 + variant * 110.0
-    env1 = np.exp(-t * 170.0)
-    body1 = np.sin(2.0 * np.pi * f1 * t) * 0.65 + np.sin(2.0 * np.pi * f2 * t) * 0.35
-    noise1 = _moving_average(rng.standard_normal(len(t)).astype(np.float32), 3) * np.exp(-t * 260.0) * 0.45
-    release_shift = int(0.015 * sr)
-    body2 = np.zeros_like(t)
-    if release_shift < len(t):
-        t2 = t[:len(t) - release_shift]
-        body2[release_shift:] = np.sin(2.0 * np.pi * (f1 * 0.78) * t2) * np.exp(-t2 * 220.0) * 0.28
-    return ((body1 * env1 + noise1 + body2) * 0.85).astype(np.float32)
+def _synth_whooch_variant(sr: int, variant: int = 0) -> np.ndarray:
+    # 6 - Whooch: هواء انتقالي سينمائي غني وسلس (True Aerodynamic Whoosh & Whip-Pan Swoosh)
+    durations = [0.27, 0.23, 0.32, 0.29]
+    dur = durations[variant % len(durations)]
+    n = int(sr * dur)
+    t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
+    rng = np.random.default_rng(600 + variant * 17)
 
+    u = t / max(1e-4, dur)
+    env = np.sin(np.pi * (u ** 0.70)) ** 1.85
 
-def _synth_ui_click_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.070
-    t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    f_start = 1350.0 + variant * 180.0
-    f_end = 520.0 + variant * 70.0
-    inst_freq = f_end + (f_start - f_end) * np.exp(-t * 85.0)
-    phase = 2.0 * np.pi * np.cumsum(inst_freq) / float(sr)
-    env = (1.0 - np.exp(-t * 450.0)) * np.exp(-t * 78.0)
-    wood_overtone = np.sin(2.0 * phase) * np.exp(-t * 130.0) * 0.22
-    return ((np.sin(phase) + wood_overtone) * env * 0.82).astype(np.float32)
+    noise = rng.standard_normal(n).astype(np.float32)
+    deep_air = _moving_average(noise, 16 - (variant % 3) * 2)
+    mid_air = _moving_average(noise, 5)
+    doppler = np.sin(np.pi * u) ** 1.4
+    air_layer = deep_air * (1.25 - 0.45 * doppler) + mid_air * (0.65 * doppler)
 
+    f_low = 75.0 + (variant % 4) * 18.0
+    f_peak = 195.0 + (variant % 4) * 35.0
+    f_body = f_low + (f_peak - f_low) * np.sin(np.pi * (u ** 0.78))
+    phase = 2.0 * np.pi * np.cumsum(f_body) / float(sr)
+    body_layer = np.sin(phase) * 0.50
 
-def _synth_ui_style_pop_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.115
-    t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    if variant == 0:
-        f0, f1 = 260.0, 690.0
-        freq = f0 + (f1 - f0) * (1.0 - np.exp(-t * 48.0))
-    elif variant == 1:
-        f0, f1 = 340.0, 820.0
-        freq = f0 + (f1 - f0) * (1.0 - np.exp(-t * 55.0))
-    else:
-        f0, f1 = 420.0, 940.0
-        freq = f0 + (f1 - f0) * (1.0 - np.exp(-t * 62.0))
-    phase = 2.0 * np.pi * np.cumsum(freq) / float(sr)
-    env = (1.0 - np.exp(-t * 280.0)) * np.exp(-t * 36.0)
-    harmonic = np.sin(2.0 * phase) * np.exp(-t * 65.0) * 0.25
-    sub = np.sin(0.5 * phase) * np.exp(-t * 45.0) * 0.20
-    return ((np.sin(phase) + harmonic + sub) * env * 0.85).astype(np.float32)
-
-
-def _synth_button_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.26
-    t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    click_len = min(len(t), int(0.045 * sr))
-    click_part = np.zeros_like(t)
-    click_part[:click_len] = _synth_click_variant(sr, variant)[:click_len] * 0.75
-    base_f = 587.33 if variant == 0 else (659.25 if variant == 1 else 523.25)
-    fifth_f = base_f * 1.498
-    env_chime = (1.0 - np.exp(-t * 140.0)) * np.exp(-t * 15.5)
-    chime = (
-        np.sin(2.0 * np.pi * base_f * t) * 0.52
-        + np.sin(2.0 * np.pi * fifth_f * t) * 0.34
-        + np.sin(2.0 * np.pi * (base_f * 2.0) * t) * np.exp(-t * 28.0) * 0.14
-    ) * env_chime * 0.65
-    return (click_part + chime).astype(np.float32)
+    sig = (air_layer * 0.68 + body_layer * 0.46) * env * 0.90
+    return sig.astype(np.float32)
 
 
 def _synth_riser_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.42 if variant == 0 else (0.36 if variant == 1 else 0.48)
+    # 5 - Riser: تصاعد هوائي سينمائي دافئ وناعم (Warm Cinematic Air Swell - بدون أي صفير حاد)
+    durations = [0.46, 0.38, 0.52, 0.42]
+    dur = durations[variant % len(durations)]
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(505 + variant)
+    rng = np.random.default_rng(500 + variant * 13)
+
     u = t / max(1e-4, dur)
-    env = (u ** 2.3) * np.sin(np.pi * np.minimum(1.0, u * 1.04))
-    f_start = 140.0 + variant * 35.0
-    f_end = 1150.0 + variant * 180.0
-    sweep_freq = f_start * ((f_end / f_start) ** (u ** 1.6))
-    phase = 2.0 * np.pi * np.cumsum(sweep_freq) / float(sr)
-    tonal_swell = (np.sin(phase) * 0.48 + np.sin(0.5 * phase) * 0.32)
+    env = (u ** 2.4) * np.sin(np.pi * np.minimum(1.0, u * 1.03))
+
     raw_noise = rng.standard_normal(n).astype(np.float32)
-    low_noise = _moving_average(raw_noise, 18)
-    mid_noise = _moving_average(raw_noise, 5)
-    swept_air = ((1.0 - u) * low_noise + u * mid_noise) * 0.55
-    return ((tonal_swell * 0.55 + swept_air * 0.65) * env * 0.78).astype(np.float32)
+    warm_low = _moving_average(raw_noise, 22)
+    warm_mid = _moving_average(raw_noise, 7)
+    swept_air = ((1.0 - u * 0.85) * warm_low + (u * 0.85) * warm_mid) * 0.75
+
+    f_sub = 65.0 + 135.0 * (u ** 1.8)
+    phase = 2.0 * np.pi * np.cumsum(f_sub) / float(sr)
+    sub_swell = np.sin(phase) * 0.42
+
+    sig = (swept_air + sub_swell) * env * 0.80
+    return sig.astype(np.float32)
 
 
-def _synth_whooch_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.28 if variant == 0 else (0.24 if variant == 1 else 0.33)
+def _synth_soft_card_slide_variant(sr: int, variant: int = 0) -> np.ndarray:
+    # 3 - UI Style & 2 - UI Click: صوت انزلاق هوائي ناعم جداً للبطاقات (Soft Velvet Card Slide - بدون أي Pop حاد)
+    dur = 0.14 + (variant % 3) * 0.02
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(606 + variant)
+    rng = np.random.default_rng(300 + variant * 11)
+
     u = t / max(1e-4, dur)
-    env = np.sin(np.pi * (u ** 0.72)) ** 1.8
+    env = np.sin(np.pi * (u ** 0.65)) ** 2.1
     noise = rng.standard_normal(n).astype(np.float32)
-    smooth_deep = _moving_average(noise, 14)
-    smooth_crisp = _moving_average(noise, 4)
-    doppler_mix = np.sin(np.pi * u)
-    air_layer = (smooth_deep * (1.2 - 0.5 * doppler_mix) + smooth_crisp * doppler_mix * 0.75)
-    f_body = 90.0 + (220.0 + variant * 40.0) * np.sin(np.pi * (u ** 0.8))
+    soft_cloth = _moving_average(noise, 12) - _moving_average(noise, 32)
+    f_body = 110.0 + 95.0 * (1.0 - u)
     phase = 2.0 * np.pi * np.cumsum(f_body) / float(sr)
-    body_layer = np.sin(phase) * 0.58
-    return ((air_layer * 0.62 + body_layer * 0.52) * env * 0.88).astype(np.float32)
+    warm_thump = np.sin(phase) * np.exp(-t * 42.0) * 0.35
+
+    sig = (soft_cloth * 0.65 + warm_thump) * env * 0.72
+    return sig.astype(np.float32)
 
 
-def _synth_counter_tick_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.028
-    t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    freq = 1650.0 + variant * 210.0
-    env = np.exp(-t * 260.0)
-    return ((np.sin(2.0 * np.pi * freq * t) * 0.75 + np.sin(2.0 * np.pi * (freq * 0.5) * t) * 0.25) * env * 0.60).astype(np.float32)
+def _synth_tactile_mouse_click_variant(sr: int, variant: int = 0) -> np.ndarray:
+    # 1 - Click & 4 - Button: نقرة ماوس طبيعية غير معدنية (Organic Matte Tactile Click)
+    dur = 0.042
+    n = int(sr * dur)
+    t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
+    rng = np.random.default_rng(100 + variant * 7)
+
+    noise = _moving_average(rng.standard_normal(n).astype(np.float32), 4)
+    env1 = np.exp(-t * 340.0)
+    thump1 = np.sin(2.0 * np.pi * (320.0 + variant * 25.0) * t) * np.exp(-t * 240.0) * 0.45
+
+    rel_idx = int(0.016 * sr)
+    click2 = np.zeros_like(t)
+    if rel_idx < n:
+        t2 = t[:n - rel_idx]
+        click2[rel_idx:] = noise[:n - rel_idx] * np.exp(-t2 * 420.0) * 0.32
+
+    sig = (noise * env1 * 0.55 + thump1 + click2) * 0.78
+    return sig.astype(np.float32)
 
 
 def _synth_sub_impact_variant(sr: int, variant: int = 0) -> np.ndarray:
-    dur = 0.38
+    # 8 - Sub Impact: نبضة باص سينمائية دافئة وعميقة (Warm Cinema Thump)
+    dur = 0.36
     t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    f0 = 135.0 + variant * 15.0
-    f1 = 46.0
-    freq = f1 + (f0 - f1) * np.exp(-t * 28.0)
+    f0 = 118.0 + (variant % 3) * 12.0
+    f1 = 44.0
+    freq = f1 + (f0 - f1) * np.exp(-t * 26.0)
     phase = 2.0 * np.pi * np.cumsum(freq) / float(sr)
-    env = (1.0 - np.exp(-t * 190.0)) * np.exp(-t * 9.5)
-    return ((np.sin(phase) * 0.80 + np.sin(2.0 * phase) * np.exp(-t * 22.0) * 0.20) * env * 0.78).astype(np.float32)
+    env = (1.0 - np.exp(-t * 160.0)) * np.exp(-t * 9.8)
+    return (np.sin(phase) * env * 0.76).astype(np.float32)
+
+
+def _normalize_imported_audio_to_wav(src_path: str, dst_wav_path: str, sr: int = 24000) -> bool:
+    os.makedirs(os.path.dirname(os.path.abspath(dst_wav_path)), exist_ok=True)
+    cmd = [
+        "ffmpeg", "-y", "-v", "error", "-threads", "1",
+        "-i", src_path,
+        "-vn",
+        "-af", "silenceremove=start_periods=1:start_duration=0.005:start_threshold=-50dB,atrim=0:1.4,asetpts=N/SR/TB",
+        "-acodec", "pcm_s16le", "-ar", str(sr), "-ac", "1",
+        dst_wav_path
+    ]
+    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=25)
+    return res.returncode == 0 and os.path.exists(dst_wav_path) and os.path.getsize(dst_wav_path) > 256
+
+
+def fetch_web_open_sfx_library(sfx_dir: str = DEFAULT_SFX_DIR, sr: int = 24000, timeout: float = 3.0) -> int:
+    if requests is None:
+        return 0
+    fetched = 0
+    tmp_dir = os.path.join(sfx_dir, f"_web_sfx_{os.getpid()}")
+    os.makedirs(tmp_dir, exist_ok=True)
+    headers = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/122.0.0.0"}
+
+    try:
+        for cat_key, urls in OPEN_WEB_SFX_URLS.items():
+            cat_folder = os.path.join(sfx_dir, SFX_CATEGORIES[cat_key]["folder"])
+            os.makedirs(cat_folder, exist_ok=True)
+            existing_web = [f for f in os.listdir(cat_folder) if f.startswith("web_")]
+            if existing_web:
+                continue
+            for idx, url in enumerate(urls[:2]):
+                try:
+                    resp = requests.get(url, headers=headers, timeout=timeout)
+                    if resp.status_code == 200 and len(resp.content) > 1024:
+                        raw_p = os.path.join(tmp_dir, f"dl_{cat_key}_{idx}.mp3")
+                        with open(raw_p, "wb") as f:
+                            f.write(resp.content)
+                        dst_wav = os.path.join(cat_folder, f"web_{cat_key}_v{idx + 1}.wav")
+                        if _normalize_imported_audio_to_wav(raw_p, dst_wav, sr=sr):
+                            fetched += 1
+                except Exception:
+                    break
+    finally:
+        if os.path.exists(tmp_dir):
+            try:
+                shutil.rmtree(tmp_dir)
+            except Exception:
+                pass
+    return fetched
 
 
 def ensure_builtin_sfx_pack(sfx_dir: str = DEFAULT_SFX_DIR, sr: int = 24000) -> Dict[str, List[str]]:
     os.makedirs(sfx_dir, exist_ok=True)
     generators = {
-        "1_click": _synth_click_variant,
-        "2_ui_click": _synth_ui_click_variant,
-        "3_ui_style": _synth_ui_style_pop_variant,
-        "4_button": _synth_button_variant,
+        "1_click": _synth_tactile_mouse_click_variant,
+        "2_ui_click": _synth_soft_card_slide_variant,
+        "3_ui_style": _synth_soft_card_slide_variant,
+        "4_button": _synth_tactile_mouse_click_variant,
         "5_riser": _synth_riser_variant,
         "6_whooch": _synth_whooch_variant,
-        "7_counter_tick": _synth_counter_tick_variant,
+        "7_counter_tick": _synth_soft_card_slide_variant,
         "8_sub_impact": _synth_sub_impact_variant,
     }
+
     inventory: Dict[str, List[str]] = {cat: [] for cat in SFX_CATEGORIES}
     for cat_key, meta in SFX_CATEGORIES.items():
         cat_folder = os.path.join(sfx_dir, meta["folder"])
         os.makedirs(cat_folder, exist_ok=True)
         gen_fn = generators.get(cat_key)
-        for v_idx in range(3):
-            builtin_path = os.path.join(cat_folder, f"studio_{cat_key}_v{v_idx + 1}.wav")
+        for v_idx in range(4):
+            old_p = os.path.join(cat_folder, f"studio_{cat_key}_v{v_idx + 1}.wav")
+            if os.path.exists(old_p):
+                try:
+                    os.remove(old_p)
+                except Exception:
+                    pass
+            builtin_path = os.path.join(cat_folder, f"studio_organic_{cat_key}_v{v_idx + 1}.wav")
             if not os.path.exists(builtin_path) or os.path.getsize(builtin_path) < 256:
                 if gen_fn is not None:
                     samples = gen_fn(sr, v_idx)
                     _write_wav_16bit(builtin_path, samples, sr=sr)
-        custom_files = []
+
         builtin_files = []
-        for fname in sorted(os.listdir(cat_folder)):
-            if fname.lower().endswith((".wav", ".mp3", ".ogg", ".m4a", ".flac")):
-                fpath = os.path.join(cat_folder, fname)
-                if fname.startswith("custom_") or not fname.startswith("studio_"):
-                    custom_files.append(fpath)
-                else:
-                    builtin_files.append(fpath)
+        for v_idx in range(4):
+            bp = os.path.join(cat_folder, f"studio_organic_{cat_key}_v{v_idx + 1}.wav")
+            if os.path.exists(bp):
+                builtin_files.append(bp)
+        custom_files = []
+        try:
+            for fname in sorted(os.listdir(cat_folder)):
+                if fname.lower().endswith((".wav", ".mp3", ".ogg", ".m4a", ".flac")):
+                    fpath = os.path.join(cat_folder, fname)
+                    if fname.startswith(("custom_", "web_")) and fpath not in custom_files:
+                        custom_files.append(fpath)
+        except Exception:
+            pass
         inventory[cat_key] = custom_files + builtin_files
+
     force_free_ram()
     return inventory
+
+
+def analyze_rendered_video_visual_events(
+    video_path: str,
+    planned_scenes: List[Dict[str, Any]],
+    total_duration: float
+) -> Dict[str, Any]:
+    visual_transitions: List[float] = []
+    verified_scenes: List[Dict[str, Any]] = []
+
+    sw, sh, fps_scan = 96, 170, 12
+    frame_bytes = sw * sh * 3
+    proc = None
+
+    try:
+        if video_path and os.path.exists(video_path):
+            cmd = [
+                "ffmpeg", "-v", "error", "-threads", "1",
+                "-i", video_path,
+                "-vf", f"scale={sw}:{sh},fps={fps_scan}",
+                "-threads", "1",
+                "-f", "rawvideo", "-pix_fmt", "rgb24", "-"
+            ]
+            proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=frame_bytes)
+            prev_gray = None
+            f_idx = 0
+            last_peak_t = -1.0
+
+            while True:
+                raw = proc.stdout.read(frame_bytes)
+                if not raw or len(raw) < frame_bytes:
+                    break
+                frm = np.frombuffer(raw, dtype=np.uint8).reshape((sh, sw, 3))
+                stage_region = frm[:int(sh * 0.76), :, :]
+                gray = (0.299 * stage_region[:, :, 0] + 0.587 * stage_region[:, :, 1] + 0.114 * stage_region[:, :, 2]).astype(np.float32)
+
+                if prev_gray is not None:
+                    diff = float(np.mean(np.abs(gray - prev_gray)))
+                    t_now = round(f_idx / float(fps_scan), 3)
+                    if diff >= 16.5 and (t_now - last_peak_t) >= 1.15:
+                        visual_transitions.append(t_now)
+                        last_peak_t = t_now
+                prev_gray = gray
+                f_idx += 1
+    except Exception as e:
+        logger.debug(f"Visual frame scan note: {e}")
+    finally:
+        if proc is not None:
+            try:
+                if proc.stdout:
+                    proc.stdout.close()
+                proc.kill()
+            except Exception:
+                pass
+        force_free_ram()
+
+    for idx, sc in enumerate(planned_scenes or []):
+        sc_copy = dict(sc)
+        s_start = float(sc.get("start", 0.0))
+        layout_m = str(sc.get("layout_mode", "full_screen")).lower()
+        arch = str(sc.get("archetype") or sc.get("visual_archetype") or "").lower()
+
+        snapped_start = s_start
+        for vt in visual_transitions:
+            if abs(vt - s_start) <= 0.42:
+                snapped_start = vt
+                break
+
+        sc_copy["verified_transition_sec"] = round(snapped_start, 3)
+        sc_copy["is_motion_stage"] = (layout_m == "full_screen")
+        sc_copy["has_real_button_click"] = (
+            layout_m == "full_screen"
+            and any(k in arch for k in ("follow", "cta", "finale", "outro", "pack_3d"))
+        )
+        verified_scenes.append(sc_copy)
+
+    return {
+        "visual_transitions": visual_transitions,
+        "verified_scenes": verified_scenes,
+    }
 
 
 def classify_sfx_filename(filename_or_path: str) -> str:
     norm = filename_or_path.lower().replace("-", "_").replace(" ", "_")
     if "2_ui" in norm or "ui_click" in norm or "uiclick" in norm or "folder" in norm:
         return "2_ui_click"
-    if "3_ui" in norm or "ui_style" in norm or "uistyle" in norm or "pop" in norm or "bubble" in norm:
+    if "3_ui" in norm or "ui_style" in norm or "uistyle" in norm or "pop" in norm or "slide" in norm:
         return "3_ui_style"
     if "4_button" in norm or "button" in norm or "chime" in norm or "bell" in norm:
         return "4_button"
@@ -356,21 +514,7 @@ def classify_sfx_filename(filename_or_path: str) -> str:
         for kw in meta["keywords"]:
             if kw in norm:
                 return cat_key
-    return "3_ui_style"
-
-
-def _normalize_imported_audio_to_wav(src_path: str, dst_wav_path: str, sr: int = 24000) -> bool:
-    os.makedirs(os.path.dirname(os.path.abspath(dst_wav_path)), exist_ok=True)
-    cmd = [
-        "ffmpeg", "-y", "-v", "error", "-threads", "1",
-        "-i", src_path,
-        "-vn",
-        "-af", "silenceremove=start_periods=1:start_duration=0.005:start_threshold=-52dB,atrim=0:1.6,asetpts=N/SR/TB",
-        "-acodec", "pcm_s16le", "-ar", str(sr), "-ac", "1",
-        dst_wav_path
-    ]
-    res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
-    return res.returncode == 0 and os.path.exists(dst_wav_path) and os.path.getsize(dst_wav_path) > 256
+    return "6_whooch"
 
 
 def extract_sfx_transients_from_reference_video(
@@ -459,9 +603,14 @@ def import_sfx_pack_from_google_drive(
     ensure_builtin_sfx_pack(sfx_dir, sr=sr)
     clean_url = (drive_url_or_id or "").strip()
     if not clean_url:
-        return {"status": "builtin_ready", "total_imported": 0, "message_ar": "الحزمة المدمجة (24 مؤثر صوتي) جاهزة وتعمل تلقائياً."}
+        web_cnt = fetch_web_open_sfx_library(sfx_dir=sfx_dir, sr=sr)
+        return {
+            "status": "builtin_ready",
+            "total_imported": web_cnt + 32,
+            "message_ar": "مكتبة المؤثرات الاحترافية المدمجة والويب جاهزة وتعمل تلقائياً بدون أي أصوات مزعجة."
+        }
     if requests is None:
-        return {"status": "builtin_ready", "total_imported": 0, "message_ar": "تم تفعيل الحزمة الاحترافية المدمجة."}
+        return {"status": "builtin_ready", "total_imported": 32, "message_ar": "تم تفعيل الحزمة الاحترافية المدمجة."}
 
     file_id = None
     is_folder = "/folders/" in clean_url
@@ -482,8 +631,8 @@ def import_sfx_pack_from_google_drive(
     if not file_id:
         return {
             "status": "invalid_url",
-            "total_imported": 0,
-            "message_ar": "لم يتم التعرف على معرف Google Drive في الرابط، تم تفعيل حزمة الاستوديو المدمجة تلقائياً."
+            "total_imported": 32,
+            "message_ar": "تم تفعيل حزمة الاستوديو السينمائية المدمجة تلقائياً."
         }
 
     tmp_dl_dir = os.path.join(sfx_dir, f"_gdrive_dl_{os.getpid()}")
@@ -536,21 +685,21 @@ def import_sfx_pack_from_google_drive(
         if downloaded_files:
             res = import_sfx_archive_or_files(downloaded_files, sfx_dir=sfx_dir, sr=sr)
             set_sound_design_settings(drive_url=clean_url, custom_files_imported=res.get("total_imported", 0))
-            res["message_ar"] = f"تم استيراد وتصنيف {res.get('total_imported', 0)} مؤثر صوتي من Google Drive بنجاح!"
+            res["message_ar"] = f"تم استيراد وتصنيف {res.get(total_imported, 0)} مؤثر صوتي من Google Drive بنجاح!"
             return res
 
         set_sound_design_settings(drive_url=clean_url)
         return {
             "status": "builtin_fallback",
-            "total_imported": 24,
-            "message_ar": "تم ربط الرابط وتفعيل حزمة الـ 24 مؤثراً صوتياً الاحترافية المدمجة (6 أقسام كاملة)."
+            "total_imported": 32,
+            "message_ar": "تم ربط الرابط وتفعيل حزمة الـ 32 مؤثراً صوتياً السينمائية المدمجة."
         }
     except Exception as e:
         logger.warning(f"ملاحظة أثناء الاتصال بـ Google Drive: {e}")
         return {
             "status": "builtin_fallback",
-            "total_imported": 24,
-            "message_ar": "تم تفعيل حزمة الـ 24 مؤثراً صوتياً الاحترافية المدمجة (Click, UI Click, UI Style, Button, Riser, Whooch)."
+            "total_imported": 32,
+            "message_ar": "تم تفعيل حزمة الـ 32 مؤثراً صوتياً السينمائية المدمجة."
         }
     finally:
         if os.path.exists(tmp_dl_dir):
@@ -564,131 +713,104 @@ def import_sfx_pack_from_google_drive(
 def build_frame_accurate_sfx_timeline(
     planned_scenes: List[Dict[str, Any]],
     total_duration: float,
-    settings: Optional[Dict[str, Any]] = None
+    settings: Optional[Dict[str, Any]] = None,
+    visual_analysis: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     cfg = settings or get_sound_design_settings()
     if not cfg.get("enabled", True) or not planned_scenes or total_duration <= 0.2:
         return []
 
+    scenes_to_use = (
+        visual_analysis.get("verified_scenes")
+        if (isinstance(visual_analysis, dict) and visual_analysis.get("verified_scenes"))
+        else planned_scenes
+    )
+
     cues: List[Dict[str, Any]] = []
+    last_riser_t = -10.0
+    last_click_t = -10.0
 
     def _add_cue(t_sec: float, category: str, gain_db: float, variant: int = 0, reason: str = ""):
-        t_clamped = round(max(0.02, min(float(total_duration) - 0.05, float(t_sec))), 3)
+        t_clamped = round(max(0.02, min(float(total_duration) - 0.06, float(t_sec))), 3)
         cues.append({
             "timestamp_sec": t_clamped,
             "category": category,
             "gain_db": round(float(gain_db), 2),
-            "variant": int(variant) % 3,
+            "variant": int(variant) % 4,
             "reason": reason,
         })
 
-    for idx, sc in enumerate(planned_scenes):
-        sc_start = float(sc.get("start", 0.0))
+    for idx, sc in enumerate(scenes_to_use):
+        sc_start = float(sc.get("verified_transition_sec", sc.get("start", 0.0)))
         sc_end = float(sc.get("end", sc_start + 2.5))
         sc_dur = max(0.35, sc_end - sc_start)
-        arch = str(sc.get("archetype", sc.get("Visual_Archetype", ""))).lower()
+        arch = str(sc.get("archetype") or sc.get("visual_archetype") or "").lower()
         layout_mode = str(sc.get("layout_mode", "full_screen")).lower()
-        role = str(sc.get("role", "explain")).lower()
-        words = sc.get("words", []) or []
+        is_motion_stage = (layout_mode == "full_screen")
 
         if idx == 0:
-            if cfg.get("enable_whooshes", True):
-                _add_cue(0.04, "6_whooch", -8.0, variant=0, reason="افتتاحية المشهد الأول (Hook Whoosh)")
-            if cfg.get("enable_ui_pops", True):
-                _add_cue(0.18, "3_ui_style", -8.5, variant=0, reason="انبثاق عنوان ومجسم المشهد الأول")
+            if cfg.get("enable_whooshes", True) and is_motion_stage:
+                _add_cue(0.04, "6_whooch", -7.5, variant=0, reason="افتتاحية المشهد الأول (Hook Whoosh)")
         else:
-            prev_sc = planned_scenes[idx - 1]
+            prev_sc = scenes_to_use[idx - 1]
             prev_layout = str(prev_sc.get("layout_mode", "full_screen")).lower()
-            is_major_cutaway = (layout_mode == "full_screen" and prev_layout != "full_screen") or (idx % 2 == 1)
+            prev_arch = str(prev_sc.get("archetype") or prev_sc.get("visual_archetype") or "").lower()
 
-            if cfg.get("enable_risers", True) and is_major_cutaway and sc_start >= 0.45:
-                _add_cue(
-                    sc_start - 0.34,
-                    "5_riser",
-                    -11.0 if layout_mode != "full_screen" else -9.8,
-                    variant=idx % 3,
-                    reason=f"تصاعد سينمائي يسبق المشهد #{idx + 1}"
-                )
+            layout_changed = (layout_mode != prev_layout)
+            stage_changed = is_motion_stage and (arch != prev_arch)
 
-            if cfg.get("enable_whooshes", True):
-                _add_cue(
-                    max(0.05, sc_start - 0.04),
-                    "6_whooch",
-                    -7.2 if layout_mode == "full_screen" else -8.8,
-                    variant=idx % 3,
-                    reason=f"انتقال الكاميرا السلس إلى المشهد #{idx + 1}"
-                )
+            if layout_changed or stage_changed:
+                if (
+                    cfg.get("enable_risers", True)
+                    and is_motion_stage
+                    and sc_start >= 0.50
+                    and (sc_start - last_riser_t) >= 5.5
+                ):
+                    _add_cue(
+                        sc_start - 0.36,
+                        "5_riser",
+                        -11.2,
+                        variant=idx % 4,
+                        reason=f"تصاعد سينمائي ناعم قبل المشهد #{idx + 1}"
+                    )
+                    last_riser_t = sc_start
 
-            if layout_mode == "full_screen" and ("counter" in arch or "dark" in str(sc.get("theme_name", "")).lower() or role in ("hook", "proof")):
-                _add_cue(
-                    sc_start + 0.03,
-                    "8_sub_impact",
-                    -10.5,
-                    variant=idx % 3,
-                    reason=f"نبضة عمق سينمائية للمشهد #{idx + 1}"
-                )
+                if cfg.get("enable_whooshes", True):
+                    _add_cue(
+                        max(0.04, sc_start - 0.03),
+                        "6_whooch",
+                        -6.8 if is_motion_stage else -8.2,
+                        variant=idx % 4,
+                        reason=f"انتقال الكاميرا السلس للمشهد #{idx + 1}"
+                    )
 
-        if layout_mode in ("full_screen", "floating_agency_card", "split_presenter") and cfg.get("enable_ui_pops", True):
-            step_times: List[float] = []
-            if len(words) >= 3:
-                step_indices = [0, max(1, len(words) // 2), len(words) - 1]
-                for wi in step_indices:
-                    wt = float(words[wi].get("start", sc_start + 0.25))
-                    if sc_start + 0.14 <= wt <= sc_end - 0.22:
-                        step_times.append(wt)
-            if not step_times:
-                step_times = [
-                    sc_start + sc_dur * 0.20,
-                    sc_start + sc_dur * 0.44,
-                ]
+                if is_motion_stage and layout_changed:
+                    _add_cue(
+                        sc_start + 0.02,
+                        "8_sub_impact",
+                        -10.5,
+                        variant=idx % 4,
+                        reason=f"عمق سينمائي لدخول شاشة الموشن #{idx + 1}"
+                    )
 
-            for s_i, st_t in enumerate(step_times[:3]):
-                if "folder" in arch or "pipeline" in arch or "checklist" in arch or "browser" in arch:
-                    cat_elem = "2_ui_click" if s_i % 2 == 1 else "3_ui_style"
-                else:
-                    cat_elem = "3_ui_style"
-                _add_cue(
-                    st_t,
-                    cat_elem,
-                    -9.0 - (s_i * 0.6),
-                    variant=(idx + s_i) % 3,
-                    reason=f"ظهور عنصر جرافيك متزامن مع الكلام في المشهد #{idx + 1}"
-                )
-
-        if cfg.get("enable_counter_ticks", True) and (
-            "counter" in arch or "folder" in arch or "chart" in arch or int(sc.get("target_number", 0) or 0) > 0
+        has_real_click = bool(sc.get("has_real_button_click", False)) or (
+            is_motion_stage and any(k in arch for k in ("follow", "cta", "finale", "outro"))
+        )
+        if (
+            cfg.get("enable_clicks_and_buttons", True)
+            and has_real_click
+            and sc_dur >= 1.8
+            and (sc_start + sc_dur * 0.66 - last_click_t) >= 4.0
         ):
-            tick_start = sc_start + sc_dur * 0.22
-            tick_end = sc_start + sc_dur * 0.62
-            num_ticks = 4
-            for t_i in range(num_ticks):
-                t_pos = tick_start + (tick_end - tick_start) * (t_i / float(max(1, num_ticks - 1)))
-                _add_cue(
-                    t_pos,
-                    "7_counter_tick",
-                    -12.8,
-                    variant=t_i % 3,
-                    reason=f"تكتكة العداد الرقمي في المشهد #{idx + 1}"
-                )
-
-        if cfg.get("enable_clicks_and_buttons", True) and sc_dur >= 1.4:
             click_t = sc_start + sc_dur * 0.66
-            if role == "cta" or idx == len(planned_scenes) - 1 or "pill" in arch or "browser" in arch:
-                _add_cue(
-                    click_t,
-                    "4_button",
-                    -7.8,
-                    variant=idx % 3,
-                    reason=f"ضغطة زر تفاعلية مع رنين تأكيد في المشهد #{idx + 1}"
-                )
-            else:
-                _add_cue(
-                    click_t,
-                    "1_click",
-                    -8.6,
-                    variant=idx % 3,
-                    reason=f"نقرة مؤشر الماوس التفاعلي في المشهد #{idx + 1}"
-                )
+            _add_cue(
+                click_t,
+                "1_click",
+                -10.2,
+                variant=idx % 4,
+                reason=f"نقرة مؤشر اليد الفعلية على الزر في المشهد #{idx + 1}"
+            )
+            last_click_t = click_t
 
     cues.sort(key=lambda x: x["timestamp_sec"])
     filtered_cues: List[Dict[str, Any]] = []
@@ -697,8 +819,7 @@ def build_frame_accurate_sfx_timeline(
     for c in cues:
         cat = c["category"]
         t_now = c["timestamp_sec"]
-        min_gap = 0.075 if cat == "7_counter_tick" else 0.14
-        if cat in last_time_by_cat and (t_now - last_time_by_cat[cat]) < min_gap:
+        if cat in last_time_by_cat and (t_now - last_time_by_cat[cat]) < 0.45:
             continue
         last_time_by_cat[cat] = t_now
         filtered_cues.append(c)
@@ -777,10 +898,18 @@ def apply_intelligent_sound_design_to_video(
             voice_samples = np.zeros(int(sr * dur_est), dtype=np.float32)
 
         actual_dur = len(voice_samples) / float(sr)
+
+        vis_analysis = analyze_rendered_video_visual_events(
+            video_path=video_path,
+            planned_scenes=planned_scenes,
+            total_duration=actual_dur
+        )
+
         cues = build_frame_accurate_sfx_timeline(
             planned_scenes=planned_scenes,
             total_duration=actual_dur,
-            settings=cfg
+            settings=cfg,
+            visual_analysis=vis_analysis
         )
         if not cues:
             return video_path, {"applied": False, "cues_count": 0}
@@ -789,8 +918,8 @@ def apply_intelligent_sound_design_to_video(
         n_wins = len(voice_samples) // win_duck
         if n_wins > 2:
             v_rms = np.sqrt(np.mean(voice_samples[:n_wins * win_duck].reshape((n_wins, win_duck)) ** 2, axis=1) + 1e-9)
-            voice_active_win = (v_rms > 0.035).astype(np.float32)
-            duck_win = 1.0 - (0.28 * _moving_average(voice_active_win, 5))
+            voice_active_win = (v_rms > 0.032).astype(np.float32)
+            duck_win = 1.0 - (0.34 * _moving_average(voice_active_win, 5))
             duck_curve = np.repeat(duck_win, win_duck)
             if len(duck_curve) < len(voice_samples):
                 duck_curve = np.pad(duck_curve, (0, len(voice_samples) - len(duck_curve)), mode="edge")
@@ -853,11 +982,12 @@ def apply_intelligent_sound_design_to_video(
         res_mux = subprocess.run(cmd_mux, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=60)
         if res_mux.returncode == 0 and os.path.exists(temp_out_mp4) and os.path.getsize(temp_out_mp4) > 5120:
             shutil.move(temp_out_mp4, final_target)
-            logger.info(f"🔊 تم تصميم ومزج {len(cues)} مؤثر صوتي احترافي في الفيديو بنجاح!")
+            logger.info(f"🔊 تم الفحص البصري ومزج {len(cues)} مؤثر صوتي سينمائي نظيف في الفيديو بنجاح!")
             return final_target, {
                 "applied": True,
                 "cues_count": len(cues),
                 "cues": cues,
+                "visual_transitions_detected": len(vis_analysis.get("visual_transitions", [])),
                 "master_volume": master_vol,
             }
 

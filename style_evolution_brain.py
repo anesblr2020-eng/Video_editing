@@ -74,18 +74,22 @@ def hex_to_rgb(hex_str: str, fallback: Tuple[int, int, int] = (56, 189, 248)) ->
 #    ويدعم رسم جميع الـ 12 نمطاً من الرسومات والأنيميشن التفاعلية!
 # ==============================================================================
 ALL_DYNAMIC_VISUAL_ARCHETYPES: List[str] = [
-    "chrono_ring_3d_counter",        # 1. [6944 Shot 1] الحلقة ثلاثية الأبعاد والعداد الدائري الحي المتزامن مع النطق (10->14->20)
-    "pack_3d_extruding_pillars",     # 2. [6944 Shot 2] صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع مع نقرة اليد
-    "macos_folder_counter_list",     # 3. [6944 Shot 3] قائمة المجلدات الزرقاء ثلاثية الأبعاد مع العداد الخلفي المتصاعد (+34 -> +44)
-    "reels_6card_showcase_grid",     # 4. [6944 Shot 4] معرض الفيديوهات والبطاقات الستة المتحركة (2×3) مع معاينات الفيديو الحية
-    "dark_cinema_fanned_cards",      # 5. [6944 Shot 5] المسرح السينمائي الداكن والبطاقات المروحية ثلاثية الأبعاد مع الموجة الصوتية المضيئة
-    "interactive_profile_follow_card", # 6. [6944 Shot 6] بطاقة الحساب التفاعلية وزر المتابعة الذي ينبض ويتحول عند نقرة اليد (Follow -> Following)
-    "bezier_growth_nodes",           # 7. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة
-    "live_magnifier_scanner",        # 8. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
-    "damped_balance_scale",          # 9. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
-    "nle_timeline_matrix",           # 10. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك Playhead
-    "radar_target_sweep",            # 11. رادار الاستهداف الدوار بشعاع مسح 360° ونقاط تنبض بعلامات صح
-    "kinetic_quote_dm_finale"        # 12. [6944 Shot 7] الخاتمة الحركية السريعة بعلامات التنصيص المضيئة والـ CTA المتتابع
+    "chrono_ring_3d_counter",          # 1. الحلقة ثلاثية الأبعاد والعداد الدائري الحي المتزامن مع النطق
+    "pack_3d_extruding_pillars",       # 2. صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع
+    "macos_folder_counter_list",       # 3. قائمة المجلدات الزرقاء ثلاثية الأبعاد مع العداد الخلفي المتصاعد
+    "reels_6card_showcase_grid",       # 4. معرض الفيديوهات والبطاقات الستة المتحركة (2×3)
+    "dark_cinema_fanned_cards",        # 5. المسرح السينمائي الداكن والبطاقات المروحية ثلاثية الأبعاد
+    "interactive_profile_follow_card", # 6. بطاقة الحساب التفاعلية وزر المتابعة الحي
+    "bezier_growth_nodes",             # 7. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة
+    "live_magnifier_scanner",          # 8. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
+    "damped_balance_scale",            # 9. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
+    "nle_timeline_matrix",             # 10. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك
+    "radar_target_sweep",              # 11. رادار الاستهداف الدوار بشعاع مسح 360°
+    "floating_3d_stat_Compare",        # 12. كبسولات المقارنة ثلاثية الأبعاد المتقابلة مع مؤشر السرعة
+    "step_cascade_ribbon_cards",       # 13. شرائط الخطوات المتدرجة ثلاثية الأبعاد بعلامات التحقق المتتابعة
+    "neural_hub_spoke_network",        # 14. شبكة العقد الذكية المتصلة بنبضات ضوئية متحركة
+    "dual_metric_gauge_pods",          # 15. عدادان مزدوجان متزامنان للأداء والنتائج
+    "kinetic_quote_dm_finale"          # 16. الخاتمة الحركية السريعة بعلامات التنصيص المضيئة والـ CTA المتتابع
 ]
 
 PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
@@ -661,26 +665,23 @@ def _select_non_repeating_archetype_sequence(
     rotation_seed: int = 0
 ) -> List[str]:
     """
-    يبني تسلسلاً غنياً ومتنوعاً من الرسومات والأنيميشن (`Visual Archetypes`) لمشاهد الفيديو
-    بحيث لا يتكرر نفس الشكل أو التحريك في مشهدين متجاورين، ويكون المشهد الأخير دائماً خاتمة احترافية.
+    يبني تسلسلاً فريداً وغير متكرر 100% من الرسومات والأنيميشن (`Visual Archetypes`):
+    - يخلط كل الـ 15 نمطاً التفاعلية ببذرة متغيرة في كل فيديو جديد (`rotation_seed`)
+      بحيث لا تتكرر نفس الرسومات بين الفيديوهات ولا يتكرر أي شكل داخل الفيديو الواحد!
     """
-    pool = [a for a in preferred_pool if a != "kinetic_quote_dm_finale"]
-    for a in ALL_DYNAMIC_VISUAL_ARCHETYPES:
-        if a not in pool and a != "kinetic_quote_dm_finale":
-            pool.append(a)
-
-    # إزاحة البداية حسب عداد التدوير لكي لا تبدأ كل الفيديوهات بنفس الشكل!
-    shift = (rotation_seed * 3) % max(1, len(pool))
-    rotated_pool = pool[shift:] + pool[:shift]
+    full_non_outro = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if a != "kinetic_quote_dm_finale"]
+    rng = random.Random(int(rotation_seed) * 9973 + int(num_scenes) * 37)
+    shuffled = list(full_non_outro)
+    rng.shuffle(shuffled)
 
     seq: List[str] = []
     for idx in range(max(1, num_scenes)):
         if idx == num_scenes - 1 and num_scenes >= 2:
             seq.append("kinetic_quote_dm_finale")
         else:
-            cand = rotated_pool[idx % len(rotated_pool)]
+            cand = shuffled[idx % len(shuffled)]
             if seq and cand == seq[-1]:
-                cand = rotated_pool[(idx + 1) % len(rotated_pool)]
+                cand = shuffled[(idx + 1) % len(shuffled)]
             seq.append(cand)
     return seq
 
@@ -702,7 +703,7 @@ def build_dynamic_scene_style_assignment(
     mode = str(force_style_mode or mem.get("active_studio_style_mode") or "auto_vary_pro")
     rot_idx = int(mem.get("style_rotation_counter", 0))
 
-    if advance_rotation_counter and mode == "auto_vary_pro":
+    if advance_rotation_counter:
         rot_idx += 1
         mem["style_rotation_counter"] = rot_idx
         save_evolution_memory(mem)
