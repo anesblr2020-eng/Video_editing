@@ -545,7 +545,9 @@ def run_selected_pipeline(
     product_cta: str,
     progress_cb,
     force_caption_overlay_on_cut_mode: bool = False,
-    caption_mode: str = "bottom_modern"
+    caption_mode: str = "bottom_modern",
+    custom_planned_scenes: Optional[List[Dict[str, Any]]] = None,
+    custom_sfx_cues: Optional[List[Dict[str, Any]]] = None
 ) -> str:
     force_free_ram()
 
@@ -564,7 +566,9 @@ def run_selected_pipeline(
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
-            caption_mode=caption_mode
+            caption_mode=caption_mode,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -585,7 +589,9 @@ def run_selected_pipeline(
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
-            caption_mode=caption_mode
+            caption_mode=caption_mode,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -606,7 +612,9 @@ def run_selected_pipeline(
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
-            caption_mode=caption_mode
+            caption_mode=caption_mode,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -622,7 +630,9 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -639,7 +649,9 @@ def run_selected_pipeline(
             groq_api_key=groq_key,
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
-            progress_callback=progress_cb
+            progress_callback=progress_cb,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -660,7 +672,9 @@ def run_selected_pipeline(
             gemini_api_key=gemini_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
-            caption_mode=caption_mode
+            caption_mode=caption_mode,
+            custom_planned_scenes=custom_planned_scenes,
+            custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
 
@@ -1034,7 +1048,7 @@ with col2:
         sfx_c1, sfx_c2 = st.columns([1.2, 1.0])
         with sfx_c1:
             sfx_enabled_ui = st.toggle(
-                "🔊 تفعيل مصمم الساوند ديزاين الآلي بعد الرندرة",
+                "🔊 تفعيل مصمم الساوند ديزاين الآلي بعد الرندرة (Whoosh + Pop-In + Click + Button + Riser)",
                 value=bool(sfx_cfg_now.get("enabled", True)),
                 key="sfx_enabled_toggle"
             )
@@ -1043,14 +1057,28 @@ with col2:
                 "مستوى صوت المؤثرات (SFX Volume)",
                 min_value=0.10,
                 max_value=1.30,
-                value=float(sfx_cfg_now.get("master_volume", 0.85)),
+                value=float(sfx_cfg_now.get("master_volume", 0.88)),
                 step=0.05,
                 key="sfx_master_vol_slider"
             )
 
+        sc_t1, sc_t2, sc_t3, sc_t4 = st.columns(4)
+        with sc_t1:
+            en_whoosh = st.checkbox("💨 انتقالات Whoosh", value=bool(sfx_cfg_now.get("enable_whooshes", True)), key="chk_sfx_whoosh")
+        with sc_t2:
+            en_pops = st.checkbox("✨ انبثاق ناعم Pop-In", value=bool(sfx_cfg_now.get("enable_ui_pops", True)), key="chk_sfx_pops")
+        with sc_t3:
+            en_clicks = st.checkbox("🖱️ نقرات Click & Button", value=bool(sfx_cfg_now.get("enable_clicks_and_buttons", True)), key="chk_sfx_clicks")
+        with sc_t4:
+            en_risers = st.checkbox("🌊 تصاعد Riser & Impact", value=bool(sfx_cfg_now.get("enable_risers", True)), key="chk_sfx_risers")
+
         set_sound_design_settings(
             enabled=sfx_enabled_ui,
-            master_volume=sfx_vol_ui
+            master_volume=sfx_vol_ui,
+            enable_whooshes=en_whoosh,
+            enable_ui_pops=en_pops,
+            enable_clicks_and_buttons=en_clicks,
+            enable_risers=en_risers
         )
 
         drive_sfx_url_input = st.text_input(
@@ -1214,16 +1242,263 @@ if result_path and os.path.exists(result_path):
             )
 
     with res_col2:
-        st.markdown("### ✏️ تعديل الكابشن والنصوص في الفيديو")
-        st.caption("عدّل أي كلمة أو جملة ثم اضغط زر التحديث ليتم تعديل الكابشن في الخلفية فوراً.")
+        st.markdown("### 🎛️ استوديو التعديل الحي للمشاهد والرسومات والساوند ديزاين والكابشن (بدون كتابة كود!)")
+        st.caption("عدّل رسمة أي مشهد، أو عنوانه، أو مؤثراته الصوتية (Pop-In / Click / Whoosh) مباشرة من المنصة بنقرة زر.")
 
         current_words = st.session_state.get("caption_words", [])
         current_sentences = st.session_state.get("caption_sentences", [])
 
-        edit_tab_sent, edit_tab_words = st.tabs([
-            "📝 التعديل السريع جملة بجملة (موصى به)",
-            "🔤 التعديل التفصيلي كلمة بكلمة مع التوقيت"
+        edit_tab_scenes, edit_tab_sfx, edit_tab_sent, edit_tab_words = st.tabs([
+            "🎨 تعديل الرسومات والمشاهد (مشهداً بمشهد)",
+            "🔊 محرر الساوند ديزاين الفوري (1 ثانية)",
+            "📝 تعديل الكابشن جملة بجملة",
+            "🔤 تعديل الكلمات والتوقيت"
         ])
+
+        from sound_designer import LAST_SESSION_PATH, remaster_video_sfx_instantly, SFX_CATEGORIES
+        from style_evolution_brain import ALL_DYNAMIC_VISUAL_ARCHETYPES, ARCHETYPE_LABELS_AR
+
+        saved_session = {}
+        if os.path.exists(LAST_SESSION_PATH):
+            try:
+                with open(LAST_SESSION_PATH, "r", encoding="utf-8") as sf:
+                    saved_session = json.load(sf)
+            except Exception:
+                saved_session = {}
+
+        session_scenes = saved_session.get("planned_scenes", [])
+        session_cues = saved_session.get("sfx_cues", [])
+        session_dur = float(saved_session.get("total_duration", 15.0))
+
+        with edit_tab_scenes:
+            if not session_scenes:
+                st.info("سيظهر هنا مخطط المشاهد والرسومات فور انتهاء أول عملية رندرة للفيديو.")
+            else:
+                st.markdown("##### ✨ خصّص الرسمة التعبيرية والعنوان والساوند ديزاين لكل مشهد:")
+                arch_keys = list(ALL_DYNAMIC_VISUAL_ARCHETYPES)
+                arch_display_map = {k: ARCHETYPE_LABELS_AR.get(k, k) for k in arch_keys}
+                sfx_mode_options = {
+                    "auto_all": "🔊 كامل احترافي متوازن (Whoosh + Pop-In + UI Click + Button)",
+                    "whoosh_pop_click": "✨ انتقال + انبثاق + نقرة (Whoosh + Pop-In + Click)",
+                    "whoosh_pop": "🫧 انتقال وانبثاق ناعم فقط (Whoosh + Pop-In)",
+                    "whoosh_only": "💨 هواء الانتقال فقط (Whoosh Only)",
+                    "riser_whoosh_impact": "🌊 تصاعد سينمائي عميق (Riser + Whoosh + Sub-Impact)",
+                    "click_button": "🖱️ نقرة ماوس وزر تفاعلي فقط (Click + Button)",
+                    "mute": "🔇 كتم المؤثرات الصوتية في هذا المشهد"
+                }
+                layout_options = {
+                    "full_screen": "🖥️ شاشة موشن جرافيك كاملة (Full-Screen Motion)",
+                    "speaker_clean": "🎥 لقطة المتحدث الصافية (Speaker Clean Shot)",
+                    "stock_broll": "🎞️ مشهد فيديو واقعي (Stock B-Roll)"
+                }
+
+                with st.form("live_scene_drawing_editor_form"):
+                    updated_scenes_plan = []
+                    for sc_i, sc_data in enumerate(session_scenes):
+                        s_st = float(sc_data.get("start", 0.0))
+                        s_en = float(sc_data.get("end", s_st + 2.5))
+                        cur_arch = str(sc_data.get("user_override_archetype") or sc_data.get("archetype") or arch_keys[0])
+                        if cur_arch not in arch_keys:
+                            cur_arch = arch_keys[sc_i % len(arch_keys)]
+                        cur_layout = str(sc_data.get("layout_mode", "full_screen"))
+                        if cur_layout not in layout_options:
+                            cur_layout = "full_screen"
+                        cur_sfx_m = str(sc_data.get("sfx_mode", "auto_all"))
+                        if cur_sfx_m not in sfx_mode_options:
+                            cur_sfx_m = "auto_all"
+
+                        with st.expander(f"🎬 المشهد #{sc_i + 1} ({s_st:.1f}s - {s_en:.1f}s): {sc_data.get(concept_title, )[:38]}", expanded=(sc_i < 2)):
+                            st.caption(f"🎙️ **الكلام المنطوق:** {sc_data.get(text, )}")
+                            chosen_arch = st.selectbox(
+                                f"🎨 الرسمة / المجسم التعبيري للمشهد #{sc_i + 1}:",
+                                options=arch_keys,
+                                index=arch_keys.index(cur_arch),
+                                format_func=lambda x: arch_display_map.get(x, x),
+                                key=f"sc_arch_sel_{sc_i}"
+                            )
+                            c_col1, c_col2 = st.columns(2)
+                            with c_col1:
+                                new_ctitle = st.text_input(
+                                    f"📌 العنوان البارز على الشاشة #{sc_i + 1}:",
+                                    value=str(sc_data.get("concept_title", "")),
+                                    key=f"sc_ctitle_{sc_i}"
+                                )
+                                new_kpi = st.text_input(
+                                    f"🔢 المؤشر / الكلمة المفتاحية البارزة #{sc_i + 1}:",
+                                    value=str(sc_data.get("kpi_value", "")),
+                                    key=f"sc_kpi_{sc_i}"
+                                )
+                            with c_col2:
+                                new_badge = st.text_input(
+                                    f"🏷️ الشارة العلوية #{sc_i + 1}:",
+                                    value=str(sc_data.get("badge_label", "")),
+                                    key=f"sc_badge_{sc_i}"
+                                )
+                                chosen_layout = st.selectbox(
+                                    f"📐 وضع العرض #{sc_i + 1}:",
+                                    options=list(layout_options.keys()),
+                                    index=list(layout_options.keys()).index(cur_layout),
+                                    format_func=lambda x: layout_options.get(x, x),
+                                    key=f"sc_layout_{sc_i}"
+                                )
+                            cur_subs_str = " | ".join(str(x) for x in (sc_data.get("sub_items") or [])[:4])
+                            new_subs_str = st.text_input(
+                                f"📋 العناصر الفرعية داخل الرسم #{sc_i + 1} (افصل بينها بعلامة | ):",
+                                value=cur_subs_str,
+                                key=f"sc_subs_{sc_i}"
+                            )
+                            chosen_sfx_m = st.selectbox(
+                                f"🔊 نمط المؤثرات الصوتية لهذا المشهد #{sc_i + 1}:",
+                                options=list(sfx_mode_options.keys()),
+                                index=list(sfx_mode_options.keys()).index(cur_sfx_m),
+                                format_func=lambda x: sfx_mode_options.get(x, x),
+                                key=f"sc_sfx_mode_{sc_i}"
+                            )
+
+                            sc_copy = dict(sc_data)
+                            sc_copy["archetype"] = chosen_arch
+                            sc_copy["user_override_archetype"] = chosen_arch
+                            sc_copy["visual_subject"] = chosen_arch
+                            if isinstance(sc_copy.get("scene_style_spec"), dict):
+                                sc_copy["scene_style_spec"]["visual_archetype"] = chosen_arch
+                            sc_copy["concept_title"] = new_ctitle.strip() or sc_data.get("concept_title", "")
+                            sc_copy["short_title"] = sc_copy["concept_title"]
+                            sc_copy["badge_label"] = new_badge.strip() or sc_data.get("badge_label", "")
+                            sc_copy["kpi_value"] = new_kpi.strip() or sc_data.get("kpi_value", "")
+                            sc_copy["layout_mode"] = chosen_layout
+                            sc_copy["sfx_mode"] = chosen_sfx_m
+                            parsed_subs = [s.strip() for s in new_subs_str.split("|") if s.strip()]
+                            if parsed_subs:
+                                sc_copy["sub_items"] = parsed_subs
+                            updated_scenes_plan.append(sc_copy)
+
+                    btn_col_sfx_fast, btn_col_full_rerender = st.columns(2)
+                    with btn_col_sfx_fast:
+                        fast_sfx_submit = st.form_submit_button("🔊 تحديث الساوند ديزاين فقط فوراً (في ثانية واحدة!)")
+                    with btn_col_full_rerender:
+                        full_scene_submit = st.form_submit_button("🎨 تطبيق تعديلات الرسومات والمشاهد وإعادة الرندرة")
+
+                if fast_sfx_submit:
+                    with st.spinner("🔊 جاري إعادة تصميم ومزج المؤثرات الصوتية في ثانية واحدة بدون إعادة رندرة الفيديو..."):
+                        saved_session["planned_scenes"] = updated_scenes_plan
+                        _, sfx_rep_new = remaster_video_sfx_instantly(
+                            target_video_path=result_path,
+                            planned_scenes=updated_scenes_plan,
+                            total_duration=session_dur
+                        )
+                        saved_session["sfx_cues"] = sfx_rep_new.get("cues", [])
+                        try:
+                            with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                                json.dump(saved_session, sf, ensure_ascii=False, indent=2)
+                        except Exception:
+                            pass
+                        st.success(f"✅ تم تحديث الساوند ديزاين فوراً ({sfx_rep_new.get(cues_count, 0)} مؤثر صوتي متزامن)!")
+                        st.rerun()
+
+                if full_scene_submit and active_input_path:
+                    saved_session["planned_scenes"] = updated_scenes_plan
+                    try:
+                        with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                            json.dump(saved_session, sf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                    params = st.session_state.get("eff_params", {
+                        "silence_thresh": -42.0, "padding_ms": 75, "chunk_size": 20, "whisper_model": "base"
+                    })
+                    new_out_path = os.path.join(OUTPUTS_DIR, f"custom_scenes_{int(time.time())}.mp4")
+                    chosen_style = st.session_state.get("processed_style", selected_style)
+                    job_manager.start_job(
+                        runner_func=run_selected_pipeline,
+                        runner_kwargs={
+                            "style_name": chosen_style,
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "media_analysis": media_analysis,
+                            "eff_silence_thresh": params["silence_thresh"],
+                            "eff_padding_ms": params["padding_ms"],
+                            "eff_chunk_size": params["chunk_size"],
+                            "eff_whisper_model": params["whisper_model"],
+                            "ollama_model": ollama_model_choice,
+                            "manim_quality": manim_flag,
+                            "dialect": dialect_mode,
+                            "pexels_key": pexels_api_key,
+                            "groq_key": groq_api_key,
+                            "gemini_key": gemini_api_key,
+                            "openai_key": openai_api_key,
+                            "product_hook": product_custom_hook,
+                            "product_cta": product_custom_cta,
+                            "caption_mode": eff_caption_mode,
+                            "custom_planned_scenes": updated_scenes_plan
+                        },
+                        job_meta={
+                            "input_path": active_input_path,
+                            "output_path": new_out_path,
+                            "selected_style": chosen_style,
+                            "caption_mode": eff_caption_mode,
+                            "file_hash": st.session_state.get("last_file_hash"),
+                            "media_analysis": media_analysis,
+                            "eff_params": params
+                        },
+                        cleanup_func=lambda: cleanup_temp_directory(TEMP_DIR)
+                    )
+                    st.rerun()
+
+        with edit_tab_sfx:
+            st.markdown("##### 🔊 التحكم الدقيق بكل مؤثر صوتي في الثانية والمللي ثانية:")
+            cat_keys_list = list(SFX_CATEGORIES.keys())
+            cat_labels_map = {k: SFX_CATEGORIES[k]["label_ar"] for k in cat_keys_list}
+            if not session_cues:
+                st.info("لا توجد مؤثرات صوتية مسجلة حالياً. اضغط زر إعادة توليد المؤثرات لتفعيل الحزمة الكاملة.")
+                if st.button("⚡ توليد ومزج جميع المؤثرات الصوتية تلقائياً الآن (1 ثانية)"):
+                    _, sfx_rep_auto = remaster_video_sfx_instantly(
+                        target_video_path=result_path,
+                        planned_scenes=session_scenes,
+                        total_duration=session_dur
+                    )
+                    saved_session["sfx_cues"] = sfx_rep_auto.get("cues", [])
+                    with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                        json.dump(saved_session, sf, ensure_ascii=False, indent=2)
+                    st.rerun()
+            else:
+                with st.form("granular_sfx_cues_editor_form"):
+                    edited_cues = []
+                    for c_idx, cue_item in enumerate(session_cues):
+                        cc1, cc2, cc3, cc4 = st.columns([1.0, 2.2, 1.0, 0.8])
+                        cur_cat = str(cue_item.get("category", "6_whooch"))
+                        if cur_cat not in cat_keys_list:
+                            cur_cat = "6_whooch"
+                        with cc1:
+                            t_val = st.number_input(f"الثانية #{c_idx + 1}", value=float(cue_item.get("timestamp_sec", 0.0)), min_value=0.0, max_value=float(max(1.0, session_dur)), step=0.05, format="%.2f", key=f"cue_t_{c_idx}")
+                        with cc2:
+                            cat_val = st.selectbox(f"المؤثر #{c_idx + 1}", options=cat_keys_list, index=cat_keys_list.index(cur_cat), format_func=lambda x: cat_labels_map.get(x, x), key=f"cue_cat_{c_idx}")
+                        with cc3:
+                            g_val = st.number_input(f"الصوت dB #{c_idx + 1}", value=float(cue_item.get("gain_db", -8.5)), min_value=-28.0, max_value=3.0, step=0.5, format="%.1f", key=f"cue_g_{c_idx}")
+                        with cc4:
+                            keep_cue = st.checkbox("تفعيل", value=True, key=f"cue_keep_{c_idx}")
+                        if keep_cue:
+                            edited_cues.append({
+                                "timestamp_sec": round(t_val, 3),
+                                "category": cat_val,
+                                "gain_db": round(g_val, 2),
+                                "variant": int(cue_item.get("variant", c_idx % 4)),
+                                "reason": str(cue_item.get("reason", "مؤثر مخصص"))
+                            })
+                    apply_cues_btn = st.form_submit_button("⚡ دمج التايملاين الصوتي المعدل فوراً في ثانية واحدة (-c:v copy)")
+                if apply_cues_btn:
+                    _, sfx_rep_custom = remaster_video_sfx_instantly(
+                        target_video_path=result_path,
+                        planned_scenes=session_scenes,
+                        total_duration=session_dur,
+                        custom_cues=edited_cues
+                    )
+                    saved_session["sfx_cues"] = sfx_rep_custom.get("cues", edited_cues)
+                    try:
+                        with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                            json.dump(saved_session, sf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                    st.success(f"✅ تم تحديث ومزج {len(edited_cues)} مؤثر صوتي في الفيديو خلال ثانية واحدة!")
+                    st.rerun()
 
         with edit_tab_sent:
             if not current_sentences:

@@ -16,6 +16,7 @@ smart_analyzer.py - عقل المخرج الذكي الشامل ومحرك ال�
 
 import sys
 import os
+import time
 import gc
 import subprocess
 
@@ -549,32 +550,14 @@ class WebMotionLearner:
         return choreographed_scenes
 
     def _pick_next_non_outro_archetype(self, preferred: str, used_archetypes: List[str], scene_index: int, total_scenes: int) -> str:
-        if scene_index == total_scenes - 1 and total_scenes >= 2:
-            return "interactive_cta_outro"
-
-        non_outro_pool = [
-            "stage_trust_bubbles",
-            "video_schedule_table",
-            "stage_balance_scale",
-            "saas_folder_reorder",
-            "saas_grid_2x2_cursor",
-            "saas_typewriter_mechanism",
-            "saas_process_flow",
-            "stage_before_after_checklist",
-        ]
-        if preferred in non_outro_pool and preferred not in used_archetypes:
+        from style_evolution_brain import ALL_DYNAMIC_VISUAL_ARCHETYPES
+        full_pool = list(ALL_DYNAMIC_VISUAL_ARCHETYPES)
+        if preferred in full_pool and preferred not in used_archetypes:
             return preferred
-        if preferred in non_outro_pool and (not used_archetypes or preferred != used_archetypes[-1]):
-            unused = [a for a in non_outro_pool if a not in used_archetypes]
-            if unused:
-                return unused[0]
-            return preferred
-
-        unused = [a for a in non_outro_pool if a not in used_archetypes]
+        unused = [a for a in full_pool if a not in used_archetypes]
         if unused:
             return unused[scene_index % len(unused)]
-        non_adj = [a for a in non_outro_pool if (not used_archetypes or a != used_archetypes[-1])]
-        return non_adj[scene_index % len(non_adj)]
+        return full_pool[scene_index % len(full_pool)]
 
     def _build_deep_scene_blueprint(
         self,
@@ -587,387 +570,125 @@ class WebMotionLearner:
         prev_scene_text: str = "",
         next_scene_text: str = ""
     ) -> Dict[str, Any]:
-        t_low = scene_text.lower()
-        window_low = f"{prev_scene_text} {scene_text} {next_scene_text}".lower()
-        wilayas = global_ctx.get("wilayas_count") or 58
-        kws = extract_clean_keywords(scene_text, max_words=3)
-        kw_phrase = " ".join(kws[:2]) if kws else ""
-
-        if domain == "ecommerce":
-            if scene_index == total_scenes - 1 or any(w in t_low for w in ["اضغط على زر", "اسفل الفيديو", "أسفل الفيديو", "اكموندي", "اطلب", "الرابط", "للطلب"]):
-                return {
-                    "archetype": "interactive_cta_outro",
-                    "scene_type": "delivery_express",
-                    "badge_label": "اطلب الآن • متوفر للتوصيل السريع",
-                    "concept_title": "اطلب الكابل الذكي الآن بضغطة زر",
-                    "concept_subtitle": "اضغط على الزر أسفل الفيديو واستفد من العرض فوراً",
-                    "sub_items": ["اضغط الزر أسفل الفيديو", f"توصيل سريع {wilayas} ولاية", "الدفع عند الاستلام", "ضمان الجودة الأصلية"],
-                    "balance_left": ("الطلب الفوري", "خلال 30 ثانية"),
-                    "balance_right": ("التوصيل السريع", "لباب المنزل"),
-                    "before_after": ("شراء تقليدي متعب", "4.0", "طلب فوري ومضمون", "9.9"),
-                    "typewriter_query": "اطلب الآن • الدفع عند الاستلام",
-                    "kpi_value": "اطلب الآن",
-                    "kpi_label": "عبر الزر أسفل الفيديو"
-                }
-
-            if any(w in t_low for w in ["سوبر فاست", "فاست", "فاستا", "يتشارجا", "240", "اقوى", "أقوى", "اي تليفون", "أي تيليفون"]):
-                arch = self._pick_next_non_outro_archetype("stage_before_after_checklist", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "ecommerce_showcase",
-                    "badge_label": "قوة شحن خارقة • يدعم الشحن السريع Super Fast",
-                    "concept_title": "شحن Super Fast لجميع الهواتف",
-                    "concept_subtitle": "متوافق مع كافة الأجهزة بقدرة شحن فائقة وأمان تام",
-                    "sub_items": ["شحن Super Fast فوري", "متوافق مع كل الهواتف", "حماية ذكية للبطارية", "أداء مستقر وعالي"],
-                    "balance_left": ("شاحن بطيء عادي", "ساعات انتظار"),
-                    "balance_right": ("شحن Super Fast", "طاقة كاملة بسرعة"),
-                    "before_after": ("شحن عادي بطيء", "3.8", "شحن Super Fast", "9.9"),
-                    "typewriter_query": "شحن خارق Super Fast لكل الهواتف",
-                    "kpi_value": "Super Fast",
-                    "kpi_label": "شحن فائق السرعة"
-                }
-
-            if any(w in t_low for w in ["قماش", "يتقطع", "الثالثة", "الثالثه", "مغلف", "متانة"]) or ("قماش" in window_low and "ثالث" in t_low):
-                arch = self._pick_next_non_outro_archetype("stage_trust_bubbles", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "ecommerce_showcase",
-                    "badge_label": "الخاصية الثالثة • مغلف بالقماش المقاوم للقطع",
-                    "concept_title": "نسيج قماشي متين ضد القطع والتلف",
-                    "concept_subtitle": "وداعاً لتلف الكوابل بفضل التغليف القماشي المقوى",
-                    "sub_items": ["تغليف قماشي مقوى", "مقاوم للقطع والشد", "حماية مفاصل السلك", "عمر افتراضي طويل"],
-                    "balance_left": ("سلك بلاستيك عادي", "ينقطع بسرعة"),
-                    "balance_right": ("كابل مغلف بالقماش", "متانة 100% ضد القطع"),
-                    "before_after": ("سلك تقليدي يتقطع", "3.2", "نسيج قماشي متين", "9.8"),
-                    "typewriter_query": "مغلف بالقماش • حماية 100% ضد القطع",
-                    "kpi_value": "100% متين",
-                    "kpi_label": "مقاوم للقطع والتلف"
-                }
-
-            if any(w in t_low for w in ["تشارجي", "تتفرج", "الثانية", "الثانيه", "نفس الوقت", "بكل راحة"]):
-                arch = self._pick_next_non_outro_archetype("saas_process_flow", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "reels_smartphone",
-                    "badge_label": "الخاصية الثانية • اشحن وتفرج بكل راحة",
-                    "concept_title": "شحن سريع ومشاهدة مريحة في آن واحد",
-                    "concept_subtitle": "استمتع بمشاهدة فيديوهاتك أثناء الشحن دون إجهاد اليد",
-                    "sub_items": ["شحن مستمر ومستقر", "زاوية مشاهدة مريحة", "حرية كاملة لليدين", "تصميم عملي ذكي"],
-                    "balance_left": ("استخدام أثناء الشحن", "إجهاد وتشابك السلك"),
-                    "balance_right": ("شحن مع الحامل المدمج", "راحة تامة ومشاهدة ممتعة"),
-                    "before_after": ("مسك متعب للهاتف", "4.0", "مشاهدة مريحة وثابتة", "9.7"),
-                    "typewriter_query": "اشحن هاتفك وشاهد محتواك براحة",
-                    "kpi_value": "راحة 100%",
-                    "kpi_label": "شحن ومشاهدة معاً"
-                }
-
-            if any(w in t_low for w in ["سيبور", "حامل", "ستاند", "مدمج"]):
-                arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "reels_smartphone",
-                    "badge_label": "الخاصية الأولى • حامل هاتف مدمج (سيبور ذكي)",
-                    "concept_title": "مزود بحامل هاتف معدني مدمج",
-                    "concept_subtitle": "يثبت هاتفك أفقياً أو عمودياً أثناء الشحن بكل ثبات",
-                    "sub_items": ["1. حامل هاتف مدمج (سيبور)", "2. تثبيت أفقي وعمودي", "3. مفصل معدني متين", "4. يطوى بسلاسة تامة"],
-                    "balance_left": ("كابل شحن فقط", "وظيفة واحدة"),
-                    "balance_right": ("كابل + سيبور مدمج", "وظيفتان في جهاز واحد"),
-                    "before_after": ("بدون حامل هاتف", "4.1", "سيبور مدمج متين", "9.8"),
-                    "typewriter_query": "سيبور تيليفون مدمج في رأس الشاحن",
-                    "kpi_value": "2 في 1",
-                    "kpi_label": "شاحن وسيبور مدمج"
-                }
-
-            if any(w in t_low for w in ["ثلاث", "3", "خصائص", "ميزات", "باطل", "بري", "الأولى", "الاولى"]):
-                arch = self._pick_next_non_outro_archetype("saas_grid_2x2_cursor", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "ecommerce_showcase",
-                    "badge_label": "مواصفات حصرية • 3 خصائص مجانية في كابل واحد",
-                    "concept_title": "ثلاث خصائص ذكية بسعر كابل واحد",
-                    "concept_subtitle": "حامل هاتف مدمج + تغليف قماشي متين + شحن Super Fast",
-                    "sub_items": ["حامل هاتف مدمج", "تغليف قماشي ضد القطع", "شحن خارق Super Fast", "قيمة اقتصادية ممتازة"],
-                    "balance_left": ("شراء 3 قطع منفصلة", "تكلفة عالية"),
-                    "balance_right": ("3 خصائص في كابل 1", "توفير وجودة فائقة"),
-                    "before_after": ("كابل عادي محدود", "3.9", "3 خصائص متكاملة", "9.8"),
-                    "typewriter_query": "3 خصائص ذكية في كابل واحد",
-                    "kpi_value": "3 خصائص في 1",
-                    "kpi_label": "قيمة استثنائية"
-                }
-
-            if any(w in t_low for w in ["استثمار", "افضل", "أفضل", "تليفونك", "هاتفك", "كابل هذا"]):
-                arch = self._pick_next_non_outro_archetype("saas_typewriter_mechanism", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "ecommerce_showcase",
-                    "badge_label": "القيمة الحقيقية • أفضل استثمار لحماية هاتفك",
-                    "concept_title": "أفضل استثمار عملي لهاتفك الذكي",
-                    "concept_subtitle": "يغنيك عن شراء الكوابل المتكررة ويحمي مدخل الشحن",
-                    "sub_items": ["يدوم طويلاً بدون تلف", "يحمي بطارية الهاتف", "يوفر المال والجهد", "تصميم عصري فاخر"],
-                    "balance_left": ("تغيير الكابل كل شهر", "خسارة مستمرة"),
-                    "balance_right": ("استثمار لمرة واحدة", "جودة تدوم طويلاً"),
-                    "before_after": ("كوابل رديئة مؤقتة", "3.5", "استثمار أصلي مضمون", "9.7"),
-                    "typewriter_query": "أفضل استثمار عملي لهاتفك الذكي",
-                    "kpi_value": "أفضل استثمار",
-                    "kpi_label": "جودة تدوم طويلاً"
-                }
-
-            if any(w in t_low for w in ["علاش", "بزاف", "خاوتنا", "مازال", "تلقاوش", "يلقاوش"]):
-                arch = self._pick_next_non_outro_archetype("stage_balance_scale", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "ecommerce_showcase",
-                    "badge_label": "مقارنة عملية • الكوابل التقليدية مقابل الكابل الذكي",
-                    "concept_title": "لماذا يتفوق هذا الكابل على الشواحن العادية؟",
-                    "concept_subtitle": "الفرق الجوهري بين الكابل التقليدي والكابل الذكي متعدد الوظائف",
-                    "sub_items": ["وداعاً لانقطاع السلك", "وداعاً لبطء الشحن", "حامل مدمج للمشاهدة", "خامات أصلية معتمدة"],
-                    "balance_left": ("الكوابل التقليدية", "تلف سريع وبلا ميزات"),
-                    "balance_right": ("الكابل الذكي المطور", "متانة + حامل + سرعة"),
-                    "before_after": ("شاحن تقليدي ضعيف", "3.6", "كابل ذكي متكامل", "9.8"),
-                    "typewriter_query": "الفرق بين الكابل العادي والكابل الذكي",
-                    "kpi_value": "مقارنة الجودة",
-                    "kpi_label": "تفوق واضح"
-                }
-
-            arch = self._pick_next_non_outro_archetype("stage_trust_bubbles", used_archetypes, scene_index, total_scenes)
-            return {
-                "archetype": arch,
-                "scene_type": "ecommerce_showcase",
-                "badge_label": f"ابتكار عملي • {kw_phrase or 'الكابل الذكي متعدد الوظائف'}",
-                "concept_title": "اكتشف الجيل الجديد من كوابل الشحن الذكية",
-                "concept_subtitle": "تصميم مبتكر يجمع القوة والمتانة والراحة في وقت واحد",
-                "sub_items": ["شحن فائق السرعة", "حامل هاتف مدمج", "مغلف بالقماش المتين", "متوافق مع كل الأجهزة"],
-                "balance_left": ("كابل عادي", "أداء محدود"),
-                "balance_right": ("كابل ذكي 3 في 1", "أداء احترافي كامل"),
-                "before_after": ("تجربة شحن تقليدية", "4.0", "تجربة شحن ذكية", "9.7"),
-                "typewriter_query": "كابل الشحن الذكي 3 في 1",
-                "kpi_value": "Top Quality",
-                "kpi_label": "منتج أصلي مبتكر"
-            }
-
-        is_problem_or_pain = any(w in t_low for w in ["مشكل", "مشكلة", "يعاني", "يعانيوا", "ضيق", "صعيب"])
-        is_time_comparison = any(w in t_low for w in ["ما عندها وقت", "ما عندهمش وقت", "أغلب الناس", "اغلب الناس", "تصور الفيديوهات", "وقت تمنتج"])
-        is_productivity_or_social = any(w in t_low for w in ["انتاجية", "إنتاجية", "التواصل الاجتماعي", "انستغرام", "ريلز", "تيك توك", "مشاهدات", "تفاعل", "ريتش", "نشر"])
-        is_platform_intro = any(w in t_low for w in ["جبت لكم", "منصة", "تطبيق", "المسؤولة", "مسؤولة"])
-        is_ai_audio_video = any(w in t_low for w in ["صوت وصورة", "صوت", "صورة", "بالذكاء الاصطناعي", "ذكاء", "أوتوماتيكي"])
-        is_speed_under_minute = any(w in t_low for w in ["أقل من دقيقة", "اقل من دقيقه", "دقيقة", "ثواني", "بسرعة"])
-        is_final_cta = (scene_index == total_scenes - 1 and total_scenes >= 2)
-
-        if is_final_cta:
-            return {
-                "archetype": "interactive_cta_outro",
-                "scene_type": "video_montage_studio",
-                "badge_label": "تحرير شامل • قص وتعديل وموشن جرافيك بضغطة زر",
-                "concept_title": "قص الصمت وتعديل الفيديو بالكامل آلياً",
-                "concept_subtitle": "من التسجيل الخام إلى فيديو احترافي جاهز للنشر الفوري",
-                "sub_items": ["قص لحظات السكوت آلياً", "توليد الموشن جرافيك السياقي", "كابشن تفاعلي دقيق", "تصدير بجودة Full HD 30fps"],
-                "balance_left": ("فيديو خام", "بدون تحرير"),
-                "balance_right": ("فيديو احترافي", "جاهز للنشر"),
-                "before_after": ("فيديو خام غير محرر", "4.2", "فيديو احترافي متكامل", "9.8"),
-                "typewriter_query": "ابدأ تجربة المونتاج الذكي الآن",
-                "kpi_value": "قص + تعديل آلي",
-                "kpi_label": "إخراج متكامل"
-            }
-
-        if is_problem_or_pain or (scene_index == 0 and any(w in window_low for w in ["مشكل", "مشكلة", "يعاني", "المونتاج", "وقت"])):
-            if "stage_trust_bubbles" not in used_archetypes:
-                arch = self._pick_next_non_outro_archetype("stage_trust_bubbles", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "time_warp_clock",
-                    "badge_label": "تحدي صناع المحتوى • عقبة المونتاج اليومي",
-                    "concept_title": "مشكلة استنزاف الوقت في المونتاج",
-                    "concept_subtitle": "معاناة تصوير الفيديوهات دون وقت كافٍ لتحريرها",
-                    "sub_items": ["تراكم الفيديوهات الخام", "ضيق الوقت اليومي", "صعوبة القص اليدوي", "تأخر النشر المستمر"],
-                    "balance_left": ("المونتاج اليدوي", "ساعات مرهقة"),
-                    "balance_right": ("الأتمتة الذكية", "ثوانٍ معدودة"),
-                    "before_after": ("يدوياً: 4 ساعات", "3.5", "آلياً: 45 ثانية", "9.7"),
-                    "typewriter_query": "لماذا يتأخر صناع المحتوى في النشر؟",
-                    "kpi_value": "85% يعانون",
-                    "kpi_label": "ضيق وقت المونتاج"
-                }
-            else:
-                arch = self._pick_next_non_outro_archetype("stage_balance_scale", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "time_warp_clock",
-                    "badge_label": "أزمة الوقت • صعوبة المونتاج اليدوي التقليدي",
-                    "concept_title": "استنزاف الساعات في المونتاج اليدوي",
-                    "concept_subtitle": "الفجوة بين سهولة التصوير وصعوبة التحرير اليدوي",
-                    "sub_items": ["ساعات طويلة أمام البرامج", "إجهاد في قص الصمت", "تعقيد تصميم الموشن", "تأخر نشر المحتوى"],
-                    "balance_left": ("المونتاج اليدوي", "4 ساعات عمل"),
-                    "balance_right": ("المونتاج الذكي", "أقل من دقيقة"),
-                    "before_after": ("يدوياً: 4 ساعات", "3.5", "آلياً: أقل من دقيقة", "9.8"),
-                    "typewriter_query": "توفير 95% من وقت المونتاج",
-                    "kpi_value": "4 ساعات -> 1 د",
-                    "kpi_label": "اختصار وقت التحرير"
-                }
-
-        if is_time_comparison and not is_platform_intro:
-            if "stage_balance_scale" not in used_archetypes:
-                return {
-                    "archetype": "stage_balance_scale",
-                    "scene_type": "time_warp_clock",
-                    "badge_label": "معادلة الوقت • التصوير السهل مقابل المونتاج المرهق",
-                    "concept_title": "التصوير جاهز لكن المونتاج يستهلك الساعات",
-                    "concept_subtitle": "الفجوة الكبيرة بين تسجيل الفيديو وتحريره للنشر",
-                    "sub_items": ["تسجيل الفيديو: 5 دقائق", "قص الصمت يدوياً: ساعة", "تصميم الموشن: ساعتان", "كتابة الكابشن: 45 دقيقة"],
-                    "balance_left": ("المونتاج اليدوي", "4 ساعات عمل"),
-                    "balance_right": ("المونتاج الآلي", "أقل من دقيقة"),
-                    "before_after": ("قبل: إرهاق وتأخر", "4.0", "بعد: سرعة فائقة", "9.6"),
-                    "typewriter_query": "توفير 95% من وقت التحرير",
-                    "kpi_value": "4 ساعات -> 1 د",
-                    "kpi_label": "اختصار وقت التحرير"
-                }
-            else:
-                arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "video_montage_studio",
-                    "badge_label": "تراكم المهام • لماذا تتوقف الفيديوهات بعد التصوير؟",
-                    "concept_title": "مراحل التحرير التي تستهلك وقت صانع المحتوى",
-                    "concept_subtitle": "ترتيب اللقطات وقص الصمت وتصميم الرسوم يدوياً يستغرق الساعات",
-                    "sub_items": ["1. مراجعة وقص الفيديوهات الخام", "2. إزالة فترات الصمت الطويلة", "3. تصميم البطاقات والأنفوجرافيك", "4. كتابة ومزامنة الكابشن"],
-                    "balance_left": ("تحرير يدوي معقد", "ساعات طويلة"),
-                    "balance_right": ("أتمتة ذكية كاملة", "بضغطة زر"),
-                    "before_after": ("فيديوهات حبيسة الهاتف", "3.8", "نشر يومي مستمر", "9.7"),
-                    "typewriter_query": "توفير 95% من وقت التحرير",
-                    "kpi_value": "95% توفير",
-                    "kpi_label": "وقت الإعداد والمونتاج"
-                }
-
-        if is_productivity_or_social and not is_platform_intro:
-            arch = self._pick_next_non_outro_archetype("saas_grid_2x2_cursor", used_archetypes, scene_index, total_scenes)
-            return {
-                "archetype": arch,
-                "scene_type": "growth_analytics",
-                "badge_label": "مضاعفة الإنتاجية • حضور قوي على منصات التواصل",
-                "concept_title": "رفع الإنتاجية والانتشار الرقمي",
-                "concept_subtitle": "نشر مستمر على إنستغرام وتيك توك ويوتيوب شورتس",
-                "sub_items": ["مضاعفة معدل النشر", "سرعة تجهيز الريلز", "جذب انتباه المشاهد", "رفع التفاعل والوصول"],
-                "balance_left": ("نشر متقطع", "تفاعل ضعيف"),
-                "balance_right": ("نشر يومي منتظم", "نمو متسارع"),
-                "before_after": ("قبل: فيديو أسبوعياً", "4.2", "بعد: فيديو يومياً", "9.5"),
-                "typewriter_query": "مضاعفة الإنتاجية والانتشار الرقمي",
-                "kpi_value": "+300% إنتاجية",
-                "kpi_label": "نمو التفاعل والوصول"
-            }
-
-        if is_platform_intro and not is_ai_audio_video:
-            arch = self._pick_next_non_outro_archetype("saas_typewriter_mechanism", used_archetypes, scene_index, total_scenes)
-            return {
-                "archetype": arch,
-                "scene_type": "platform_builder",
-                "badge_label": "الحل الذكي • منصة أتمتة المونتاج بالذكاء الاصطناعي",
-                "concept_title": "منصة المونتاج الذكي الشاملة",
-                "concept_subtitle": "مسؤولة بالكامل عن تحرير وإخراج الفيديوهات تلقائياً",
-                "sub_items": ["قص الصمت التلقائي", "موشن جرافيك سياقي", "كابشن تفاعلي ذكي", "دمج مشاهد فيديو واقعية"],
-                "balance_left": ("برامج معقدة", "خبرة ومجهود"),
-                "balance_right": ("منصة ذكية", "بضغطة زر واحدة"),
-                "before_after": ("قبل: تعقيد تقني", "3.9", "بعد: أتمتة كاملة", "9.6"),
-                "typewriter_query": "منصة المونتاج بالذكاء الاصطناعي",
-                "kpi_value": "All-in-One AI",
-                "kpi_label": "منصة مونتاج ذاتية"
-            }
-
-        if is_ai_audio_video:
-            if "saas_process_flow" not in used_archetypes:
-                return {
-                    "archetype": "saas_process_flow",
-                    "scene_type": "ai_neural_brain",
-                    "badge_label": "محرك الذكاء الاصطناعي • معالجة الصوت والصورة آلياً",
-                    "concept_title": "تحويل الصوت والصورة إلى فيديو متكامل",
-                    "concept_subtitle": "الذكاء الاصطناعي يفهم السياق ويصمم المشاهد تلقائياً",
-                    "sub_items": ["تحليل الصوت والدارجة", "فهم السياق والمعنى", "توليد الموشن جرافيك", "دمج ومزامنة الإطارات"],
-                    "balance_left": ("مدخلات خام", "صوت أو فيديو"),
-                    "balance_right": ("مخرجات ذكية", "موشن جرافيك احترافي"),
-                    "before_after": ("خام: تسجيل عادي", "4.5", "الناتج: فيديو سينمائي", "9.8"),
-                    "typewriter_query": "محرك فهم الصوت والصورة والسياق",
-                    "kpi_value": "100% بالـ AI",
-                    "kpi_label": "معالجة سياقية ذكية"
-                }
-            else:
-                arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
-                return {
-                    "archetype": arch,
-                    "scene_type": "video_montage_studio",
-                    "badge_label": "خطوات الأتمتة • ارفع الفيديو والذكاء الاصطناعي يتكفل بالباقي",
-                    "concept_title": "خطوات معالجة الصوت والصورة داخل المنصة",
-                    "concept_subtitle": "من لحظة رفع الفيديو الخام حتى استلام الإخراج النهائي",
-                    "sub_items": ["1. رفع الفيديو أو الصوت الخام", "2. استخراج النص وفهم السياق", "3. بناء مشاهد الموشن جرافيك", "4. مزامنة الصوت بدقة 30fps"],
-                    "balance_left": ("تعديل يدوي", "ساعات عمل"),
-                    "balance_right": ("رفع الفيديو فقط", "معالجة آلية شاملة"),
-                    "before_after": ("تسجيل خام بسيط", "4.2", "إخراج أستوديو كامل", "9.8"),
-                    "typewriter_query": "ارفع الفيديو • معالجة ذكية للصوت والصورة",
-                    "kpi_value": "Full HD 30fps",
-                    "kpi_label": "إخراج أستوديو آلي"
-                }
-
-        if is_speed_under_minute:
-            arch = self._pick_next_non_outro_archetype("stage_before_after_checklist", used_archetypes, scene_index, total_scenes)
-            return {
-                "archetype": arch,
-                "scene_type": "time_warp_clock",
-                "badge_label": "سرعة قياسية • مونتاج احترافي في أقل من دقيقة",
-                "concept_title": "إخراج احترافي كامل في أقل من 60 ثانية",
-                "concept_subtitle": "جودة استوديو عالية مع توفير كامل للوقت والجهد",
-                "sub_items": ["سرعة معالجة فائقة", "جودة موشن جرافيك 1080p", "تزامن صوتي وبصري دقيق", "جاهز للنشر الفوري"],
-                "balance_left": ("الوقت السابق", "ساعات طويلة"),
-                "balance_right": ("الوقت الحالي", "أقل من 60 ثانية"),
-                "before_after": ("مونتاج يدوي مرهق", "4.1", "مونتاج ذكي فوري", "9.8"),
-                "typewriter_query": "مونتاج احترافي < 60 ثانية",
-                "kpi_value": "< 60 ثانية",
-                "kpi_label": "سرعة الإنجاز الكامل"
-            }
-
-        if any(w in t_low for w in ["احترافي", "مونتاج", "قص", "تعديل", "جدول", "ترتيب", "فيديوهات"]):
-            arch = self._pick_next_non_outro_archetype("video_schedule_table", used_archetypes, scene_index, total_scenes)
-            return {
-                "archetype": arch,
-                "scene_type": "video_montage_studio",
-                "badge_label": "جودة أستوديو • إخراج ومونتاج احترافي متكامل",
-                "concept_title": "معايير إخراج سينمائية بشكل آلي",
-                "concept_subtitle": "دمج القص الذكي والموشن جرافيك والكابشن التفاعلي",
-                "sub_items": ["قص الصمت بدقة صوتية", "حركات كوريغرافيا 30fps", "تصميم بطاقات تفاعلية", "كابشن متزامن مع النطق"],
-                "balance_left": ("تحرير بدائي", "جودة عادية"),
-                "balance_right": ("إخراج بالذكاء الاصطناعي", "جودة أستوديو احترافية"),
-                "before_after": ("فيديو عادي", "4.3", "إخراج احترافي", "9.8"),
-                "typewriter_query": "إخراج ومونتاج احترافي بضغطة زر",
-                "kpi_value": "Studio Pro",
-                "kpi_label": "جودة إخراج عالية"
-            }
-
-        arch = self._pick_next_non_outro_archetype("saas_folder_reorder", used_archetypes, scene_index, total_scenes)
-        all_kws = extract_clean_keywords(f"{scene_text} {next_scene_text}", max_words=6)
-        main_kw = " ".join(all_kws[:3]) if all_kws else "الفكرة المحورية"
-        sub_kw_1 = " ".join(all_kws[:2]) if len(all_kws) >= 2 else "تحليل الفكرة الأساسية"
-        sub_kw_2 = " ".join(all_kws[1:3]) if len(all_kws) >= 3 else "تطبيق عملي مباشر"
-        sub_kw_3 = " ".join(all_kws[2:4]) if len(all_kws) >= 4 else "نتائج ملموسة وسريعة"
-        sub_kw_4 = " ".join(all_kws[3:5]) if len(all_kws) >= 5 else "جودة وكفاءة عالية"
-
-        domain_prefix_map = {
-            "social_media": "صناعة المحتوى",
-            "tech_software": "التقنية الذكية",
-            "education": "فائدة معرفية",
-            "business": "ريادة الأعمال",
-            "ecommerce": "ميزة المنتج",
-            "general": "محور أساسي"
+        from style_evolution_brain import match_speech_to_visual_archetype
+        raw_clean = re.sub(r"[،,.!؟?()\[\]\-]+ ", " ", (scene_text or "")).strip()
+        filler_stop = {
+            "أهلاً", "اهلا", "وسهلاً", "مرحبا", "شوف", "شوفوا", "طبعاً", "طبعا", "يعني",
+            "صراحة", "بصراحة", "أنه", "انه", "أن", "ان", "اللي", "التي", "الذي", "الذين",
+            "هذا", "هذه", "هاد", "هادي", "في", "من", "على", "إلى", "عن", "مع", "هو", "هي",
+            "هم", "أنا", "انا", "نحن", "بس", "برك", "قاع", "راه", "راهي", "واش", "كيفاش",
+            "علاش", "لأن", "لان", "لو", "إذا", "اذا", "كان", "كانت", "يكون", "تكون", "جدا", "بزاف"
         }
-        d_prefix = domain_prefix_map.get(domain, "محور أساسي")
+        all_tokens = [w for w in raw_clean.split() if len(w) > 1]
+        meaningful_tokens = [w for w in all_tokens if w.lower() not in filler_stop]
+        if len(meaningful_tokens) < 2:
+            meaningful_tokens = all_tokens if all_tokens else ["الفكرة", "الأساسية"]
+
+        # العنوان الرئيسي على الشاشة مأخوذ 100% من الكلمات الفعلية التي نطقها المتحدث في هذا المشهد!
+        concept_title = " ".join(meaningful_tokens[:5])
+        if len(concept_title) < 5 and len(all_tokens) >= 2:
+            concept_title = " ".join(all_tokens[:5])
+
+        next_tokens = [
+            w for w in re.sub(r"[،,.!؟?()\[\]\-]+ ", " ", (next_scene_text or "")).split()
+            if len(w) > 2 and w.lower() not in filler_stop
+        ]
+        prev_tokens = [
+            w for w in re.sub(r"[،,.!؟?()\[\]\-]+ ", " ", (prev_scene_text or "")).split()
+            if len(w) > 2 and w.lower() not in filler_stop
+        ]
+
+        # بناء العناصر الفرعية التوضيحية من عبارات وكلمات المشهد الفعلي وليس من نصوص ثابتة مكررة
+        sub_items: List[str] = []
+        chunk_size = max(2, min(3, len(meaningful_tokens) // 2 or 2))
+        for i in range(0, len(meaningful_tokens), chunk_size):
+            phrase = " ".join(meaningful_tokens[i:i + chunk_size]).strip()
+            if len(phrase) >= 3 and phrase not in sub_items:
+                sub_items.append(phrase)
+        if len(sub_items) < 4 and next_tokens:
+            p_next = " ".join(next_tokens[:3]).strip()
+            if p_next and p_next not in sub_items:
+                sub_items.append(p_next)
+        if len(sub_items) < 4 and prev_tokens:
+            p_prev = " ".join(prev_tokens[:3]).strip()
+            if p_prev and p_prev not in sub_items:
+                sub_items.append(p_prev)
+        while len(sub_items) < 4:
+            sub_items.append(concept_title if len(sub_items) == 0 else " ".join(meaningful_tokens[:min(3, len(meaningful_tokens))]))
+
+        # استخراج أي رقم أو نسبة أو مؤشر منطوق فعلياً في الجملة
+        num_m = re.search(r"(\d+\s*(?:%|ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات|ولاية|خصائص|ميزات|أضعاف|مرات)?)", scene_text or "")
+        if num_m:
+            kpi_value = num_m.group(1).strip()
+        else:
+            kpi_value = " ".join(meaningful_tokens[:2]) if len(meaningful_tokens) >= 2 else meaningful_tokens[0]
+        kpi_label = " ".join(meaningful_tokens[-2:]) if len(meaningful_tokens) >= 3 else concept_title
+
+        rot_seed = int(self.learned_genome.get("total_videos_learned", 0)) + int(time.time()) % 997
+        arch, vis_subj = match_speech_to_visual_archetype(
+            scene_text=scene_text,
+            scene_index=scene_index,
+            total_scenes=total_scenes,
+            used_archetypes=used_archetypes,
+            variation_seed=rot_seed
+        )
+
+        subj_badge_prefix = {
+            "hero_smartphone_reels": "صناعة الريلز والفيديو",
+            "hero_camera_production": "التصوير والإنتاج البصري",
+            "hero_waveform_scissors": "قص الصمت وتنقية الصوت",
+            "hero_ai_neural_core": "معالجة الذكاء الاصطناعي",
+            "hero_chrono_speedometer": "اختصار الوقت والسرعة",
+            "hero_sound_wave_mixer": "هندسة الصوت والمؤثرات",
+            "hero_viral_rocket_chart": "مضاعفة الإنتاجية والانتشار",
+            "hero_power_cable_stand": "قوة الشحن والتصميم العملي",
+            "hero_shield_durability": "المتانة والضمان الموثوق",
+            "hero_commerce_delivery": "الطلب والتوصيل السريع",
+            "hero_creative_palette_pen": "تصميم الهوية والموشن جرافيك",
+            "hero_problem_radar_fix": "تشخيص التحدي والحل الذكي",
+            "hero_platform_workspace": "منصة العمل الذكية",
+            "hero_roadmap_milestones": "خطوات التطبيق المتسلسلة",
+            "hero_comparison_duel": "مقارنة الأداء والنتائج",
+            "hero_cta_magnet_finale": "الخطوة التالية",
+        }.get(vis_subj, "محور أساسي")
+
+        short_kw = " ".join(meaningful_tokens[:3])
+        badge_label = f"{subj_badge_prefix} • {short_kw}"
+
+        scene_type_map = {
+            "hero_smartphone_reels": "reels_smartphone",
+            "hero_camera_production": "video_montage_studio",
+            "hero_waveform_scissors": "video_montage_studio",
+            "hero_ai_neural_core": "ai_neural_brain",
+            "hero_chrono_speedometer": "time_warp_clock",
+            "hero_sound_wave_mixer": "video_montage_studio",
+            "hero_viral_rocket_chart": "growth_analytics",
+            "hero_power_cable_stand": "ecommerce_showcase",
+            "hero_shield_durability": "ecommerce_showcase",
+            "hero_commerce_delivery": "delivery_express",
+            "hero_creative_palette_pen": "platform_builder",
+            "hero_problem_radar_fix": "time_warp_clock",
+            "hero_platform_workspace": "platform_builder",
+            "hero_roadmap_milestones": "growth_analytics",
+            "hero_comparison_duel": "growth_analytics",
+            "hero_cta_magnet_finale": "brand_finale",
+        }
+        scene_type = scene_type_map.get(vis_subj, "growth_analytics")
 
         return {
             "archetype": arch,
-            "scene_type": "growth_analytics" if (scene_index % 2 == 0) else "reels_smartphone",
-            "badge_label": f"{d_prefix} • {main_kw}",
-            "concept_title": main_kw,
-            "concept_subtitle": f"شرح تفصيلي وتوضيح بصري حول {main_kw}",
-            "sub_items": [sub_kw_1, sub_kw_2, sub_kw_3, sub_kw_4],
-            "balance_left": ("الطريقة العادية", "نتائج محدودة"),
-            "balance_right": (sub_kw_1, "كفاءة عالية"),
-            "before_after": ("قبل التطبيق", "4.2", f"بعد: {sub_kw_1}", "9.6"),
-            "typewriter_query": main_kw,
-            "kpi_value": f"محور #{scene_index + 1}",
-            "kpi_label": d_prefix
+            "visual_subject": vis_subj,
+            "scene_type": scene_type,
+            "badge_label": badge_label,
+            "concept_title": concept_title,
+            "concept_subtitle": raw_clean[:68] if raw_clean else concept_title,
+            "sub_items": sub_items[:4],
+            "balance_left": (sub_items[0], "الوضع السابق"),
+            "balance_right": (sub_items[min(1, len(sub_items) - 1)], kpi_value),
+            "before_after": (sub_items[0], "4.0", concept_title[:22], "9.8"),
+            "typewriter_query": concept_title,
+            "kpi_value": kpi_value,
+            "kpi_label": kpi_label,
         }
 
 
@@ -981,128 +702,48 @@ class MotionQualityAuditor:
         if not scenes:
             return []
 
-        domain = global_ctx.get("domain", "general")
+        from style_evolution_brain import ALL_DYNAMIC_VISUAL_ARCHETYPES, match_speech_to_visual_archetype
         total_scenes = len(scenes)
         healed: List[Dict[str, Any]] = []
-        used_badges = set()
-        used_concepts = set()
-        used_kpis = set()
         used_archs: List[str] = []
-
-        non_outro_pool = [
-            "stage_trust_bubbles",
-            "video_schedule_table",
-            "stage_balance_scale",
-            "saas_folder_reorder",
-            "saas_grid_2x2_cursor",
-            "saas_typewriter_mechanism",
-            "saas_process_flow",
-            "stage_before_after_checklist",
-        ]
-
-        domain_Progression_fallbacks = {
-            "ecommerce": [
-                ("اكتشف المنتج • تصميم عملي يجمع القوة والراحة", "ابتكار عملي للهواتف الذكية", "Top Pick", "اختيار موصى به"),
-                ("مقارنة الجودة • الكوابل العادية مقابل الكابل الذكي", "تفوق واضح في المتانة والأداء", "3 في 1", "مواصفات متكاملة"),
-                ("القيمة الحقيقية • أفضل استثمار لحماية هاتفك", "استثمار ذكي يدوم طويلاً", "أفضل استثمار", "حماية وكفاءة"),
-                ("مواصفات حصرية • 3 خصائص عملية في منتج واحد", "ثلاث مزايا حصرية مجتمعة", "3 خصائص", "في كابل واحد"),
-                ("الخاصية الأولى • حامل هاتف مدمج (سيبور ذكي)", "حامل هاتف مدمج بزاوية مريحة", "2 في 1", "شاحن وحامل"),
-                ("الخاصية الثانية • اشحن هاتفك وتفرج بكل راحة", "مشاهدة مريحة أثناء الشحن", "راحة 100%", "ثبات تام"),
-                ("الخاصية الثالثة • مغلف بالقماش المقاوم للقطع", "تغليف قماشي متين ضد القطع", "100% متين", "ضد القطع"),
-                ("قوة خارقة • يدعم الشحن السريع Super Fast", "شحن Super Fast لجميع الهواتف", "Super Fast", "شحن فائق"),
-                ("اطلب الآن • اضغط على الزر أسفل الفيديو", "اطلب الكابل الذكي الآن", "اطلب الآن", "متوفر فوراً"),
-            ],
-            "default": [
-                ("تحدي صناع المحتوى • عقبة المونتاج اليومي", "مشكلة استنزاف الوقت في المونتاج", "85% يعانون", "ضيق وقت المونتاج"),
-                ("معادلة الوقت • التصوير السهل مقابل المونتاج المرهق", "التصوير جاهز لكن المونتاج يستهلك الساعات", "4 ساعات -> 1 د", "اختصار وقت التحرير"),
-                ("تراكم المهام • مراحل التحرير اليدوي المرهقة", "توفير 95% من وقت الإعداد والمونتاج", "95% توفير", "وقت التحرير"),
-                ("مضاعفة الإنتاجية • حضور قوي على منصات التواصل", "رفع الإنتاجية والانتشار الرقمي", "+300% إنتاجية", "نمو التفاعل"),
-                ("الحل الذكي • منصة أتمتة المونتاج بالذكاء الاصطناعي", "منصة المونتاج الذكي الشاملة", "All-in-One AI", "منصة مونتاج ذاتية"),
-                ("محرك الذكاء الاصطناعي • معالجة الصوت والصورة آلياً", "تحويل الصوت والصورة إلى فيديو متكامل", "100% بالـ AI", "معالجة سياقية"),
-                ("خطوات الأتمتة • ارفع الفيديو والنظام يتكفل بالباقي", "خطوات معالجة الصوت والصورة ذكياً", "Full HD 30fps", "جودة أستوديو"),
-                ("سرعة قياسية • مونتاج احترافي في أقل من دقيقة", "إخراج احترافي كامل في أقل من 60 ثانية", "< 60 ثانية", "سرعة الإنجاز"),
-                ("تحرير شامل • قص وتعديل وموشن جرافيك بضغطة زر", "قص الصمت وتعديل الفيديو بالكامل", "قص + تعديل آلي", "إخراج متكامل"),
-            ]
-        }
-        fb_list = domain_Progression_fallbacks["ecommerce"] if domain == "ecommerce" else domain_Progression_fallbacks["default"]
-
-        banned_phrases = [
-            "إضاءة معرفية", "Pro Tips", "معلومة قيمة", "المرحلة #",
-            "تطوير الأداء وصناعة المحتوى", "منهجية ذكية لتحقيق أفضل النتائج",
-            "المونت ", "الاج ", "أهلاً لاحظت", "جبت لكم", "صورته ذكاء"
-        ]
-        if domain == "ecommerce":
-            banned_phrases.extend(["قص الصمت", "تعديل الفيديو", "تحرير شامل", "مونتاج احترافي", "موشن جرافيك بضغطة زر"])
+        dyn_seed = int(time.time() * 10) % 997
 
         for idx, sc in enumerate(scenes):
             item = dict(sc)
             raw_text = str(item.get("text", "")).strip()
-            raw_words = [w.strip("،,.!؟?") for w in raw_text.split() if w.strip("،,.!؟?")]
-            first_three = " ".join(raw_words[:3])
+            user_arch = str(item.get("user_override_archetype") or "").strip()
+            arch = str(item.get("archetype", "")).strip()
+            vis_subj = str(item.get("visual_subject", "")).strip()
+
+            if user_arch and user_arch in ALL_DYNAMIC_VISUAL_ARCHETYPES:
+                arch = user_arch
+                vis_subj = user_arch
+            elif not arch or arch not in ALL_DYNAMIC_VISUAL_ARCHETYPES or arch in used_archs:
+                arch, matched_subj = match_speech_to_visual_archetype(
+                    scene_text=raw_text,
+                    scene_index=idx,
+                    total_scenes=total_scenes,
+                    used_archetypes=used_archs,
+                    variation_seed=dyn_seed
+                )
+                if not vis_subj:
+                    vis_subj = matched_subj
+
+            concept = str(item.get("concept_title", "")).strip()
+            if not concept and raw_text:
+                kws = extract_clean_keywords(raw_text, max_words=5)
+                concept = " ".join(kws) if kws else raw_text[:32]
 
             badge = str(item.get("badge_label", "")).strip()
-            concept = str(item.get("concept_title", "")).strip()
-            kpi_v = str(item.get("kpi_value", "")).strip()
-            kpi_l = str(item.get("kpi_label", "")).strip()
-
-            fb_badge, fb_concept, fb_kv, fb_kl = fb_list[idx % len(fb_list)]
-
-            if (
-                not badge
-                or any(bp in badge for bp in banned_phrases)
-                or (first_three and len(first_three) > 4 and first_three in badge)
-                or badge in used_badges
-            ):
-                if fb_badge not in used_badges:
-                    badge = fb_badge
-                else:
-                    kws = extract_clean_keywords(raw_text, max_words=3)
-                    kw_str = " ".join(kws[:2]) if kws else f"النقطة {idx + 1}"
-                    badge = f"{fb_badge.split('•')[0].strip()} • {kw_str}"
-
-            if (
-                not concept
-                or any(bp in concept for bp in banned_phrases)
-                or (first_three and len(first_three) > 4 and first_three in concept)
-                or concept in used_concepts
-            ):
-                if fb_concept not in used_concepts:
-                    concept = fb_concept
-                else:
-                    kws = extract_clean_keywords(raw_text, max_words=3)
-                    kw_str = " ".join(kws[:3]) if kws else f"الخطوة العملية {idx + 1}"
-                    concept = kw_str
-
-            if not kpi_v or any(bp in kpi_v for bp in banned_phrases) or "خطوة #" in kpi_v or kpi_v in used_kpis:
-                if fb_kv not in used_kpis:
-                    kpi_v = fb_kv
-                    kpi_l = fb_kl
-                else:
-                    extra_kpis = ["اطلب الآن", "ضمان 100%", "توصيل سريع", "جودة أصلية", "سعر ممتاز"] if domain == "ecommerce" else ["ابدأ الآن", "جاهز للنشر", "دقة 30FPS", "توفير 95%", "ذكاء سياقي"]
-                    kpi_v = extra_kpis[idx % len(extra_kpis)]
-
-            arch = str(item.get("archetype", "")).strip()
-            if idx == total_scenes - 1 and total_scenes >= 2:
-                arch = "interactive_cta_outro"
-            else:
-                if arch == "interactive_cta_outro" or arch not in non_outro_pool or arch in used_archs:
-                    unused = [a for a in non_outro_pool if a not in used_archs]
-                    if unused:
-                        arch = unused[0]
-                    else:
-                        non_adj = [a for a in non_outro_pool if (not used_archs or a != used_archs[-1])]
-                        arch = non_adj[idx % len(non_adj)]
+            if not badge:
+                badge = concept[:28]
 
             item["archetype"] = arch
+            item["visual_subject"] = vis_subj or arch
             item["badge_label"] = badge
             item["concept_title"] = concept
             item["short_title"] = concept
-            item["kpi_value"] = kpi_v
-            item["kpi_label"] = kpi_l
 
-            used_badges.add(badge)
-            used_concepts.add(concept)
-            used_kpis.add(kpi_v)
             used_archs.append(arch)
             healed.append(item)
 
@@ -1431,9 +1072,12 @@ def analyze_contextual_storyboard(
 
     if callable(build_dynamic_scene_style_assignment):
         try:
-            style_plan = build_dynamic_scene_style_assignment(len(enriched_scenes), advance_rotation_counter=True)
+            style_plan = build_dynamic_scene_style_assignment(len(enriched_scenes), advance_rotation_counter=True, scenes=enriched_scenes)
             for idx, sc in enumerate(enriched_scenes):
                 if idx < len(style_plan):
+                    # نحترم الرسم المخصص المطابق للكلام المنطوق في كل مشهد
+                    if sc.get("archetype"):
+                        style_plan[idx]["visual_archetype"] = sc["archetype"]
                     sc["scene_style_spec"] = style_plan[idx]
                     sc["step_number"] = idx + 1
                     sc["total_scenes_count"] = len(enriched_scenes)

@@ -491,3 +491,516 @@ def render_radial_ambient_glow(
     glow_img = Image.fromarray(patch, mode="RGBA")
     canvas_rgba.alpha_composite(glow_img, (x1, y1))
     return canvas_rgba
+
+
+# ==============================================================================
+# 4. محرك الرسومات التعبيرية والمجسمات المتجهية المتوافقة 100% مع الكلام المنطوق
+#    (16 Bespoke Speech-Matched Open-Canvas Vector Hero Illustrations)
+# ==============================================================================
+def render_contextual_hero_illustration(
+    img: Image.Image,
+    archetype: str,
+    stage_bbox: Tuple[int, int, int, int],
+    choreo_u: float,
+    global_t: float,
+    style_spec: Dict[str, Any],
+    scene_meta: Dict[str, Any],
+    sub_items: List[str],
+    kpi_val: str,
+    kpi_lbl: str,
+    concept_title: str,
+    draw_contained_text_fn,
+    draw_arabic_text_fn,
+    get_font_fn,
+    draw_cursor_fn
+) -> Image.Image:
+    w, h = img.size
+    st_x1, st_y1, st_x2, st_y2 = stage_bbox
+    st_w = max(120, st_x2 - st_x1)
+    st_h = max(120, st_y2 - st_y1)
+    cx = (st_x1 + st_x2) // 2
+    cy = st_y1 + int(st_h * 0.44)
+
+    pal = style_spec.get("palette", {})
+    is_light_bg = bool(pal.get("is_light_bg", False))
+    primary_c = tuple(pal.get("primary", (56, 189, 248)))[:3]
+    secondary_c = tuple(pal.get("secondary", (250, 204, 21)))[:3]
+    accent_c = tuple(pal.get("accent", (16, 185, 129)))[:3]
+    txt_main = (24, 24, 27) if is_light_bg else (248, 250, 252)
+    txt_muted = (71, 85, 105) if is_light_bg else (190, 205, 225)
+    pod_bg = (255, 255, 255, 238) if is_light_bg else (22, 28, 48, 224)
+    pod_border = (*primary_c, 195)
+
+    # إضاءة محيطية ناعمة وجزيئات سينمائية في الفضاء المفتوح (بدون أي صندوق أبيض ضخم!)
+    img = render_radial_ambient_glow(img, (cx, cy), int(min(st_w, st_h) * 0.46), primary_c, intensity=0.22 if is_light_bg else 0.32)
+    img = render_floating_particles_layer(
+        canvas_rgba=img,
+        global_t=global_t,
+        theme={"primary": primary_c, "secondary": secondary_c},
+        count=10,
+        region_bbox=(st_x1, st_y1, st_x2, st_y2)
+    )
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    def _spring(u: float, delay: float = 0.0, dur: float = 0.38) -> float:
+        if u <= delay:
+            return 0.0
+        p = min(1.0, (u - delay) / max(0.05, dur))
+        return 1.0 - math.exp(-6.2 * p) * math.cos(8.5 * p)
+
+    def _draw_floating_pod(bx1: int, by1: int, bx2: int, by2: int, title_t: str, sub_t: str = "", badge_col=primary_c, radius: int = 18):
+        if bx2 - bx1 < 20 or by2 - by1 < 18:
+            return
+        draw.rounded_rectangle([(bx1 + 2, by1 + 6), (bx2 + 2, by2 + 6)], radius=radius, fill=(10, 12, 20, 55))
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=radius, fill=pod_bg, outline=(*badge_col, 215), width=2)
+        dot_r = 6
+        draw.ellipse([(bx2 - 18 - dot_r, (by1 + by2) // 2 - dot_r), (bx2 - 18 + dot_r, (by1 + by2) // 2 + dot_r)], fill=(*badge_col, 255))
+        if sub_t:
+            mid_y = by1 + int((by2 - by1) * 0.52)
+            draw_contained_text_fn(draw, (bx1 + 10, by1 + 4, bx2 - 30, mid_y), title_t, initial_font_size=15, fill=(*txt_main, 255))
+            draw_contained_text_fn(draw, (bx1 + 10, mid_y, bx2 - 30, by2 - 4), sub_t, initial_font_size=13, fill=(*badge_col, 255))
+        else:
+            draw_contained_text_fn(draw, (bx1 + 12, by1 + 4, bx2 - 30, by2 - 4), title_t, initial_font_size=15, fill=(*txt_main, 255))
+
+    def _draw_bottom_speech_pills(y_top: int):
+        pw = (st_w - 14) // 2
+        ph = 48
+        for pi in range(2):
+            sp = _spring(choreo_u, delay=0.22 + pi * 0.12, dur=0.36)
+            if sp <= 0.05:
+                continue
+            px1 = st_x1 + pi * (pw + 14)
+            py1 = y_top + int(18 * (1.0 - min(1.0, sp)))
+            b_col = primary_c if pi == 0 else accent_c
+            _draw_floating_pod(px1, py1, px1 + pw, py1 + ph, sub_items[pi % len(sub_items)], "", badge_col=b_col, radius=16)
+
+    sp_main = max(0.15, min(1.12, _spring(choreo_u, delay=0.04, dur=0.40)))
+    float_dy = int(5.0 * math.sin(global_t * 2.8))
+    cy += float_dy
+
+    # -------------------------------------------------------------------------
+    # 1. hero_smartphone_reels: مجسم الهاتف الذكي ومشغل الريلز التفاعلي
+    # -------------------------------------------------------------------------
+    if archetype == "hero_smartphone_reels":
+        ph_w = int(st_w * 0.42 * sp_main)
+        ph_h = int(st_h * 0.64 * sp_main)
+        px1, py1 = cx - ph_w // 2, cy - ph_h // 2 - 10
+        px2, py2 = px1 + ph_w, py1 + ph_h
+
+        # ظل وإطار الهاتف الثلاثي الأبعاد
+        draw.rounded_rectangle([(px1 + 8, py1 + 12), (px2 + 8, py2 + 12)], radius=28, fill=(8, 10, 18, 95))
+        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=28, fill=(18, 22, 36, 252), outline=(*primary_c, 245), width=3)
+        # شاشة الريلز الداخلية
+        sc_x1, sc_y1, sc_x2, sc_y2 = px1 + 10, py1 + 14, px2 - 10, py2 - 14
+        draw.rounded_rectangle([(sc_x1, sc_y1), (sc_x2, sc_y2)], radius=20, fill=(30, 41, 68, 255))
+        # نوتش علوي (Dynamic Island)
+        isl_w = max(36, int(ph_w * 0.30))
+        draw.rounded_rectangle([(cx - isl_w // 2, sc_y1 + 8), (cx + isl_w // 2, sc_y1 + 18)], radius=5, fill=(10, 12, 18, 255))
+
+        # زر تشغيل الريلز النابض في قلب الشاشة
+        play_r = max(20, int(ph_w * 0.18 * (0.92 + 0.08 * math.sin(global_t * 5.0))))
+        p_cy = (sc_y1 + sc_y2) // 2 - 14
+        draw.ellipse([(cx - play_r - 8, p_cy - play_r - 8), (cx + play_r + 8, p_cy + play_r + 8)], fill=(*primary_c, 55))
+        draw.ellipse([(cx - play_r, p_cy - play_r), (cx + play_r, p_cy + play_r)], fill=(*primary_c, 255))
+        tri = [(cx - play_r // 3, p_cy - play_r // 2), (cx - play_r // 3, p_cy + play_r // 2), (cx + play_r // 2, p_cy)]
+        draw.polygon(tri, fill=(255, 255, 255, 255))
+
+        # موجات الصوت الحية وشريط التقدم أسفل شاشة الهاتف
+        wave_y = sc_y2 - 36
+        n_bars = 14
+        bw = max(3, (sc_x2 - sc_x1 - 28) // (n_bars * 2))
+        for bi in range(n_bars):
+            bh = int(6 + 14 * abs(math.sin(global_t * 4.5 + bi * 0.55)))
+            bx = sc_x1 + 16 + bi * (bw * 2)
+            b_col = secondary_c if (bi / float(n_bars)) <= choreo_u else (148, 163, 184)
+            draw.rounded_rectangle([(bx, wave_y - bh), (bx + bw, wave_y + bh)], radius=2, fill=(*b_col, 245))
+
+        # كبسولات عائمة حول الهاتف للكلمات المنطوقة
+        if choreo_u >= 0.16:
+            _draw_floating_pod(st_x1, py1 + 18, px1 - 8, py1 + 74, kpi_val, badge_col=secondary_c, radius=14)
+        if choreo_u >= 0.28:
+            _draw_floating_pod(px2 + 8, py1 + int(ph_h * 0.35), st_x2, py1 + int(ph_h * 0.35) + 56, sub_items[2 % len(sub_items)], badge_col=accent_c, radius=14)
+
+        _draw_bottom_speech_pills(py2 + 16)
+        draw_cursor_fn(draw, (px2 + 24, p_cy + 40), (cx, p_cy), choreo_u, accent_rgb=secondary_c)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 2. hero_camera_production: عدسة الكاميرا السينمائية ومؤشر التسجيل REC
+    # -------------------------------------------------------------------------
+    if archetype == "hero_camera_production":
+        lens_r = int(min(st_w, st_h) * 0.27 * sp_main)
+        # أركان الـ Viewfinder السينمائية
+        vf_x1, vf_y1, vf_x2, vf_y2 = st_x1 + 14, st_y1 + 10, st_x2 - 14, cy + lens_r + 28
+        cl = 22
+        for (vx, vy, dx, dy) in [(vf_x1, vf_y1, 1, 1), (vf_x2, vf_y1, -1, 1), (vf_x1, vf_y2, 1, -1), (vf_x2, vf_y2, -1, -1)]:
+            draw.line([(vx, vy), (vx + dx * cl, vy)], fill=(*primary_c, 220), width=3)
+            draw.line([(vx, vy), (vx, vy + dy * cl)], fill=(*primary_c, 220), width=3)
+
+        # شارة REC الحمراء النابضة
+        rec_alpha = int(155 + 100 * math.sin(global_t * 6.0))
+        draw.ellipse([(vf_x1 + 18, vf_y1 + 14), (vf_x1 + 30, vf_y1 + 26)], fill=(239, 68, 68, rec_alpha))
+        f_rec = get_font_fn(14, bold=True)
+        draw_arabic_text_fn(draw, (vf_x1 + 62, vf_y1 + 20), "REC 30FPS", font=f_rec, fill=(239, 68, 68, 255))
+
+        # حلقات عدسة الكاميرا المتعددة وشفرات الـ Aperture المتحركة
+        draw.ellipse([(cx - lens_r - 10, cy - lens_r - 10), (cx + lens_r + 10, cy + lens_r + 10)], fill=(15, 23, 42, 240), outline=(*primary_c, 245), width=4)
+        draw.ellipse([(cx - int(lens_r * 0.82), cy - int(lens_r * 0.82)), (cx + int(lens_r * 0.82), cy + int(lens_r * 0.82))], fill=(24, 34, 62, 250), outline=(*secondary_c, 210), width=2)
+
+        n_blades = 6
+        ap_open = 0.28 + 0.25 * math.sin(choreo_u * math.pi)
+        inner_r = int(lens_r * ap_open)
+        for bi in range(n_blades):
+            ang = bi * (2.0 * math.pi / n_blades) + global_t * 0.45
+            x_a = cx + int(lens_r * 0.75 * math.cos(ang))
+            y_a = cy + int(lens_r * 0.75 * math.sin(ang))
+            x_b = cx + int(inner_r * math.cos(ang + 0.55))
+            y_b = cy + int(inner_r * math.sin(ang + 0.55))
+            draw.line([(x_a, y_a), (x_b, y_b)], fill=(*primary_c, 200), width=3)
+
+        draw.ellipse([(cx - inner_r, cy - inner_r), (cx + inner_r, cy + inner_r)], fill=(*primary_c, 75), outline=(255, 255, 255, 220), width=2)
+        draw_contained_text_fn(draw, (cx - inner_r, cy - 18, cx + inner_r, cy + 18), kpi_val, initial_font_size=18, fill=(255, 255, 255, 255))
+
+        _draw_bottom_speech_pills(vf_y2 + 14)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 3. hero_waveform_scissors: مقص الليزر الذكي وقص الصمت والأخطاء من الموجة الصوتية
+    # -------------------------------------------------------------------------
+    if archetype == "hero_waveform_scissors":
+        track_y1, track_y2 = cy - int(st_h * 0.22), cy + int(st_h * 0.16)
+        track_x1, track_x2 = st_x1 + 8, st_x2 - 8
+        draw.rounded_rectangle([(track_x1, track_y1), (track_x2, track_y2)], radius=22, fill=pod_bg, outline=(*primary_c, 210), width=2)
+
+        mid_wy = (track_y1 + track_y2) // 2
+        n_bars = 28
+        step_x = (track_x2 - track_x1 - 32) / float(n_bars)
+        cut_x = int(track_x1 + 24 + (track_x2 - track_x1 - 48) * min(1.0, max(0.08, choreo_u * 1.15)))
+
+        for bi in range(n_bars):
+            bx = int(track_x1 + 18 + bi * step_x)
+            is_silence_gap = (bi in (8, 9, 10, 18, 19, 20))
+            already_cleaned = (bx <= cut_x)
+            if is_silence_gap and not already_cleaned:
+                bh = 6
+                b_col = (239, 68, 68)
+            else:
+                bh = int(14 + 34 * abs(math.sin(bi * 0.65 + global_t * 3.2)))
+                b_col = accent_c if already_cleaned else primary_c
+            draw.rounded_rectangle([(bx, mid_wy - bh), (bx + 5, mid_wy + bh)], radius=3, fill=(*b_col, 245))
+
+        # خط الليزر القاطع وأيقونة المقص الهندسية المتحركة
+        draw.line([(cut_x, track_y1 - 12), (cut_x, track_y2 + 12)], fill=(*secondary_c, 255), width=3)
+        sc_y = track_y1 - 16
+        draw.ellipse([(cut_x - 14, sc_y - 14), (cut_x - 2, sc_y - 2)], outline=(*secondary_c, 255), width=3)
+        draw.ellipse([(cut_x + 2, sc_y - 14), (cut_x + 14, sc_y - 2)], outline=(*secondary_c, 255), width=3)
+        draw.line([(cut_x - 6, sc_y - 2), (cut_x + 10, sc_y + 18)], fill=(255, 255, 255, 255), width=3)
+        draw.line([(cut_x + 6, sc_y - 2), (cut_x - 10, sc_y + 18)], fill=(255, 255, 255, 255), width=3)
+
+        _draw_floating_pod(cx - int(st_w * 0.38), track_y2 + 14, cx + int(st_w * 0.38), track_y2 + 62, f"{kpi_val} • {kpi_lbl}", badge_col=accent_c, radius=16)
+        _draw_bottom_speech_pills(track_y2 + 74)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 4. hero_ai_neural_core: معالج ونواة الذكاء الاصطناعي لتحويل الصوت والصورة
+    # -------------------------------------------------------------------------
+    if archetype == "hero_ai_neural_core":
+        chip_r = int(min(st_w, st_h) * 0.21 * sp_main)
+        # خطوط الدارات الكهربائية المتشعبة من المعالج
+        for pi in range(8):
+            ang = pi * (math.pi / 4.0)
+            x0 = cx + int(chip_r * math.cos(ang))
+            y0 = cy + int(chip_r * math.sin(ang))
+            x1 = cx + int(chip_r * 1.65 * math.cos(ang))
+            y1 = cy + int(chip_r * 1.65 * math.sin(ang))
+            draw.line([(x0, y0), (x1, y1)], fill=(*primary_c, 185), width=3)
+            pulse_p = (global_t * 2.2 + pi * 0.15) % 1.0
+            px = int(x0 + (x1 - x0) * pulse_p)
+            py = int(y0 + (y1 - y0) * pulse_p)
+            draw.ellipse([(px - 5, py - 5), (px + 5, py + 5)], fill=(*secondary_c, 255))
+            draw.ellipse([(x1 - 7, y1 - 7), (x1 + 7, y1 + 7)], fill=pod_bg, outline=(*accent_c, 240), width=2)
+
+        # جسم شريحة الـ AI المركزية
+        draw.rounded_rectangle([(cx - chip_r, cy - chip_r), (cx + chip_r, cy + chip_r)], radius=24, fill=(18, 24, 44, 252), outline=(*primary_c, 255), width=3)
+        in_r = int(chip_r * 0.68)
+        draw.ellipse([(cx - in_r, cy - in_r), (cx + in_r, cy + in_r)], fill=(*primary_c, 55), outline=(*secondary_c, 245), width=2)
+        f_ai = get_font_fn(max(22, int(chip_r * 0.42)), bold=True)
+        draw_arabic_text_fn(draw, (cx, cy - 6), "AI", font=f_ai, fill=(255, 255, 255, 255))
+
+        _draw_bottom_speech_pills(cy + int(chip_r * 1.72) + 12)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 5. hero_chrono_speedometer: عداد السرعة والزمن التوربيني
+    # -------------------------------------------------------------------------
+    if archetype == "hero_chrono_speedometer":
+        sp_r = int(min(st_w, st_h) * 0.30 * sp_main)
+        draw.arc([(cx - sp_r, cy - sp_r), (cx + sp_r, cy + sp_r)], start=135, end=405, fill=(148, 163, 184, 95), width=18)
+        sweep_deg = int(270 * min(1.0, max(0.12, choreo_u * 1.25)))
+        draw.arc([(cx - sp_r, cy - sp_r), (cx + sp_r, cy + sp_r)], start=135, end=135 + sweep_deg, fill=(*primary_c, 255), width=18)
+
+        # تدريجات عداد السرعة
+        for ti in range(11):
+            t_ang = math.radians(135 + ti * 27)
+            tx0 = cx + int((sp_r - 24) * math.cos(t_ang))
+            ty0 = cy + int((sp_r - 24) * math.sin(t_ang))
+            tx1 = cx + int((sp_r - 12) * math.cos(t_ang))
+            ty1 = cy + int((sp_r - 12) * math.sin(t_ang))
+            draw.line([(tx0, ty0), (tx1, ty1)], fill=(*txt_main, 190), width=2)
+
+        # عقرب السرعة المتحرك
+        needle_ang = math.radians(135 + sweep_deg)
+        nx = cx + int((sp_r - 28) * math.cos(needle_ang))
+        ny = cy + int((sp_r - 28) * math.sin(needle_ang))
+        draw.line([(cx, cy), (nx, ny)], fill=(*secondary_c, 255), width=5)
+        draw.ellipse([(cx - 12, cy - 12), (cx + 12, cy + 12)], fill=(*secondary_c, 255), outline=(255, 255, 255, 255), width=3)
+
+        draw_contained_text_fn(draw, (cx - int(sp_r * 0.75), cy + 18, cx + int(sp_r * 0.75), cy + int(sp_r * 0.68)), kpi_val, initial_font_size=22, fill=(*txt_main, 255))
+        _draw_bottom_speech_pills(cy + sp_r + 14)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 6. hero_sound_wave_mixer: مايكروفون الاستوديو وموجات الساوند ديزاين
+    # -------------------------------------------------------------------------
+    if archetype == "hero_sound_wave_mixer":
+        mic_w, mic_h = int(st_w * 0.16 * sp_main), int(st_h * 0.28 * sp_main)
+        # حلقات الموجات الصوتية المنبعثة من المايكروفون
+        for ri in range(1, 4):
+            rr = int(mic_w * (0.9 + ri * 0.55) + (global_t * 28.0) % 24)
+            alpha_w = max(25, 165 - ri * 42)
+            draw.arc([(cx - rr, cy - rr), (cx + rr, cy + rr)], start=-55, end=55, fill=(*primary_c, alpha_w), width=3)
+            draw.arc([(cx - rr, cy - rr), (cx + rr, cy + rr)], start=125, end=235, fill=(*secondary_c, alpha_w), width=3)
+
+        # كبسولة المايكروفون الاحترافي وحامله
+        draw.rounded_rectangle([(cx - mic_w // 2, cy - mic_h // 2), (cx + mic_w // 2, cy + mic_h // 2)], radius=mic_w // 2, fill=(30, 41, 59, 255), outline=(*primary_c, 255), width=3)
+        for gy in range(cy - mic_h // 2 + 12, cy + 4, 9):
+            draw.line([(cx - mic_w // 2 + 8, gy), (cx + mic_w // 2 - 8, gy)], fill=(*secondary_c, 210), width=2)
+        arc_r = int(mic_w * 0.72)
+        draw.arc([(cx - arc_r, cy - int(mic_h * 0.35)), (cx + arc_r, cy + int(mic_h * 0.65))], start=0, end=180, fill=(*txt_main, 240), width=4)
+        draw.line([(cx, cy + int(mic_h * 0.65)), (cx, cy + int(mic_h * 0.92))], fill=(*txt_main, 240), width=5)
+        draw.line([(cx - 32, cy + int(mic_h * 0.92)), (cx + 32, cy + int(mic_h * 0.92))], fill=(*primary_c, 255), width=5)
+
+        _draw_bottom_speech_pills(cy + int(mic_h * 1.05) + 18)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 7. hero_viral_rocket_chart: صاروخ الانتشار الفيروسي ومنحنى مضاعفة الإنتاجية
+    # -------------------------------------------------------------------------
+    if archetype == "hero_viral_rocket_chart":
+        chart_x1, chart_y2 = st_x1 + 20, cy + int(st_h * 0.24)
+        chart_x2, chart_y1 = st_x2 - 20, st_y1 + 24
+        pts = []
+        n_seg = 24
+        max_i = max(2, int(n_seg * min(1.0, max(0.15, choreo_u * 1.2))))
+        for i in range(max_i + 1):
+            u = i / float(n_seg)
+            px = int(chart_x1 + (chart_x2 - chart_x1) * u)
+            py = int(chart_y2 - (chart_y2 - chart_y1) * (u ** 1.85))
+            pts.append((px, py))
+
+        if len(pts) >= 2:
+            poly = [(pts[0][0], chart_y2)] + pts + [(pts[-1][0], chart_y2)]
+            draw.polygon(poly, fill=(*primary_c, 48))
+            draw.line(pts, fill=(*primary_c, 255), width=5)
+
+            # رسم مجسم الصاروخ المضيء في قمة المنحنى
+            rx, ry = pts[-1]
+            draw.ellipse([(rx - 22, ry - 22), (rx + 22, ry + 22)], fill=(*secondary_c, 85))
+            draw.polygon([(rx + 18, ry - 18), (rx - 12, ry - 4), (rx - 4, ry + 12)], fill=(255, 255, 255, 255), outline=(*primary_c, 255))
+            draw.ellipse([(rx - 18, ry + 6), (rx - 6, ry + 18)], fill=(244, 63, 94, 235))
+
+        _draw_floating_pod(st_x1 + 16, st_y1 + 16, st_x1 + int(st_w * 0.56), st_y1 + 72, kpi_val, kpi_lbl, badge_col=secondary_c, radius=16)
+        _draw_bottom_speech_pills(chart_y2 + 16)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 8. hero_power_cable_stand: مجسم كابل الشحن السريع المقوى بالقماش وحامل الهاتف
+    # -------------------------------------------------------------------------
+    if archetype == "hero_power_cable_stand":
+        bat_w, bat_h = int(st_w * 0.48 * sp_main), int(st_h * 0.24 * sp_main)
+        bx1, by1 = cx - bat_w // 2, cy - bat_h - 10
+        bx2, by2 = bx1 + bat_w, by1 + bat_h
+        # رأس البطارية وحامل الهاتف المعدني (السيبور المدمج)
+        draw.rounded_rectangle([(bx2, by1 + bat_h // 4), (bx2 + 12, by2 - bat_h // 4)], radius=4, fill=(*secondary_c, 255))
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=20, fill=(18, 24, 42, 248), outline=(*primary_c, 255), width=3)
+        fill_w = int((bat_w - 16) * min(1.0, max(0.25, choreo_u * 1.25)))
+        draw.rounded_rectangle([(bx1 + 8, by1 + 8), (bx1 + 8 + fill_w, by2 - 8)], radius=14, fill=(*accent_c, 235))
+        draw_contained_text_fn(draw, (bx1 + 12, by1 + 8, bx2 - 12, by2 - 8), f"⚡ {kpi_val}", initial_font_size=20, fill=(255, 255, 255, 255))
+
+        # رسم الكابل المجدول بالقماش مع نبضات الطاقة السريعة
+        cable_pts = []
+        for ci in range(20):
+            u = ci / 19.0
+            kx = int(st_x1 + 28 + (st_x2 - st_x1 - 56) * u)
+            ky = by2 + 38 + int(22 * math.sin(u * math.pi * 2.0 + global_t * 3.0))
+            cable_pts.append((kx, ky))
+        draw.line(cable_pts, fill=(*primary_c, 255), width=12)
+        draw.line(cable_pts, fill=(*secondary_c, 195), width=4)
+
+        _draw_bottom_speech_pills(by2 + 76)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 9. hero_shield_durability: الدرع السداسي المدرع للمتانة والضمان 100%
+    # -------------------------------------------------------------------------
+    if archetype == "hero_shield_durability":
+        sh_w, sh_h = int(st_w * 0.40 * sp_main), int(st_h * 0.48 * sp_main)
+        shield_poly = [
+            (cx, cy - sh_h // 2),
+            (cx + sh_w // 2, cy - int(sh_h * 0.28)),
+            (cx + int(sh_w * 0.42), cy + int(sh_h * 0.18)),
+            (cx, cy + sh_h // 2),
+            (cx - int(sh_w * 0.42), cy + int(sh_h * 0.18)),
+            (cx - sh_w // 2, cy - int(sh_h * 0.28)),
+        ]
+        for ring_i in range(1, 3):
+            rr = int(max(sh_w, sh_h) * (0.55 + ring_i * 0.16))
+            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=(*primary_c, 95 // ring_i), width=2)
+
+        draw.polygon(shield_poly, fill=(20, 30, 56, 248), outline=(*primary_c, 255))
+        draw.line(shield_poly + [shield_poly[0]], fill=(*secondary_c, 255), width=4)
+
+        # علامة الصح الذهبية/الخضراء في قلب الدرع
+        ck_pts = [(cx - 22, cy + 2), (cx - 4, cy + 20), (cx + 28, cy - 18)]
+        draw.line(ck_pts, fill=(*accent_c, 255), width=7)
+        _draw_bottom_speech_pills(cy + sh_h // 2 + 22)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 10. hero_commerce_delivery: خريطة التوصيل السريع لـ 58 ولاية وبطاقة الطلب
+    # -------------------------------------------------------------------------
+    if archetype == "hero_commerce_delivery":
+        map_r = int(min(st_w, st_h) * 0.28 * sp_main)
+        draw.ellipse([(cx - map_r, cy - map_r), (cx + map_r, cy + map_r)], fill=pod_bg, outline=(*primary_c, 235), width=3)
+        pins = [(cx - int(map_r * 0.48), cy + 16), (cx, cy - int(map_r * 0.36)), (cx + int(map_r * 0.48), cy + 8)]
+        draw.line(pins, fill=(*secondary_c, 240), width=4)
+        for pi, (px, py) in enumerate(pins):
+            draw.ellipse([(px - 12, py - 12), (px + 12, py + 12)], fill=(*accent_c, 255), outline=(255, 255, 255, 255), width=2)
+
+        _draw_floating_pod(cx - int(st_w * 0.36), cy - map_r - 22, cx + int(st_w * 0.36), cy - map_r + 28, kpi_val, kpi_lbl, badge_col=secondary_c, radius=16)
+        _draw_bottom_speech_pills(cy + map_r + 18)
+        draw_cursor_fn(draw, (cx + 80, cy + map_r + 75), (cx, cy + map_r + 42), choreo_u, accent_rgb=secondary_c)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 11. hero_creative_palette_pen: لوحة التصميم الذكية وعجلة الألوان وقلم الفيكتور
+    # -------------------------------------------------------------------------
+    if archetype == "hero_creative_palette_pen":
+        sw_colors = [primary_c, secondary_c, accent_c, (244, 63, 94), (168, 85, 247)]
+        orbit_r = int(min(st_w, st_h) * 0.26 * sp_main)
+        for si, col in enumerate(sw_colors):
+            ang = si * (2.0 * math.pi / len(sw_colors)) + global_t * 0.6
+            sx = cx + int(orbit_r * math.cos(ang))
+            sy = cy + int(orbit_r * math.sin(ang))
+            sr = 24
+            draw.ellipse([(sx - sr, sy - sr), (sx + sr, sy + sr)], fill=(*col, 255), outline=(255, 255, 255, 245), width=3)
+
+        # منحنى Bezier وأيقونة رأس قلم التصميم في المركز
+        draw.ellipse([(cx - 34, cy - 34), (cx + 34, cy + 34)], fill=pod_bg, outline=(*primary_c, 255), width=3)
+        pen_poly = [(cx, cy - 20), (cx + 16, cy + 8), (cx, cy + 20), (cx - 16, cy + 8)]
+        draw.polygon(pen_poly, fill=(*secondary_c, 255))
+        _draw_bottom_speech_pills(cy + orbit_r + 32)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 12. hero_problem_radar_fix: رادار تشخيص المشكلة وتحويلها الفوري إلى حل
+    # -------------------------------------------------------------------------
+    if archetype == "hero_problem_radar_fix":
+        is_solved = (choreo_u >= 0.48)
+        active_col = accent_c if is_solved else (244, 63, 94)
+        rad_r = int(min(st_w, st_h) * 0.26 * sp_main)
+        for ri in range(1, 4):
+            rr = int(rad_r * (ri / 2.2))
+            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=(*active_col, 210 - ri * 45), width=3)
+
+        if not is_solved:
+            tri = [(cx, cy - int(rad_r * 0.55)), (cx - int(rad_r * 0.52), cy + int(rad_r * 0.42)), (cx + int(rad_r * 0.52), cy + int(rad_r * 0.42))]
+            draw.polygon(tri, fill=(244, 63, 94, 235), outline=(255, 255, 255, 245))
+            f_ex = get_font_fn(34, bold=True)
+            draw_arabic_text_fn(draw, (cx, cy + 4), "!", font=f_ex, fill=(255, 255, 255, 255))
+        else:
+            draw.ellipse([(cx - int(rad_r * 0.52), cy - int(rad_r * 0.52)), (cx + int(rad_r * 0.52), cy + int(rad_r * 0.52))], fill=(*accent_c, 245), outline=(255, 255, 255, 255), width=3)
+            ck = [(cx - 20, cy + 2), (cx - 4, cy + 18), (cx + 24, cy - 14)]
+            draw.line(ck, fill=(255, 255, 255, 255), width=6)
+
+        _draw_bottom_speech_pills(cy + int(rad_r * 1.38))
+        return img
+
+    # -------------------------------------------------------------------------
+    # 13. hero_platform_workspace: واجهة المنصة الذكية العائمة وزر التوليد
+    # -------------------------------------------------------------------------
+    if archetype == "hero_platform_workspace":
+        dk_w, dk_h = int(st_w * 0.88 * sp_main), int(st_h * 0.46 * sp_main)
+        dx1, dy1 = cx - dk_w // 2, cy - dk_h // 2 - 12
+        dx2, dy2 = dx1 + dk_w, dy1 + dk_h
+        draw.rounded_rectangle([(dx1, dy1), (dx2, dy2)], radius=24, fill=pod_bg, outline=(*primary_c, 235), width=3)
+        # نقاط نافذة النظام العلوية
+        for di, dcol in enumerate([(244, 63, 94), (250, 204, 21), (16, 185, 129)]):
+            draw.ellipse([(dx1 + 18 + di * 18, dy1 + 14), (dx1 + 28 + di * 18, dy1 + 24)], fill=(*dcol, 255))
+
+        draw_contained_text_fn(draw, (dx1 + 18, dy1 + 36, dx2 - 18, dy1 + int(dk_h * 0.54)), concept_title, initial_font_size=19, fill=(*txt_main, 255))
+        btn_x1, btn_y1, btn_x2, btn_y2 = cx - int(dk_w * 0.38), dy2 - 58, cx + int(dk_w * 0.38), dy2 - 14
+        is_clicked = (choreo_u >= 0.62)
+        btn_col = accent_c if is_clicked else primary_c
+        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=22, fill=(*btn_col, 255))
+        draw_contained_text_fn(draw, (btn_x1 + 14, btn_y1, btn_x2 - 14, btn_y2), f"✨ {kpi_val}", initial_font_size=16, fill=(255, 255, 255, 255))
+
+        _draw_bottom_speech_pills(dy2 + 16)
+        draw_cursor_fn(draw, (btn_x2 + 20, btn_y2 + 30), (cx, (btn_y1 + btn_y2) // 2), choreo_u, accent_rgb=secondary_c)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 14. hero_roadmap_milestones: مسار الخطوات المنحني المضيء
+    # -------------------------------------------------------------------------
+    if archetype == "hero_roadmap_milestones":
+        nodes_y = [st_y1 + int(st_h * (0.14 + i * 0.22)) for i in range(4)]
+        nodes_x = [cx + int(st_w * (0.24 if i % 2 == 0 else -0.24)) for i in range(4)]
+        for i in range(3):
+            if choreo_u >= i * 0.20:
+                draw.line([(nodes_x[i], nodes_y[i]), (nodes_x[i + 1], nodes_y[i + 1])], fill=(*primary_c, 220), width=4)
+
+        for i in range(4):
+            sp_n = _spring(choreo_u, delay=i * 0.14, dur=0.35)
+            if sp_n <= 0.05:
+                continue
+            nx, ny = nodes_x[i], nodes_y[i]
+            draw.ellipse([(nx - 20, ny - 20), (nx + 20, ny + 20)], fill=(*primary_c, 255), outline=(255, 255, 255, 255), width=2)
+            fn = get_font_fn(14, bold=True)
+            draw_arabic_text_fn(draw, (nx, ny), f"0{i + 1}", font=fn, fill=(255, 255, 255, 255))
+            pod_x1 = st_x1 + 8 if (i % 2 == 1) else nx - int(st_w * 0.62)
+            pod_x2 = nx - 28 if (i % 2 == 0) else st_x2 - 8
+            if pod_x2 - pod_x1 < 90:
+                pod_x1, pod_x2 = st_x1 + 12, st_x2 - 12
+            _draw_floating_pod(pod_x1, ny - 22, pod_x2, ny + 22, sub_items[i % len(sub_items)], badge_col=accent_c if i % 2 == 1 else primary_c, radius=14)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 15. hero_comparison_duel: مواجهة بصرية حية (تقليدي مقابل ذكي)
+    # -------------------------------------------------------------------------
+    if archetype == "hero_comparison_duel":
+        pw = int(st_w * 0.43)
+        ph = int(st_h * 0.52)
+        py1 = cy - ph // 2
+        _draw_floating_pod(st_x1, py1, st_x1 + pw, py1 + ph, sub_items[0], "الوضع التقليدي", badge_col=(244, 63, 94), radius=22)
+        _draw_floating_pod(st_x2 - pw, py1, st_x2, py1 + ph, sub_items[min(1, len(sub_items) - 1)], kpi_val, badge_col=accent_c, radius=22)
+        draw.ellipse([(cx - 24, cy - 24), (cx + 24, cy + 24)], fill=(*secondary_c, 255), outline=(255, 255, 255, 255), width=3)
+        f_vs = get_font_fn(16, bold=True)
+        draw_arabic_text_fn(draw, (cx, cy), "VS", font=f_vs, fill=(18, 24, 38, 255))
+        _draw_bottom_speech_pills(py1 + ph + 18)
+        return img
+
+    # -------------------------------------------------------------------------
+    # 16. hero_cta_magnet_finale: مغناطيس الجذب التفاعلي وبطاقة الـ CTA
+    # -------------------------------------------------------------------------
+    mag_r = int(min(st_w, st_h) * 0.22 * sp_main)
+    draw.arc([(cx - mag_r, cy - mag_r - 12), (cx + mag_r, cy + mag_r - 12)], start=0, end=180, fill=(244, 63, 94, 255), width=20)
+    draw.rectangle([(cx - mag_r, cy - mag_r - 28), (cx - mag_r + 20, cy - 12)], fill=(226, 232, 240, 255))
+    draw.rectangle([(cx + mag_r - 20, cy - mag_r - 28), (cx + mag_r, cy - 12)], fill=(226, 232, 240, 255))
+
+    btn_w, btn_h = int(st_w * 0.78), 54
+    bx1, by1 = cx - btn_w // 2, cy + mag_r + 12
+    bx2, by2 = bx1 + btn_w, by1 + btn_h
+    draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=27, fill=(*primary_c, 255), outline=(255, 255, 255, 235), width=2)
+    draw_contained_text_fn(draw, (bx1 + 16, by1, bx2 - 16, by2), f"🚀 {concept_title}", initial_font_size=18, fill=(255, 255, 255, 255))
+    draw_cursor_fn(draw, (bx2 - 12, by2 + 34), (cx, (by1 + by2) // 2), choreo_u, accent_rgb=secondary_c)
+    return img

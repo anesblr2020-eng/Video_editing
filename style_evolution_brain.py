@@ -74,23 +74,212 @@ def hex_to_rgb(hex_str: str, fallback: Tuple[int, int, int] = (56, 189, 248)) ->
 #    ويدعم رسم جميع الـ 12 نمطاً من الرسومات والأنيميشن التفاعلية!
 # ==============================================================================
 ALL_DYNAMIC_VISUAL_ARCHETYPES: List[str] = [
-    "chrono_ring_3d_counter",          # 1. الحلقة ثلاثية الأبعاد والعداد الدائري الحي المتزامن مع النطق
-    "pack_3d_extruding_pillars",       # 2. صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع
-    "macos_folder_counter_list",       # 3. قائمة المجلدات الزرقاء ثلاثية الأبعاد مع العداد الخلفي المتصاعد
-    "reels_6card_showcase_grid",       # 4. معرض الفيديوهات والبطاقات الستة المتحركة (2×3)
-    "dark_cinema_fanned_cards",        # 5. المسرح السينمائي الداكن والبطاقات المروحية ثلاثية الأبعاد
-    "interactive_profile_follow_card", # 6. بطاقة الحساب التفاعلية وزر المتابعة الحي
-    "bezier_growth_nodes",             # 7. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة
-    "live_magnifier_scanner",          # 8. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
-    "damped_balance_scale",            # 9. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
-    "nle_timeline_matrix",             # 10. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك
-    "radar_target_sweep",              # 11. رادار الاستهداف الدوار بشعاع مسح 360°
-    "floating_3d_stat_Compare",        # 12. كبسولات المقارنة ثلاثية الأبعاد المتقابلة مع مؤشر السرعة
-    "step_cascade_ribbon_cards",       # 13. شرائط الخطوات المتدرجة ثلاثية الأبعاد بعلامات التحقق المتتابعة
-    "neural_hub_spoke_network",        # 14. شبكة العقد الذكية المتصلة بنبضات ضوئية متحركة
-    "dual_metric_gauge_pods",          # 15. عدادان مزدوجان متزامنان للأداء والنتائج
-    "kinetic_quote_dm_finale"          # 16. الخاتمة الحركية السريعة بعلامات التنصيص المضيئة والـ CTA المتتابع
+    # --- المجموعة أ: 16 رسمة ومجسم فيكتور تعبيري مخصص 100% للكلام المنطوق (Open-Canvas Speech-Matched Hero Illustrations) ---
+    "hero_smartphone_reels",           # 1. مجسم الهاتف الذكي ومشغل الريلز التفاعلي ثلاثي الأبعاد
+    "hero_camera_production",          # 2. عدسة الكاميرا السينمائية وشفرات الإضاءة ومؤشر التسجيل REC
+    "hero_waveform_scissors",          # 3. مقص الليزر الذكي يقطع فجوات الصمت والأخطاء من الموجة الصوتية
+    "hero_ai_neural_core",             # 4. معالج ونواة الذكاء الاصطناعي العصبية لتحويل الصوت والصورة
+    "hero_chrono_speedometer",         # 5. عداد السرعة والزمن التوربيني لاختصار الساعات إلى ثوانٍ
+    "hero_sound_wave_mixer",           # 6. مايكروفون الاستوديو الاحترافي وموجات الساوند ديزاين الترددية
+    "hero_viral_rocket_chart",         # 7. صاروخ الانتشار الفيروسي ومنحنى مضاعفة الإنتاجية والمشاهدات
+    "hero_power_cable_stand",          # 8. مجسم كابل الشحن السريع المقوى بالقماش وحامل الهاتف المدمج
+    "hero_shield_durability",          # 9. الدرع السداسي المدرع لضمان الجودة والمتانة والحماية 100%
+    "hero_commerce_delivery",          # 10. خريطة التوصيل السريع لـ 58 ولاية وبطاقة السعر والطلب الفوري
+    "hero_creative_palette_pen",       # 11. لوحة التصميم الذكية وعجلة الألوان وقلم الرسم المتجهي Bezier
+    "hero_problem_radar_fix",          # 12. رادار تشخيص المشكلة وتحويلها الفوري إلى مسار حل أخضر مضيء
+    "hero_platform_workspace",         # 13. منصة العمل العائمة ثلاثية الأبعاد مع زر التوليد الذكي بضغطة واحدة
+    "hero_roadmap_milestones",         # 14. مسار الخطوات المنحني المضيء عبر الفضاء البصري المفتوح
+    "hero_comparison_duel",            # 15. مواجهة بصرية حية (الطريقة التقليدية البطيئة مقابل الذكية الفورية)
+    "hero_cta_magnet_finale",          # 16. مغناطيس الجذب التفاعلي وزر الدعوة لاتخاذ إجراء (CTA)
+    # --- المجموعة ب: 16 قالب موشن جرافيك استوديو تفاعلي (Choreographed Studio Motion Templates) ---
+    "chrono_ring_3d_counter",          # 17. الحلقة ثلاثية الأبعاد والعداد الدائري الحي المتزامن مع النطق
+    "pack_3d_extruding_pillars",       # 18. صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع
+    "macos_folder_counter_list",       # 19. قائمة المجلدات الزرقاء ثلاثية الأبعاد مع العداد الخلفي المتصاعد
+    "reels_6card_showcase_grid",       # 20. معرض الفيديوهات والبطاقات الستة المتحركة (2×3)
+    "dark_cinema_fanned_cards",        # 21. المسرح السينمائي الداكن والبطاقات المروحية ثلاثية الأبعاد
+    "interactive_profile_follow_card", # 22. بطاقة الحساب التفاعلية وزر المتابعة الحي
+    "bezier_growth_nodes",             # 23. مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد المضيئة
+    "live_magnifier_scanner",          # 24. المكبّر الفاحص المتحرك الذي يمسح ويكبّر البطاقات تحته حياً
+    "damped_balance_scale",            # 25. الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل
+    "nle_timeline_matrix",             # 26. جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة المتحرك
+    "radar_target_sweep",              # 27. رادار الاستهداف الدوار بشعاع مسح 360°
+    "floating_3d_stat_Compare",        # 28. كبسولات المقارنة ثلاثية الأبعاد المتقابلة مع مؤشر السرعة
+    "step_cascade_ribbon_cards",       # 29. شرائط الخطوات المتدرجة ثلاثية الأبعاد بعلامات التحقق المتتابعة
+    "neural_hub_spoke_network",        # 30. شبكة العقد الذكية المتصلة بنبضات ضوئية متحركة
+    "dual_metric_gauge_pods",          # 31. عدادان مزدوجان متزامنان للأداء والنتائج
+    "kinetic_quote_dm_finale"          # 32. الخاتمة الحركية السريعة بعلامات التنصيص المضيئة والـ CTA المتتابع
 ]
+
+ARCHETYPE_LABELS_AR: Dict[str, str] = {
+    "hero_smartphone_reels": "📱 مجسم الهاتف ومشغل الريلز التفاعلي (Hero Smartphone & Reels)",
+    "hero_camera_production": "🎥 عدسة الكاميرا السينمائية والتصوير (Hero Cinema Camera Lens)",
+    "hero_waveform_scissors": "✂️ مقص الليزر الذكي وقص الصمت من الموجة (Hero Waveform & Scissors)",
+    "hero_ai_neural_core": "🧠 نواة ومعالج الذكاء الاصطناعي للصوت والصورة (Hero AI Neural Core)",
+    "hero_chrono_speedometer": "⏱️ عداد السرعة والزمن التوربيني (Hero Chrono Speedometer)",
+    "hero_sound_wave_mixer": "🎙️ مايكروفون الاستوديو وموجات الساوند ديزاين (Hero Studio Mic & Waves)",
+    "hero_viral_rocket_chart": "🚀 صاروخ الانتشار الفيروسي ومضاعفة الإنتاجية (Hero Viral Rocket)",
+    "hero_power_cable_stand": "🔌 مجسم كابل الشحن السريع وحامل الهاتف (Hero Power Cable & Stand)",
+    "hero_shield_durability": "🛡️ الدرع السداسي للمتانة والضمان 100% (Hero Armored Shield)",
+    "hero_commerce_delivery": "🚚 خريطة التوصيل السريع 58 ولاية وبطاقة الطلب (Hero Express Delivery)",
+    "hero_creative_palette_pen": "🎨 لوحة التصميم وعجلة الألوان وقلم الفيكتور (Hero Creative Palette)",
+    "hero_problem_radar_fix": "⚡ رادار كشف المشكلة وتحويلها لحل فوري (Hero Problem -> Fix Radar)",
+    "hero_platform_workspace": "💻 واجهة المنصة الذكية العائمة وزر التوليد (Hero AI Platform Deck)",
+    "hero_roadmap_milestones": "🗺️ مسار الخطوات المنحني المضيء (Hero S-Curve Roadmap)",
+    "hero_comparison_duel": "⚔️ مواجهة بصرية حية: تقليدي مقابل ذكي (Hero VS Comparison Duel)",
+    "hero_cta_magnet_finale": "🧲 مغناطيس الجذب التفاعلي وزر الإجراء (Hero Magnet CTA Finale)",
+    "chrono_ring_3d_counter": "⭕ الحلقة ثلاثية الأبعاد والعداد الدائري الحي (3D Chrono Ring)",
+    "pack_3d_extruding_pillars": "📦 صندوق الأصول والأعمدة الملونة المنبثقة (3D Extruding Pillars)",
+    "macos_folder_counter_list": "📁 قائمة المجلدات التفاعلية والعداد الخلفي (3D Folders & Counter)",
+    "reels_6card_showcase_grid": "🎞️ معرض الفيديوهات والبطاقات الستة (Reels 6-Card Grid)",
+    "dark_cinema_fanned_cards": "🃏 البطاقات المروحية السينمائية ثلاثية الأبعاد (3D Fanned Cards)",
+    "interactive_profile_follow_card": "👤 بطاقة الحساب التفاعلية وزر المتابعة (Interactive Profile Card)",
+    "bezier_growth_nodes": "📈 منحنى النمو الصاعد والعقد المضيئة (Bezier Growth Curve)",
+    "live_magnifier_scanner": "🔍 المكبّر الفاحص المتحرك حياً (Live Magnifier Scanner)",
+    "damped_balance_scale": "⚖️ الميزان الفيزيائي المتأرجح للمقارنة (Physics Balance Scale)",
+    "nle_timeline_matrix": "🎬 مصفوفة التايملاين ومؤشر المونتاج (NLE Timeline Matrix)",
+    "radar_target_sweep": "🎯 رادار الاستهداف الدوار 360° (Radar Target Sweep)",
+    "floating_3d_stat_Compare": "📊 كبسولات المقارنة المزدوجة بالعدادات (Dual Stat Compare)",
+    "step_cascade_ribbon_cards": "📑 شرائط الخطوات المتدرجة بعلامات التحقق (Cascade Step Ribbons)",
+    "neural_hub_spoke_network": "🕸️ شبكة العقد الذكية المتصلة بنبضات ضوئية (Neural Hub Network)",
+    "dual_metric_gauge_pods": "🎛️ عدادا الأداء المزدوجان (Dual Gauge Pods)",
+    "kinetic_quote_dm_finale": "💬 الخاتمة الحركية بعلامات التنصيص وزر التفاعل (Kinetic Quote Finale)",
+}
+
+
+def match_speech_to_visual_archetype(
+    scene_text: str,
+    scene_index: int,
+    total_scenes: int,
+    used_archetypes: Optional[List[str]] = None,
+    variation_seed: int = 0
+) -> Tuple[str, str]:
+    # يربط الكلمات المنطوقة في الجملة مباشرة بالرسمة/المجسم التعبيري المتوافق معها 100% مع ضمان عدم التكرار
+    used = set(used_archetypes or [])
+    t_low = (scene_text or "").lower()
+
+    rules: List[Tuple[str, List[str], List[str]]] = [
+        (
+            "hero_power_cable_stand",
+            ["كابل", "شاحن", "تشارجي", "يتشارجا", "سوبر فاست", "بطارية", "سيبور", "حامل", "ستاند", "سلك"],
+            ["hero_power_cable_stand", "pack_3d_extruding_pillars", "floating_3d_stat_Compare"]
+        ),
+        (
+            "hero_shield_durability",
+            ["قماش", "يتقطع", "مغلف", "متين", "متانة", "ضمان", "أصلي", "اصلي", "حماية", "مقاوم", "جودة"],
+            ["hero_shield_durability", "radar_target_sweep", "dual_metric_gauge_pods"]
+        ),
+        (
+            "hero_commerce_delivery",
+            ["توصيل", "ولاية", "58", "باب الدار", "سعر", "سومة", "بري", "دينار", "مجاني", "باطل", "اكموندي", "اطلب"],
+            ["hero_commerce_delivery", "chrono_ring_3d_counter", "hero_cta_magnet_finale"]
+        ),
+        (
+            "hero_waveform_scissors",
+            ["قص", "تقطيع", "صمت", "سكوت", "فراغات", "أخطاء", "غلط", "يحذف", "يشيل", "تنقية"],
+            ["hero_waveform_scissors", "nle_timeline_matrix", "live_magnifier_scanner"]
+        ),
+        (
+            "hero_camera_production",
+            ["تصور", "تصوير", "كاميرا", "عدسة", "لقطة", "سجل", "تسجيل", "إضاءة", "استوديو"],
+            ["hero_camera_production", "dark_cinema_fanned_cards", "reels_6card_showcase_grid"]
+        ),
+        (
+            "hero_ai_neural_core",
+            ["ذكاء", "اصطناعي", "الاصطناعي", "آلي", "تلقائي", "يفهم", "يحلل", "خوارزمية", "محرك", "ai"],
+            ["hero_ai_neural_core", "neural_hub_spoke_network", "radar_target_sweep"]
+        ),
+        (
+            "hero_chrono_speedometer",
+            ["وقت", "ساعات", "ساعة", "دقيقة", "دقيقه", "ثواني", "ثانية", "سرعة", "سريع", "أقل من", "اقل من", "توفير"],
+            ["hero_chrono_speedometer", "chrono_ring_3d_counter", "dual_metric_gauge_pods"]
+        ),
+        (
+            "hero_sound_wave_mixer",
+            ["صوت", "تعليق", "مايك", "ساوند", "مؤثرات", "ووش", "نغمة", "تردد", "سمع"],
+            ["hero_sound_wave_mixer", "hero_waveform_scissors", "nle_timeline_matrix"]
+        ),
+        (
+            "hero_viral_rocket_chart",
+            ["إنتاجية", "انتاجية", "انتشار", "مشاهدات", "تفاعل", "ريتش", "نمو", "يرفع", "مضاعفة", "نتائج", "نجاح"],
+            ["hero_viral_rocket_chart", "bezier_growth_nodes", "pack_3d_extruding_pillars"]
+        ),
+        (
+            "hero_smartphone_reels",
+            ["ريلز", "تيك توك", "شورتس", "انستغرام", "يوتيوب", "التواصل الاجتماعي", "فيديوهات", "مقطع", "تليفون", "هاتف"],
+            ["hero_smartphone_reels", "reels_6card_showcase_grid", "interactive_profile_follow_card"]
+        ),
+        (
+            "hero_creative_palette_pen",
+            ["تصميم", "ألوان", "الوان", "ثيم", "لوقو", "شعار", "موشن", "جرافيك", "غرافيك", "أشكال", "رسومات", "ستايل"],
+            ["hero_creative_palette_pen", "dark_cinema_fanned_cards", "pack_3d_extruding_pillars"]
+        ),
+        (
+            "hero_problem_radar_fix",
+            ["مشكل", "مشكلة", "معاناة", "يعاني", "صعب", "صعيب", "متعب", "ممل", "مشتت", "ضيق", "تعب"],
+            ["hero_problem_radar_fix", "damped_balance_scale", "floating_3d_stat_Compare"]
+        ),
+        (
+            "hero_platform_workspace",
+            ["منصة", "تطبيق", "موقع", "برنامج", "نظام", "مسؤولة", "المسؤولة", "جبت لكم", "جيت لكم", "الحل", "أداة"],
+            ["hero_platform_workspace", "macos_folder_counter_list", "live_magnifier_scanner"]
+        ),
+        (
+            "hero_roadmap_milestones",
+            ["خطوة", "خطوات", "مراحل", "أولاً", "ثانياً", "ثالثاً", "الأولى", "الثانية", "الثالثة", "ثلاث", "خصائص", "طريقة"],
+            ["hero_roadmap_milestones", "step_cascade_ribbon_cards", "macos_folder_counter_list"]
+        ),
+        (
+            "hero_comparison_duel",
+            ["مقابل", "الفرق", "فرق", "مقارنة", "عكس", "أحسن", "أفضل", "بدل", "يدوي", "عادي"],
+            ["hero_comparison_duel", "damped_balance_scale", "floating_3d_stat_Compare"]
+        ),
+        (
+            "hero_cta_magnet_finale",
+            ["رابط", "أسفل", "اسفل", "تابع", "اشترك", "شارك", "تواصل", "جرب", "ابدأ", "الآن"],
+            ["hero_cta_magnet_finale", "kinetic_quote_dm_finale", "interactive_profile_follow_card"]
+        ),
+    ]
+
+    if scene_index == total_scenes - 1 and total_scenes >= 3:
+        outro_pool = ["hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"]
+        for cand in outro_pool:
+            if cand not in used:
+                return cand, cand
+
+    best_subj = None
+    best_candidates: List[str] = []
+    best_score = 0
+
+    for subj, kw_list, cand_archs in rules:
+        hits = sum(2 if kw in t_low else 0 for kw in kw_list)
+        if hits > best_score:
+            best_score = hits
+            best_subj = subj
+            best_candidates = list(cand_archs)
+
+    text_hash = int(hashlib.md5((scene_text or f"s_{scene_index}").encode("utf-8", errors="ignore")).hexdigest()[:6], 16)
+    seed_val = int(variation_seed) + scene_index * 13 + text_hash
+
+    if best_candidates:
+        # نختار دائماً الرسمة التعبيرية المباشرة (hero_*) المطابقة لمعنى الجملة أولاً لمنع تكرار البطاقات المربعة
+        unused_hero_cands = [c for c in best_candidates if c.startswith("hero_") and c not in used]
+        if unused_hero_cands:
+            return unused_hero_cands[0], (best_subj or unused_hero_cands[0])
+        unused_cands = [c for c in best_candidates if c not in used]
+        if unused_cands:
+            return unused_cands[seed_val % len(unused_cands)], (best_subj or unused_cands[0])
+
+    # إن لم تطابق قاعدة محددة أو استُهلكت، نختار من قائمة الرسومات التعبيرية والأنفوجرافيك غير المستخدمة في هذا الفيديو
+    hero_first_pool = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if a.startswith("hero_") and a not in used]
+    other_pool = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if not a.startswith("hero_") and a not in used]
+    combined_unused = hero_first_pool + other_pool
+    if combined_unused:
+        chosen = combined_unused[seed_val % len(combined_unused)]
+        return chosen, (best_subj or chosen)
+
+    fallback = ALL_DYNAMIC_VISUAL_ARCHETYPES[seed_val % len(ALL_DYNAMIC_VISUAL_ARCHETYPES)]
+    return fallback, (best_subj or fallback)
+
 
 PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
     "haamza_15s_cinema": {
@@ -689,7 +878,8 @@ def _select_non_repeating_archetype_sequence(
 def build_dynamic_scene_style_assignment(
     num_scenes: int,
     force_style_mode: Optional[str] = None,
-    advance_rotation_counter: bool = True
+    advance_rotation_counter: bool = True,
+    scenes: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     يبني خطة التصميم البصري والأنيميشن لكل مشهد في الفيديو مع ضمان **وحدة الستايل والهوية البصرية طوال الفيديو الواحد**:
@@ -739,9 +929,20 @@ def build_dynamic_scene_style_assignment(
             )
 
         plan: List[Dict[str, Any]] = []
+        used_in_plan: List[str] = []
+        dyn_seed = rot_idx + int(time.time() * 10) % 997
         for idx in range(max(1, num_scenes)):
             act_name = "hook_problem" if idx == 0 else ("outro_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else "body_steps")
-            arch_for_scene = "kinetic_quote_dm_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else cloned_arch_seq[idx % len(cloned_arch_seq)]
+            sc_obj = scenes[idx] if (isinstance(scenes, list) and idx < len(scenes) and isinstance(scenes[idx], dict)) else {}
+            sc_txt = str(sc_obj.get("text", "")).strip()
+            user_arch = str(sc_obj.get("user_override_archetype") or "").strip()
+            if user_arch and user_arch in ALL_DYNAMIC_VISUAL_ARCHETYPES:
+                arch_for_scene = user_arch
+            elif sc_txt:
+                arch_for_scene, _ = match_speech_to_visual_archetype(sc_txt, idx, num_scenes, used_in_plan, variation_seed=dyn_seed)
+            else:
+                arch_for_scene = "kinetic_quote_dm_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else cloned_arch_seq[idx % len(cloned_arch_seq)]
+            used_in_plan.append(arch_for_scene)
             plan.append({
                 "style_family_id": base_fam["style_id"],
                 "design_family": base_fam["design_family"],
@@ -778,14 +979,26 @@ def build_dynamic_scene_style_assignment(
     )
 
     plan = []
+    used_in_plan = []
+    dyn_seed = rot_idx + int(time.time() * 10) % 997
     for idx in range(max(1, num_scenes)):
         act_name = "hook_problem" if idx == 0 else ("outro_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else "body_steps")
+        sc_obj = scenes[idx] if (isinstance(scenes, list) and idx < len(scenes) and isinstance(scenes[idx], dict)) else {}
+        sc_txt = str(sc_obj.get("text", "")).strip()
+        user_arch = str(sc_obj.get("user_override_archetype") or "").strip()
+        if user_arch and user_arch in ALL_DYNAMIC_VISUAL_ARCHETYPES:
+            arch_for_scene = user_arch
+        elif sc_txt:
+            arch_for_scene, _ = match_speech_to_visual_archetype(sc_txt, idx, num_scenes, used_in_plan, variation_seed=dyn_seed)
+        else:
+            arch_for_scene = arch_seq[idx]
+        used_in_plan.append(arch_for_scene)
         plan.append({
             "style_family_id": chosen_fam["style_id"],
             "design_family": chosen_fam["design_family"],
             "act_name": act_name,
             "step_number": idx + 1,
-            "visual_archetype": arch_seq[idx],
+            "visual_archetype": arch_for_scene,
             "has_grid": chosen_fam["has_grid"],
             "has_floating_diamonds": chosen_fam["has_floating_diamonds"],
             "has_giant_bg_numbers": False,

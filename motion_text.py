@@ -91,7 +91,8 @@ from vector_lottie_engine import (
     render_lottie_or_svg_badge,
     draw_animated_stroke_dash_rect,
     render_floating_particles_layer,
-    render_radial_ambient_glow
+    render_radial_ambient_glow,
+    render_contextual_hero_illustration
 )
 from style_evolution_brain import (
     evaluate_and_evolve_frame,
@@ -1158,30 +1159,31 @@ def _render_dynamic_archetype_stage(
     sticker_txt_c = tuple(pal.get("sticker_txt", (24, 24, 27)))
     dark_navy = (24, 24, 27)
 
-    raw_arch = str(style_spec.get("visual_archetype") or scene_meta.get("archetype") or "").strip()
+    user_override_arch = str(scene_meta.get("user_override_archetype") or "").strip()
+    raw_arch = str(user_override_arch or scene_meta.get("archetype") or style_spec.get("visual_archetype") or "").strip()
     legacy_map = {
         "agency_receipt_stamp": "chrono_ring_3d_counter",
         "fan_out_mobile_report": "pack_3d_extruding_pillars",
-        "blueprint_numbered_steps": "macos_folder_counter_list",
+        "blueprint_numbered_steps": "step_cascade_ribbon_cards",
         "saas_folder_reorder": "macos_folder_counter_list",
         "bento_grid_2x2_ripple": "reels_6card_showcase_grid",
         "saas_grid_2x2_cursor": "reels_6card_showcase_grid",
-        "split_before_after_cards": "dark_cinema_fanned_cards",
-        "stage_before_after_checklist": "dark_cinema_fanned_cards",
-        "typewriter_gear_console": "interactive_profile_follow_card",
-        "saas_typewriter_mechanism": "interactive_profile_follow_card",
-        "stage_trust_bubbles": "chrono_ring_3d_counter",
+        "split_before_after_cards": "floating_3d_stat_Compare",
+        "stage_before_after_checklist": "dual_metric_gauge_pods",
+        "typewriter_gear_console": "hero_platform_workspace",
+        "saas_typewriter_mechanism": "hero_platform_workspace",
+        "stage_trust_bubbles": "hero_problem_radar_fix",
         "stage_balance_scale": "damped_balance_scale",
-        "saas_process_flow": "bezier_growth_nodes",
+        "saas_process_flow": "hero_ai_neural_core",
         "video_schedule_table": "nle_timeline_matrix",
-        "interactive_cta_outro": "kinetic_quote_dm_finale",
-        "rocket_bars_cta_outro": "kinetic_quote_dm_finale"
+        "interactive_cta_outro": "hero_cta_magnet_finale",
+        "rocket_bars_cta_outro": "hero_viral_rocket_chart"
     }
     archetype = legacy_map.get(raw_arch, raw_arch)
     if archetype not in ALL_DYNAMIC_VISUAL_ARCHETYPES:
         archetype = ALL_DYNAMIC_VISUAL_ARCHETYPES[(step_num - 1) % len(ALL_DYNAMIC_VISUAL_ARCHETYPES)]
-    if step_num == total_scenes and total_scenes >= 2:
-        archetype = "kinetic_quote_dm_finale"
+    if not user_override_arch and step_num == total_scenes and total_scenes >= 3 and archetype not in ("hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"):
+        archetype = "hero_cta_magnet_finale" if (step_num % 2 == 0) else "kinetic_quote_dm_finale"
 
     # إذا كان المشهد هو المسرح السينمائي الداكن (Shot 5 من 6944.mp4)، نحول الخلفية إلى الغرفة السينمائية الداكنة الدافئة!
     if archetype == "dark_cinema_fanned_cards":
@@ -1220,7 +1222,29 @@ def _render_dynamic_archetype_stage(
     st_w, st_h = st_x2 - st_x1, st_y2 - st_y1
 
     # =========================================================================
-    # Archetype 1 [6944 Shot 1]: chrono_ring_3d_counter (الحلقة ثلاثية الأبعاد والعداد الدائري السريع 10->14->20)
+    # Archetypes 1..16 (Bespoke Speech-Matched Open-Canvas Hero Illustrations)
+    # =========================================================================
+    if archetype.startswith("hero_"):
+        return render_contextual_hero_illustration(
+            img=img,
+            archetype=archetype,
+            stage_bbox=(st_x1, st_y1, st_x2, st_y2),
+            choreo_u=choreo_u,
+            global_t=global_t,
+            style_spec=style_spec,
+            scene_meta=scene_meta,
+            sub_items=sub_items,
+            kpi_val=kpi_val,
+            kpi_lbl=kpi_lbl,
+            concept_title=concept_title,
+            draw_contained_text_fn=draw_contained_arabic_text,
+            draw_arabic_text_fn=draw_arabic_text,
+            get_font_fn=get_arabic_font,
+            draw_cursor_fn=_draw_cursor_with_ripple
+        )
+
+    # =========================================================================
+    # Archetype 17 [6944 Shot 1]: chrono_ring_3d_counter (الحلقة ثلاثية الأبعاد والعداد الدائري السريع 10->14->20)
     # =========================================================================
     if archetype == "chrono_ring_3d_counter":
         ring_cy = int(h * 0.46) + float_y
@@ -2798,14 +2822,18 @@ def create_kinetic_typography_video(
         )
         full_transcript = " ".join(w.get("word", "") for w in words)
 
-        planned_scenes = analyze_contextual_storyboard(
-            scenes=semantic_clauses,
-            full_transcript=full_transcript,
-            groq_api_key=groq_api_key,
-            gemini_api_key=gemini_api_key,
-            openai_api_key=openai_api_key,
-            ollama_model=ollama_model
-        )
+        custom_planned_scenes = kwargs.get("custom_planned_scenes")
+        if isinstance(custom_planned_scenes, list) and len(custom_planned_scenes) > 0:
+            planned_scenes = custom_planned_scenes
+        else:
+            planned_scenes = analyze_contextual_storyboard(
+                scenes=semantic_clauses,
+                full_transcript=full_transcript,
+                groq_api_key=groq_api_key,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key,
+                ollama_model=ollama_model
+            )
 
         bg_cache: Dict[str, np.ndarray] = {}
         gc.collect()
@@ -2923,16 +2951,41 @@ def create_kinetic_typography_video(
         enc_proc = None
 
         # المرحلة 5 (بعد انتهاء الموشن جرافيك بالكامل): دور مصمم الساوند ديزاين الآلي (sound_designer.py)
+        sfx_cues_list = []
         try:
-            from sound_designer import apply_intelligent_sound_design_to_video
-            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click) في الثانية المناسبة...")
+            from sound_designer import apply_intelligent_sound_design_to_video, LAST_SESSION_PATH
+            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click, Button) في الثانية المناسبة...")
             output_path, sfx_rep = apply_intelligent_sound_design_to_video(
                 video_path=output_path,
                 planned_scenes=planned_scenes,
                 total_duration=total_dur,
-                output_path=output_path
+                output_path=output_path,
+                custom_cues=kwargs.get("custom_sfx_cues")
             )
             sfx_cnt = sfx_rep.get("cues_count", 0)
+            sfx_cues_list = sfx_rep.get("cues", [])
+            try:
+                serializable_scenes = []
+                for idx_s, sc_item in enumerate(planned_scenes):
+                    sc_clean = {k: v for k, v in sc_item.items() if not str(k).startswith("_") and k != "words"}
+                    sc_clean["scene_index"] = idx_s
+                    serializable_scenes.append(sc_clean)
+                session_payload = {
+                    "mode": "audio_motion",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "total_duration": total_dur,
+                    "resolution": [vw, vh],
+                    "whisper_model": whisper_model,
+                    "dialect_mode": dialect_mode,
+                    "planned_scenes": serializable_scenes,
+                    "sfx_cues": sfx_cues_list,
+                }
+                os.makedirs(os.path.dirname(os.path.abspath(LAST_SESSION_PATH)), exist_ok=True)
+                with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                    json.dump(session_payload, sf, ensure_ascii=False, indent=2)
+            except Exception as sess_err:
+                logger.debug(f"Session save notice: {sess_err}")
             update_progress(1.0, f"اكتمل تصيير الموشن جرافيك ومزج {sfx_cnt} مؤثر صوتي احترافي بنجاح!")
         except Exception as sfx_err:
             logger.warning(f"ملاحظة في مرحلة الساوند ديزاين: {sfx_err}")

@@ -325,7 +325,10 @@ def _execute_master_director_pipeline(
         )
         force_free_ram()
 
-        if generate_master_director_plan is not None:
+        custom_planned_scenes = kwargs.get("custom_planned_scenes")
+        if isinstance(custom_planned_scenes, list) and len(custom_planned_scenes) > 0:
+            master_plan = custom_planned_scenes
+        elif generate_master_director_plan is not None:
             master_plan = _safe_call(
                 generate_master_director_plan,
                 sentences_or_micro_scenes=micro_scenes,
@@ -491,15 +494,40 @@ def _execute_master_director_pipeline(
         force_free_ram()
         sfx_cues_mixed = 0
         try:
-            from sound_designer import apply_intelligent_sound_design_to_video
-            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click) في الثانية المناسبة...")
+            import json
+            from sound_designer import apply_intelligent_sound_design_to_video, LAST_SESSION_PATH
+            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click, Button) في الثانية المناسبة...")
             output_path, sfx_rep = apply_intelligent_sound_design_to_video(
                 video_path=output_path,
                 planned_scenes=master_plan,
                 total_duration=video_duration,
-                output_path=output_path
+                output_path=output_path,
+                custom_cues=kwargs.get("custom_sfx_cues")
             )
             sfx_cues_mixed = int(sfx_rep.get("cues_count", 0))
+            try:
+                serializable_scenes = []
+                for idx_s, sc_item in enumerate(master_plan):
+                    sc_clean = {k: v for k, v in sc_item.items() if not str(k).startswith("_") and k != "words"}
+                    sc_clean["scene_index"] = idx_s
+                    serializable_scenes.append(sc_clean)
+                session_payload = {
+                    "mode": "video_director",
+                    "input_path": input_path,
+                    "output_path": output_path,
+                    "total_duration": video_duration,
+                    "resolution": [video_w, video_h],
+                    "whisper_model": whisper_model,
+                    "dialect_mode": dialect_mode,
+                    "caption_mode": caption_mode,
+                    "planned_scenes": serializable_scenes,
+                    "sfx_cues": sfx_rep.get("cues", []),
+                }
+                os.makedirs(os.path.dirname(os.path.abspath(LAST_SESSION_PATH)), exist_ok=True)
+                with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:
+                    json.dump(session_payload, sf, ensure_ascii=False, indent=2)
+            except Exception as sess_err:
+                logger.debug(f"Session save notice: {sess_err}")
         except Exception as sfx_err:
             logger.warning(f"ملاحظة في مرحلة الساوند ديزاين: {sfx_err}")
 
@@ -574,7 +602,8 @@ def apply_product_ad_mode(
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         progress_callback=progress_callback,
-        caption_mode=caption_mode
+        caption_mode=caption_mode,
+        **kwargs
     )
 
 
@@ -609,7 +638,8 @@ def apply_motion_overlay_on_video(
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         progress_callback=progress_callback,
-        caption_mode=caption_mode
+        caption_mode=caption_mode,
+        **kwargs
     )
     return out
 
@@ -642,7 +672,8 @@ def apply_smart_director_all_in_one(
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         progress_callback=progress_callback,
-        caption_mode=caption_mode
+        caption_mode=caption_mode,
+        **kwargs
     )
 
 
@@ -677,6 +708,7 @@ def apply_dynamic_edit(
         gemini_api_key=gemini_api_key,
         openai_api_key=openai_api_key,
         progress_callback=progress_callback,
-        caption_mode=caption_mode
+        caption_mode=caption_mode,
+        **kwargs
     )
     return out
