@@ -213,146 +213,186 @@ def _moving_average(x: np.ndarray, win: int) -> np.ndarray:
 
 
 def _synth_whooch_variant(sr: int, variant: int = 0) -> np.ndarray:
-    durations = [0.27, 0.23, 0.32, 0.29]
+    """
+    6 - Whooch: مؤثر انتقال هوائي مخملي غني ومتعدد الطبقات (Velvet Cinema Doppler Whoosh)
+    يجمع بين هواء الفلتر الدافئ + طبقة رنين تونالي متدرج التردد ليمنح إحساساً احترافياً بالحركة السلسة.
+    """
+    durations = [0.28, 0.24, 0.32, 0.26]
     dur = durations[variant % len(durations)]
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(600 + variant * 17)
+    rng = np.random.default_rng(700 + variant * 23)
 
     u = t / max(1e-4, dur)
-    env = np.sin(np.pi * (u ** 0.70)) ** 1.85
+    env = (np.sin(np.pi * (u ** 0.72)) ** 1.65).astype(np.float32)
 
     noise = rng.standard_normal(n).astype(np.float32)
-    deep_air = _moving_average(noise, 16 - (variant % 3) * 2)
-    mid_air = _moving_average(noise, 5)
-    doppler = np.sin(np.pi * u) ** 1.4
-    air_layer = deep_air * (1.25 - 0.45 * doppler) + mid_air * (0.65 * doppler)
+    velvet_low = _moving_average(noise, 18 - (variant % 3) * 2)
+    velvet_mid = _moving_average(noise, 6)
+    silk_high = _moving_average(noise, 2) * 0.25
+    doppler = np.sin(np.pi * u) ** 1.35
+    air_layer = velvet_low * (1.20 - 0.35 * doppler) + velvet_mid * (0.75 * doppler) + silk_high * (doppler ** 2)
 
-    f_low = 75.0 + (variant % 4) * 18.0
-    f_peak = 195.0 + (variant % 4) * 35.0
-    f_body = f_low + (f_peak - f_low) * np.sin(np.pi * (u ** 0.78))
+    f_low = 88.0 + (variant % 4) * 16.0
+    f_peak = 235.0 + (variant % 4) * 32.0
+    f_body = f_low + (f_peak - f_low) * np.sin(np.pi * (u ** 0.76))
     phase = 2.0 * np.pi * np.cumsum(f_body) / float(sr)
-    body_layer = np.sin(phase) * 0.50
+    tonal_body = (np.sin(phase) * 0.52 + np.sin(phase * 1.5) * 0.18)
 
-    sig = (air_layer * 0.68 + body_layer * 0.46) * env * 0.90
+    sig = (air_layer * 0.72 + tonal_body * 0.52) * env * 0.94
     return sig.astype(np.float32)
 
 
 def _synth_riser_variant(sr: int, variant: int = 0) -> np.ndarray:
-    durations = [0.46, 0.38, 0.52, 0.42]
+    """
+    5 - Riser: تصاعد سينمائي دافئ ولامع (Warm Shimmer & Air Swell Riser)
+    يمهد للانتقال إلى المشهد التالي بنعومة وفخامة سمعية.
+    """
+    durations = [0.42, 0.36, 0.48, 0.40]
     dur = durations[variant % len(durations)]
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(500 + variant * 13)
+    rng = np.random.default_rng(520 + variant * 17)
 
     u = t / max(1e-4, dur)
-    env = (u ** 2.4) * np.sin(np.pi * np.minimum(1.0, u * 1.03))
+    env = ((u ** 2.1) * np.sin(np.pi * np.minimum(1.0, u * 1.02))).astype(np.float32)
 
     raw_noise = rng.standard_normal(n).astype(np.float32)
-    warm_low = _moving_average(raw_noise, 22)
-    warm_mid = _moving_average(raw_noise, 7)
-    swept_air = ((1.0 - u * 0.85) * warm_low + (u * 0.85) * warm_mid) * 0.75
+    warm_low = _moving_average(raw_noise, 20)
+    warm_mid = _moving_average(raw_noise, 6)
+    swept_air = ((1.0 - u * 0.80) * warm_low + (u * 0.85) * warm_mid) * 0.72
 
-    f_sub = 65.0 + 135.0 * (u ** 1.8)
-    phase = 2.0 * np.pi * np.cumsum(f_sub) / float(sr)
-    sub_swell = np.sin(phase) * 0.42
+    f_base = 110.0 + 180.0 * (u ** 1.7)
+    phase1 = 2.0 * np.pi * np.cumsum(f_base) / float(sr)
+    phase2 = 2.0 * np.pi * np.cumsum(f_base * 1.498) / float(sr)  # Perfect fifth shimmer
+    harmonic_swell = (np.sin(phase1) * 0.42 + np.sin(phase2) * 0.24)
 
-    sig = (swept_air + sub_swell) * env * 0.82
+    sig = (swept_air + harmonic_swell) * env * 0.88
     return sig.astype(np.float32)
 
 
 def _synth_warm_bubble_pop_variant(sr: int, variant: int = 0) -> np.ndarray:
-    # 3 - UI Pop-In: صوت انبثاق استوديو دافئ وناعم جداً على غرار Apple / After Effects (Warm Organic Bubble Pop-In)
-    durations = [0.068, 0.062, 0.074, 0.065]
+    """
+    3 - UI Pop-In: صوت انبثاق استوديو دافئ وموسيقي (Warm Kalimba / Marimba Wood-Pop & Velvet Reveal)
+    يعمل عند انبثاق المجسم الرئيسي أو لوحة الستوري بورد أو البطاقات الثلاثية الأبعاد.
+    """
+    durations = [0.095, 0.088, 0.105, 0.092]
     dur = durations[variant % len(durations)]
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(310 + variant * 19)
+    rng = np.random.default_rng(330 + variant * 19)
 
-    f_start = 175.0 + (variant % 4) * 18.0
-    f_end = 375.0 + (variant % 4) * 28.0
-    freq = f_start + (f_end - f_start) * (1.0 - np.exp(-t * 58.0))
+    # نغمات خماسية دافئة ومريحة جداً للأذن (Pentatonic Warm Wood/Kalimba Tunings)
+    base_notes = [220.0, 261.63, 293.66, 329.63]
+    f_target = base_notes[variant % len(base_notes)]
+    f_start = f_target * 0.58
+    freq = f_start + (f_target - f_start) * (1.0 - np.exp(-t * 68.0))
     phase = 2.0 * np.pi * np.cumsum(freq) / float(sr)
 
-    attack = 1.0 - np.exp(-t * 320.0)
-    decay = np.exp(-t * 48.0)
-    env = attack * decay
+    attack = 1.0 - np.exp(-t * 380.0)
+    decay1 = np.exp(-t * 36.0)
+    decay2 = np.exp(-t * 85.0)
 
-    velvet_air = _moving_average(rng.standard_normal(n).astype(np.float32), 10) * np.exp(-t * 180.0) * 0.22
-    warm_body = (np.sin(phase) * 0.78 + np.sin(phase * 0.5) * 0.22) * env
+    # رنين خشبي ناعم (Fundamental + Octave + Soft 3rd Harmonic)
+    warm_body = (
+        np.sin(phase) * 0.72 * decay1
+        + np.sin(phase * 2.0) * 0.24 * decay2
+        + np.sin(phase * 3.0) * 0.08 * np.exp(-t * 140.0)
+    ) * attack
 
-    sig = (warm_body + velvet_air) * 0.84
+    velvet_air = _moving_average(rng.standard_normal(n).astype(np.float32), 9) * np.exp(-t * 145.0) * 0.22
+    sig = (warm_body + velvet_air) * 0.92
     return sig.astype(np.float32)
 
 
 def _synth_crisp_ui_snap_variant(sr: int, variant: int = 0) -> np.ndarray:
-    # 2 - UI Click: تكة واجهة خشبية/مطفية أنيقة جداً عند ظهور الخطوات والشارات (Matte Studio UI Tap)
-    dur = 0.038
+    """
+    2 - UI Click: تكة واجهة بلورية/خشبية ناعمة وأنيقة (Soft Musical Pluck / Matte UI Chime-Tap)
+    تعمل عند ظهور الكلمة المميزة في العنوان أو ظهور الشارات والعناصر الفرعية.
+    """
+    dur = 0.065
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(210 + variant * 11)
+    rng = np.random.default_rng(230 + variant * 13)
 
-    noise = _moving_average(rng.standard_normal(n).astype(np.float32), 6)
-    wood_freq = 260.0 + (variant % 4) * 32.0
-    wood_body = np.sin(2.0 * np.pi * wood_freq * t) * np.exp(-t * 195.0) * 0.65
-    snap_transient = noise * np.exp(-t * 380.0) * 0.45
+    pluck_notes = [392.0, 440.0, 523.25, 587.33]
+    f0 = pluck_notes[variant % len(pluck_notes)]
+    attack = 1.0 - np.exp(-t * 520.0)
+    body = (
+        np.sin(2.0 * np.pi * f0 * t) * np.exp(-t * 62.0) * 0.68
+        + np.sin(2.0 * np.pi * (f0 * 1.5) * t) * np.exp(-t * 115.0) * 0.24
+    ) * attack
+    felt_tap = _moving_average(rng.standard_normal(n).astype(np.float32), 6) * np.exp(-t * 290.0) * 0.32
 
-    sig = (wood_body + snap_transient) * (1.0 - np.exp(-t * 600.0)) * 0.80
+    sig = (body + felt_tap) * 0.88
     return sig.astype(np.float32)
 
 
 def _synth_tactile_mouse_click_variant(sr: int, variant: int = 0) -> np.ndarray:
-    # 1 - Click: نقرة ماوس طبيعية مزدوجة النبضة (Organic Matte Tactile Mouse Click: Press + Release)
-    dur = 0.048
+    """
+    1 - Click: نقرة تفاعلية فاخرة مزدوجة النبضة على غرار Apple Trackpad / Mechanical Switch
+    متزامنة بدقة مع نقرة مؤشر اليد (👆) في المشهد.
+    """
+    dur = 0.056
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(100 + variant * 7)
+    rng = np.random.default_rng(110 + variant * 9)
 
     noise = _moving_average(rng.standard_normal(n).astype(np.float32), 4)
-    env1 = np.exp(-t * 310.0)
-    thump1 = np.sin(2.0 * np.pi * (310.0 + variant * 25.0) * t) * np.exp(-t * 210.0) * 0.52
+    env1 = np.exp(-t * 280.0)
+    thump1 = np.sin(2.0 * np.pi * (340.0 + variant * 28.0) * t) * np.exp(-t * 185.0) * 0.62
 
-    rel_idx = int(0.017 * sr)
+    rel_idx = int(0.019 * sr)
     click2 = np.zeros_like(t)
     if rel_idx < n:
         t2 = t[:n - rel_idx]
         click2[rel_idx:] = (
-            noise[:n - rel_idx] * np.exp(-t2 * 390.0) * 0.36
-            + np.sin(2.0 * np.pi * 240.0 * t2) * np.exp(-t2 * 260.0) * 0.25
+            noise[:n - rel_idx] * np.exp(-t2 * 340.0) * 0.38
+            + np.sin(2.0 * np.pi * 480.0 * t2) * np.exp(-t2 * 220.0) * 0.34
         )
 
-    sig = (noise * env1 * 0.55 + thump1 + click2) * 0.85
+    sig = (noise * env1 * 0.48 + thump1 + click2) * 0.92
     return sig.astype(np.float32)
 
 
 def _synth_tactile_button_press_variant(sr: int, variant: int = 0) -> np.ndarray:
-    # 4 - Button: ضغطة زر ميكانيكية دافئة ومريحة عند تفعيل أزرار المنصة والـ CTA (Tactile Mechanical Thock)
-    dur = 0.072
+    """
+    4 - Button: ضغطة زر تفاعلية غنية مع رنين تأكيد متناغم (Warm Tactile Thock + Confirmation Chord)
+    تعمل عند تفعيل الأزرار أو بطاقة الـ CTA أو نقرة الستوري بورد.
+    """
+    dur = 0.115
     n = int(sr * dur)
     t = np.linspace(0.0, dur, n, endpoint=False, dtype=np.float32)
-    rng = np.random.default_rng(410 + variant * 13)
+    rng = np.random.default_rng(430 + variant * 15)
 
-    f0 = 220.0 + (variant % 4) * 20.0
-    f1 = 135.0
-    freq = f1 + (f0 - f1) * np.exp(-t * 90.0)
-    phase = 2.0 * np.pi * np.cumsum(freq) / float(sr)
-    thock = np.sin(phase) * (1.0 - np.exp(-t * 450.0)) * np.exp(-t * 68.0) * 0.72
-    cushion = _moving_average(rng.standard_normal(n).astype(np.float32), 8) * np.exp(-t * 220.0) * 0.35
+    # ضغطة الزر الميكانيكية الناعمة (Thock) + نغمة تأكيد ثنائية مريحة (Major Third / Fifth)
+    f_root = 261.63 + (variant % 4) * 22.0
+    f_fifth = f_root * 1.498
+    attack = 1.0 - np.exp(-t * 420.0)
+    chord_confirm = (
+        np.sin(2.0 * np.pi * f_root * t) * np.exp(-t * 38.0) * 0.56
+        + np.sin(2.0 * np.pi * f_fifth * t) * np.exp(-t * 45.0) * 0.34
+    ) * attack
+    cushion = _moving_average(rng.standard_normal(n).astype(np.float32), 7) * np.exp(-t * 190.0) * 0.32
 
-    sig = (thock + cushion) * 0.85
+    sig = (chord_confirm + cushion) * 0.90
     return sig.astype(np.float32)
 
 
 def _synth_sub_impact_variant(sr: int, variant: int = 0) -> np.ndarray:
-    # 8 - Sub Impact: نبضة باص سينمائية دافئة وعميقة (Warm Cinema Thump)
-    dur = 0.36
+    """
+    8 - Sub Impact: نبضة باص سينمائية دافئة وعميقة (Warm Cinema Sub-Drop)
+    تمنح الفيديو فخامة ووزناً سمعياً عند بداية الفيديو وعند التحولات الدرامية.
+    """
+    dur = 0.38
     t = np.linspace(0.0, dur, int(sr * dur), endpoint=False, dtype=np.float32)
-    f0 = 118.0 + (variant % 3) * 12.0
-    f1 = 44.0
-    freq = f1 + (f0 - f1) * np.exp(-t * 26.0)
+    f0 = 128.0 + (variant % 3) * 14.0
+    f1 = 46.0
+    freq = f1 + (f0 - f1) * np.exp(-t * 24.0)
     phase = 2.0 * np.pi * np.cumsum(freq) / float(sr)
-    env = (1.0 - np.exp(-t * 160.0)) * np.exp(-t * 9.8)
-    return (np.sin(phase) * env * 0.78).astype(np.float32)
+    env = (1.0 - np.exp(-t * 150.0)) * np.exp(-t * 8.8)
+    harm = np.sin(phase) * 0.82 + np.sin(phase * 2.0) * 0.18 * np.exp(-t * 18.0)
+    return (harm * env * 0.88).astype(np.float32)
 
 
 def _normalize_imported_audio_to_wav(src_path: str, dst_wav_path: str, sr: int = 24000) -> bool:
@@ -375,7 +415,7 @@ def _normalize_imported_audio_to_wav(src_path: str, dst_wav_path: str, sr: int =
 
 def ensure_builtin_sfx_pack(sfx_dir: str = DEFAULT_SFX_DIR, sr: int = 24000) -> Dict[str, List[str]]:
     os.makedirs(sfx_dir, exist_ok=True)
-    marker_path = os.path.join(sfx_dir, ".pack_schema_v3")
+    marker_path = os.path.join(sfx_dir, ".pack_schema_v4")
     force_regen = not os.path.exists(marker_path)
 
     generators = {
@@ -414,7 +454,7 @@ def ensure_builtin_sfx_pack(sfx_dir: str = DEFAULT_SFX_DIR, sr: int = 24000) -> 
     if force_regen:
         try:
             with open(marker_path, "w", encoding="utf-8") as mf:
-                mf.write("v3_warm_pop_click_whoosh_pack")
+                mf.write("v4_studio_harmonic_foley_pack")
         except Exception:
             pass
     return inventory
@@ -758,6 +798,15 @@ def build_frame_accurate_sfx_timeline(
     settings: Optional[Dict[str, Any]] = None,
     visual_analysis: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
+    """
+    يبني خريطة مؤثرات صوتية شاملة ودقيقة بنسبة 100% لكل حركة وأنيميشن في الفيديو:
+    يغطي في كل مشهد:
+    1. انتقال الدخول (Velvet Whoosh `6_whooch`) + تصاعد ما قبل الانتقال (`5_riser`) + نبضة العمق (`8_sub_impact`).
+    2. انبثاق الكلمة المميزة في العنوان العلوي (`2_ui_click` Musical Pluck/Chime).
+    3. انبثاق المجسم الرئيسي أو لوحة الستوري بورد بفيزياء الزنبرك (`3_ui_style` Warm Kalimba/Wood Pop-In).
+    4. ظهور العناصر الفرعية أو المدارية أو الصفوف المتتابعة (`3_ui_style` / `2_ui_click`).
+    5. نقرة مؤشر اليد التفاعلية (`1_click`) + رنين استجابة الزر (`4_button`).
+    """
     cfg = settings or get_sound_design_settings()
     if not cfg.get("enabled", True) or not planned_scenes or total_duration <= 0.2:
         return []
@@ -789,120 +838,111 @@ def build_frame_accurate_sfx_timeline(
 
         sc_start = float(sc.get("verified_transition_sec", sc.get("start", 0.0)))
         sc_end = float(sc.get("end", sc_start + 2.5))
-        sc_dur = max(0.40, sc_end - sc_start)
+        sc_dur = max(0.45, sc_end - sc_start)
         arch = str(sc.get("archetype") or sc.get("visual_archetype") or "").lower()
         vis_subj = str(sc.get("visual_subject") or "").lower()
         layout_mode = str(sc.get("layout_mode", "full_screen")).lower()
-        is_motion_stage = layout_mode in ("full_screen", "overlay_card")
+        is_motion_stage = layout_mode in ("full_screen", "overlay_card", "top_overlay", "lower_third")
 
         want_whoosh = cfg.get("enable_whooshes", True) and sfx_mode not in ("click_button",)
         want_riser = cfg.get("enable_risers", True) and sfx_mode in ("auto_all", "riser_whoosh_impact")
         want_pop = cfg.get("enable_ui_pops", True) and sfx_mode in ("auto_all", "whoosh_pop_click", "whoosh_pop")
         want_click = cfg.get("enable_clicks_and_buttons", True) and sfx_mode in ("auto_all", "whoosh_pop_click", "click_button")
 
+        # 1. بداية المشهد / الانتقال (Scene Entrance Whoosh & Sub-Impact)
         if idx == 0:
             if want_whoosh:
-                _add_cue(0.04, "6_whooch", -7.0, variant=0, reason="افتتاحية المشهد الأول (Hook Whoosh)", scene_idx=idx)
-            if want_pop and is_motion_stage:
-                _add_cue(0.20, "3_ui_style", -8.5, variant=0, reason="انبثاق الرسم الرئيسي في المشهد الأول (Warm Pop-In)", scene_idx=idx)
+                _add_cue(0.03, "6_whooch", -5.2, variant=0, reason="افتتاحية المشهد الأول (Hook Velvet Whoosh)", scene_idx=idx)
+            if want_riser:
+                _add_cue(0.05, "8_sub_impact", -7.8, variant=0, reason="نبضة عمق سينمائي لافتتاحية الفيديو (Sub-Impact)", scene_idx=idx)
         else:
-            prev_sc = scenes_to_use[idx - 1]
-            prev_layout = str(prev_sc.get("layout_mode", "full_screen")).lower()
-            prev_arch = str(prev_sc.get("archetype") or prev_sc.get("visual_archetype") or "").lower()
-
-            layout_changed = (layout_mode != prev_layout)
-            stage_changed = is_motion_stage and (arch != prev_arch or True)
-
-            if layout_changed or stage_changed:
-                if want_riser and is_motion_stage and sc_start >= 0.45 and (sc_start - last_riser_t) >= 4.2:
-                    _add_cue(
-                        sc_start - 0.35,
-                        "5_riser",
-                        -10.8,
-                        variant=idx % 4,
-                        reason=f"تصاعد سينمائي دافئ قبل المشهد #{idx + 1}",
-                        scene_idx=idx
-                    )
-                    last_riser_t = sc_start
-
-                if want_whoosh:
-                    _add_cue(
-                        max(0.04, sc_start - 0.03),
-                        "6_whooch",
-                        -6.5 if is_motion_stage else -8.0,
-                        variant=idx % 4,
-                        reason=f"انتقال الكاميرا السلس للمشهد #{idx + 1} (Whoosh)",
-                        scene_idx=idx
-                    )
-
-                if is_motion_stage and (layout_changed or "cinema" in arch or "problem" in vis_subj or idx % 3 == 1):
-                    _add_cue(
-                        sc_start + 0.02,
-                        "8_sub_impact",
-                        -10.0,
-                        variant=idx % 4,
-                        reason=f"نبضة عمق سينمائي لدخول المشهد #{idx + 1} (Sub-Impact)",
-                        scene_idx=idx
-                    )
-
-            if want_pop and is_motion_stage and sc_dur >= 1.1:
-                pop_t = sc_start + min(0.18, sc_dur * 0.14)
+            if want_riser and sc_start >= 0.45 and (sc_start - last_riser_t) >= 2.6:
                 _add_cue(
-                    pop_t,
-                    "3_ui_style",
-                    -8.4,
+                    sc_start - 0.34,
+                    "5_riser",
+                    -8.2,
                     variant=idx % 4,
-                    reason=f"انبثاق المجسم/الرسم الرئيسي للمشهد #{idx + 1} (Warm Pop-In)",
+                    reason=f"تصاعد سينمائي ممهد لانتقال المشهد #{idx + 1} (Shimmer Riser)",
+                    scene_idx=idx
+                )
+                last_riser_t = sc_start
+
+            if want_whoosh:
+                _add_cue(
+                    max(0.03, sc_start - 0.025),
+                    "6_whooch",
+                    -5.0 if layout_mode == "full_screen" else -6.4,
+                    variant=idx % 4,
+                    reason=f"انتقال الكاميرا السلس للمشهد #{idx + 1} (Whoosh)",
                     scene_idx=idx
                 )
 
-        if want_click and is_motion_stage and sc_dur >= 1.45:
-            ui_tap_t = sc_start + min(0.42, sc_dur * 0.30)
+            if want_riser and (idx % 2 == 1 or "cinema" in arch or "problem" in vis_subj):
+                _add_cue(
+                    sc_start + 0.02,
+                    "8_sub_impact",
+                    -8.0,
+                    variant=idx % 4,
+                    reason=f"نبضة عمق سينمائي لدخول المشهد #{idx + 1} (Sub-Impact)",
+                    scene_idx=idx
+                )
+
+        # 2. ظهور العنوان العلوي والكلمة المميزة (Headline Sticker Reveal @ +0.12s)
+        if want_click and is_motion_stage and sc_dur >= 0.90:
+            hl_t = sc_start + min(0.13, sc_dur * 0.10)
             _add_cue(
-                ui_tap_t,
+                hl_t,
                 "2_ui_click",
-                -9.6,
-                variant=(idx + 1) % 4,
-                reason=f"ظهور شارة/عناصر الشرح في المشهد #{idx + 1} (UI Click)",
+                -6.8,
+                variant=idx % 4,
+                reason=f"ظهور العنوان والكلمة المميزة في المشهد #{idx + 1} (Musical UI Chime)",
                 scene_idx=idx
             )
 
-        if want_pop and is_motion_stage and sc_dur >= 2.15:
-            pop2_t = sc_start + sc_dur * 0.48
+        # 3. انبثاق المجسم الرئيسي / لوحة الستوري بورد (Main Centerpiece / Storyboard Pop-In @ +0.24s)
+        if want_pop and is_motion_stage and sc_dur >= 0.95:
+            pop1_t = sc_start + min(0.26, sc_dur * 0.21)
+            _add_cue(
+                pop1_t,
+                "3_ui_style",
+                -6.0,
+                variant=idx % 4,
+                reason=f"انبثاق الرسم الرئيسي / لوحة الستوري بورد في المشهد #{idx + 1} (Warm Kalimba Pop)",
+                scene_idx=idx
+            )
+
+        # 4. انبثاق الطبقة الثانية / العناصر الفرعية المتزامنة مع الكلام (@ 42% من مدة المشهد)
+        if want_pop and is_motion_stage and sc_dur >= 1.35:
+            pop2_t = sc_start + sc_dur * 0.42
             _add_cue(
                 pop2_t,
-                "3_ui_style",
-                -9.2,
+                "3_ui_style" if (idx % 2 == 0) else "2_ui_click",
+                -6.5,
                 variant=(idx + 2) % 4,
-                reason=f"ظهور العنصر التفاعلي الثاني في المشهد #{idx + 1} (Soft Pop)",
+                reason=f"ظهور العناصر التفاعلية والمدارية في المشهد #{idx + 1} (Secondary Layer Reveal)",
                 scene_idx=idx
             )
 
-        if want_click and is_motion_stage and sc_dur >= 1.65:
-            has_button_focus = any(
-                k in f"{arch} {vis_subj}"
-                for k in ("follow", "cta", "finale", "outro", "folder", "pillar", "workspace", "platform", "commerce", "delivery", "reel", "scissors")
-            ) or (idx % 2 == 1)
-
-            if has_button_focus:
-                click_t = sc_start + sc_dur * 0.66
+        # 5. نقرة مؤشر اليد التفاعلية واستجابة الزر (@ 66% من مدة المشهد، مطابقة لدالة _draw_cursor_with_ripple!)
+        if want_click and is_motion_stage and sc_dur >= 1.45:
+            click_t = sc_start + sc_dur * 0.66
+            _add_cue(
+                click_t,
+                "1_click",
+                -6.2,
+                variant=idx % 4,
+                reason=f"نقرة مؤشر اليد التفاعلية في المشهد #{idx + 1} (Tactile Switch Click)",
+                scene_idx=idx
+            )
+            if any(k in f"{arch} {vis_subj}" for k in ("follow", "cta", "finale", "workspace", "platform", "commerce", "delivery", "pillar", "folder")) or idx == len(scenes_to_use) - 1 or (idx % 2 == 0):
                 _add_cue(
-                    click_t,
-                    "1_click",
-                    -8.8,
+                    click_t + 0.045,
+                    "4_button",
+                    -6.6,
                     variant=idx % 4,
-                    reason=f"نقرة مؤشر اليد التفاعلية في المشهد #{idx + 1} (Mouse Click)",
+                    reason=f"رنين تفعيل الزر/العنصر التفاعلي في المشهد #{idx + 1} (Warm Chord Button)",
                     scene_idx=idx
                 )
-                if any(k in f"{arch} {vis_subj}" for k in ("follow", "cta", "finale", "workspace", "platform", "commerce", "delivery")) or idx == len(scenes_to_use) - 1:
-                    _add_cue(
-                        click_t + 0.04,
-                        "4_button",
-                        -9.2,
-                        variant=idx % 4,
-                        reason=f"استجابة الزر التفاعلي في المشهد #{idx + 1} (Button Press)",
-                        scene_idx=idx
-                    )
 
     cues.sort(key=lambda x: x["timestamp_sec"])
     filtered_cues: List[Dict[str, Any]] = []
@@ -911,7 +951,7 @@ def build_frame_accurate_sfx_timeline(
     for c in cues:
         cat = c["category"]
         t_now = c["timestamp_sec"]
-        min_gap = 0.28 if cat in ("3_ui_style", "2_ui_click") else 0.35
+        min_gap = 0.16 if cat in ("3_ui_style", "2_ui_click", "1_click") else 0.24
         if cat in last_time_by_cat and (t_now - last_time_by_cat[cat]) < min_gap:
             continue
         last_time_by_cat[cat] = t_now
@@ -1069,7 +1109,7 @@ def apply_intelligent_sound_design_to_video(
             "ffmpeg", "-y", "-v", "error", "-threads", "1",
             "-i", video_path,
             "-i", sfx_wav,
-            "-filter_complex", "[0:a]volume=1.0[va];[1:a]volume=1.08[sa];[va][sa]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
+            "-filter_complex", "[0:a]volume=1.0[va];[1:a]volume=1.32[sa];[va][sa]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]",
             "-map", "0:v:0", "-map", "[aout]",
             "-c:v", "copy",
             "-c:a", "aac", "-b:a", "128k", "-ac", "1", "-ar", "24000",

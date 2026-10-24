@@ -562,31 +562,17 @@ def render_contextual_hero_illustration(
         else:
             draw_contained_text_fn(draw, (bx1 + 12, by1 + 4, bx2 - 30, by2 - 4), title_t, initial_font_size=15, fill=(*txt_main, 255))
 
-    # دمج أشكال الموشن جرافيك المجلوبة حياً من الإنترنت والملونة بثيم الفيديو النشط في خلفية وزوايا المسرح!
-    try:
-        raw_sp_txt = str(scene_meta.get("text") or concept_title or "")
-        web_svgs = search_and_fetch_web_vectors(raw_sp_txt, fallback_topic=archetype, max_assets=2)
-        if web_svgs and choreo_u >= 0.10:
-            badge_sz = int(min(st_w, st_h) * 0.22 * max(0.35, min(1.0, choreo_u * 1.6)))
-            if badge_sz >= 28:
-                web_layer_L = render_recolored_svg_motion_canvas(
-                    svg_xml=web_svgs[0], width=badge_sz, height=badge_sz,
-                    theme_palette=pal, choreo_u=choreo_u, global_t=global_t, stroke_scale=1.0
-                )
-                img.alpha_composite(web_layer_L, (st_x1 + 4, st_y1 + 4))
-                if len(web_svgs) > 1:
-                    web_layer_R = render_recolored_svg_motion_canvas(
-                        svg_xml=web_svgs[1], width=badge_sz, height=badge_sz,
-                        theme_palette={"primary": secondary_c, "secondary": primary_c, "accent": accent_c},
-                        choreo_u=choreo_u, global_t=global_t, stroke_scale=1.0
-                    )
-                    img.alpha_composite(web_layer_R, (st_x2 - badge_sz - 4, st_y1 + 4))
-                draw = ImageDraw.Draw(img, "RGBA")
-    except Exception:
-        pass
+    # حساب متغير التنويع البصري (Variant Seed) لضمان عدم تكرار نفس الشكل الهندسي بين الفيديوهات!
+    step_num_v = int(scene_meta.get("step_number") or 1)
+    fam_id_str = str(style_spec.get("style_family_id") or scene_meta.get("theme_name") or "default")
+    fam_hash = sum(ord(ch) for ch in fam_id_str)
+    variant_id = (step_num_v + fam_hash) % 3
 
     def _draw_bottom_speech_pills(y_top: int):
-        # نفلتر العناصر الفرعية بحيث لا تتكرر نفس العبارة مرتين ولا تعيد كتابة العنوان العلوي حرفياً
+        # منع ازدحام الشاشة وتكرار الكلام المنطوق في 3 صناديق:
+        # لا نرسم الكبسولات السفلية الإضافية إلا إذا كان المتحدث يعدد نقاطاً صراحةً (Explicit Enumeration)!
+        if not scene_meta.get("is_explicit_enumeration", False):
+            return
         unique_subs: List[str] = []
         title_norm = re.sub(r"\s+", " ", str(concept_title or "")).strip()
         for s_cand in (sub_items or []):
@@ -675,11 +661,9 @@ def render_contextual_hero_illustration(
             b_col = secondary_c if (bi / float(n_bars)) <= choreo_u else (148, 163, 184)
             draw.rounded_rectangle([(bx, wave_y - bh), (bx + bw, wave_y + bh)], radius=2, fill=(*b_col, 245))
 
-        # كبسولات عائمة حول الهاتف للكلمات المنطوقة
-        if choreo_u >= 0.16:
-            _draw_floating_pod(st_x1, py1 + 18, px1 - 8, py1 + 74, kpi_val, badge_col=secondary_c, radius=14)
-        if choreo_u >= 0.28:
-            _draw_floating_pod(px2 + 8, py1 + int(ph_h * 0.35), st_x2, py1 + int(ph_h * 0.35) + 56, sub_items[2 % len(sub_items)], badge_col=accent_c, radius=14)
+        # شارات بصرية نظيفة حول الهاتف بدون تكرار نفس جملة العنوان العلوي
+        if choreo_u >= 0.18 and kpi_val and kpi_val not in concept_title:
+            _draw_floating_pod(st_x1, py1 + 22, px1 - 8, py1 + 74, kpi_val, badge_col=secondary_c, radius=14)
 
         _draw_bottom_speech_pills(py2 + 16)
         draw_cursor_fn(draw, (px2 + 24, p_cy + 40), (cx, p_cy), choreo_u, accent_rgb=secondary_c)
@@ -791,15 +775,32 @@ def render_contextual_hero_illustration(
         return img
 
     # -------------------------------------------------------------------------
-    # 5. hero_chrono_speedometer: عداد السرعة والزمن التوربيني
+    # 5. hero_chrono_speedometer: 3 أشكال حركية متجددة للسرعة والزمن (Web Vector / Dual Rings / Turbo Gauge)
     # -------------------------------------------------------------------------
     if archetype == "hero_chrono_speedometer":
-        sp_r = int(min(st_w, st_h) * 0.30 * sp_main)
+        if variant_id == 0:
+            return render_web_fetched_motion_scene(
+                img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
+                style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
+                kpi_val=kpi_val, kpi_lbl=kpi_lbl, draw_contained_text_fn=draw_contained_text_fn,
+                draw_arabic_text_fn=draw_arabic_text_fn, get_font_fn=get_font_fn, draw_cursor_fn=draw_cursor_fn
+            )
+        sp_r = int(min(st_w, st_h) * 0.29 * sp_main)
+        if variant_id == 1:
+            # حلقات الزمن المدارية الثلاثية الأبعاد مع برق الطاقة في المركز
+            for ri, col_r in enumerate([primary_c, secondary_c, accent_c]):
+                rr = sp_r - ri * 20
+                if rr <= 18:
+                    continue
+                rot_a = int((global_t * (85 - ri * 25) + ri * 60) % 360)
+                draw.arc([(cx - rr, cy - rr), (cx + rr, cy + rr)], start=rot_a, end=rot_a + 230, fill=(*col_r, 240), width=10)
+            bolt_pts = [(cx + 8, cy - 36), (cx - 18, cy + 4), (cx + 2, cy + 4), (cx - 10, cy + 38), (cx + 22, cy - 6), (cx + 2, cy - 6)]
+            draw.polygon(bolt_pts, fill=(*secondary_c, 255), outline=(255, 255, 255, 245))
+            return img
+
         draw.arc([(cx - sp_r, cy - sp_r), (cx + sp_r, cy + sp_r)], start=135, end=405, fill=(148, 163, 184, 95), width=18)
         sweep_deg = int(270 * min(1.0, max(0.12, choreo_u * 1.25)))
         draw.arc([(cx - sp_r, cy - sp_r), (cx + sp_r, cy + sp_r)], start=135, end=135 + sweep_deg, fill=(*primary_c, 255), width=18)
-
-        # تدريجات عداد السرعة
         for ti in range(11):
             t_ang = math.radians(135 + ti * 27)
             tx0 = cx + int((sp_r - 24) * math.cos(t_ang))
@@ -807,16 +808,13 @@ def render_contextual_hero_illustration(
             tx1 = cx + int((sp_r - 12) * math.cos(t_ang))
             ty1 = cy + int((sp_r - 12) * math.sin(t_ang))
             draw.line([(tx0, ty0), (tx1, ty1)], fill=(*txt_main, 190), width=2)
-
-        # عقرب السرعة المتحرك
         needle_ang = math.radians(135 + sweep_deg)
         nx = cx + int((sp_r - 28) * math.cos(needle_ang))
         ny = cy + int((sp_r - 28) * math.sin(needle_ang))
         draw.line([(cx, cy), (nx, ny)], fill=(*secondary_c, 255), width=5)
         draw.ellipse([(cx - 12, cy - 12), (cx + 12, cy + 12)], fill=(*secondary_c, 255), outline=(255, 255, 255, 255), width=3)
-
-        draw_contained_text_fn(draw, (cx - int(sp_r * 0.75), cy + 18, cx + int(sp_r * 0.75), cy + int(sp_r * 0.68)), kpi_val, initial_font_size=22, fill=(*txt_main, 255))
-        _draw_bottom_speech_pills(cy + sp_r + 14)
+        badge_speed = kpi_val if (kpi_val and kpi_val not in concept_title) else "10x FAST"
+        draw_contained_text_fn(draw, (cx - int(sp_r * 0.70), cy + 18, cx + int(sp_r * 0.70), cy + int(sp_r * 0.65)), badge_speed, initial_font_size=20, fill=(*txt_main, 255))
         return img
 
     # -------------------------------------------------------------------------
@@ -987,25 +985,43 @@ def render_contextual_hero_illustration(
         return img
 
     # -------------------------------------------------------------------------
-    # 13. hero_platform_workspace: واجهة المنصة الذكية العائمة وزر التوليد
+    # 13. hero_platform_workspace: واجهة الاستوديو الذكي متعددة الأنماط بدون تكرار العنوان
     # -------------------------------------------------------------------------
     if archetype == "hero_platform_workspace":
-        dk_w, dk_h = int(st_w * 0.88 * sp_main), int(st_h * 0.46 * sp_main)
-        dx1, dy1 = cx - dk_w // 2, cy - dk_h // 2 - 12
+        if variant_id == 0:
+            return render_web_fetched_motion_scene(
+                img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
+                style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
+                kpi_val=kpi_val, kpi_lbl=kpi_lbl, draw_contained_text_fn=draw_contained_text_fn,
+                draw_arabic_text_fn=draw_arabic_text_fn, get_font_fn=get_font_fn, draw_cursor_fn=draw_cursor_fn
+            )
+        dk_w, dk_h = int(st_w * 0.88 * sp_main), int(st_h * 0.50 * sp_main)
+        dx1, dy1 = cx - dk_w // 2, cy - dk_h // 2 - 8
         dx2, dy2 = dx1 + dk_w, dy1 + dk_h
-        draw.rounded_rectangle([(dx1, dy1), (dx2, dy2)], radius=24, fill=pod_bg, outline=(*primary_c, 235), width=3)
-        # نقاط نافذة النظام العلوية
+        draw.rounded_rectangle([(dx1 + 4, dy1 + 10), (dx2 + 4, dy2 + 10)], radius=26, fill=(8, 12, 22, 65))
+        draw.rounded_rectangle([(dx1, dy1), (dx2, dy2)], radius=26, fill=pod_bg, outline=(*primary_c, 235), width=3)
         for di, dcol in enumerate([(244, 63, 94), (250, 204, 21), (16, 185, 129)]):
             draw.ellipse([(dx1 + 18 + di * 18, dy1 + 14), (dx1 + 28 + di * 18, dy1 + 24)], fill=(*dcol, 255))
 
-        draw_contained_text_fn(draw, (dx1 + 18, dy1 + 36, dx2 - 18, dy1 + int(dk_h * 0.54)), concept_title, initial_font_size=19, fill=(*txt_main, 255))
-        btn_x1, btn_y1, btn_x2, btn_y2 = cx - int(dk_w * 0.38), dy2 - 58, cx + int(dk_w * 0.38), dy2 - 14
+        # بدلاً من إعادة كتابة جملة العنوان العلوي داخل النافذة، نرسم معاينة تايملاين ومعالج موشن حي!
+        prev_y1, prev_y2 = dy1 + 38, dy2 - 68
+        draw.rounded_rectangle([(dx1 + 18, prev_y1), (dx2 - 18, prev_y2)], radius=16, fill=(15, 23, 42, 235))
+        n_tracks = 3
+        th_bar = max(8, (prev_y2 - prev_y1 - 28) // n_tracks)
+        for ti_b in range(n_tracks):
+            ty_b = prev_y1 + 10 + ti_b * (th_bar + 6)
+            prog_b = min(1.0, max(0.22, (choreo_u * 1.35) - ti_b * 0.12))
+            bw_b = int((dk_w - 64) * prog_b)
+            t_col = [primary_c, secondary_c, accent_c][ti_b % 3]
+            draw.rounded_rectangle([(dx1 + 32, ty_b), (dx1 + 32 + bw_b, ty_b + th_bar)], radius=5, fill=(*t_col, 240))
+
+        btn_x1, btn_y1, btn_x2, btn_y2 = cx - int(dk_w * 0.36), dy2 - 54, cx + int(dk_w * 0.36), dy2 - 12
         is_clicked = (choreo_u >= 0.62)
         btn_col = accent_c if is_clicked else primary_c
-        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=22, fill=(*btn_col, 255))
-        draw_contained_text_fn(draw, (btn_x1 + 14, btn_y1, btn_x2 - 14, btn_y2), f"✨ {kpi_val}", initial_font_size=16, fill=(255, 255, 255, 255))
+        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=21, fill=(*btn_col, 255))
+        btn_txt = "✔ AI STUDIO READY" if is_clicked else "✨ AI AUTO STUDIO"
+        draw_contained_text_fn(draw, (btn_x1 + 14, btn_y1, btn_x2 - 14, btn_y2), btn_txt, initial_font_size=15, fill=(255, 255, 255, 255))
 
-        _draw_bottom_speech_pills(dy2 + 16)
         draw_cursor_fn(draw, (btn_x2 + 20, btn_y2 + 30), (cx, (btn_y1 + btn_y2) // 2), choreo_u, accent_rgb=secondary_c)
         return img
 
@@ -1050,18 +1066,29 @@ def render_contextual_hero_illustration(
         return img
 
     # -------------------------------------------------------------------------
-    # 16. hero_cta_magnet_finale: مغناطيس الجذب التفاعلي وبطاقة الـ CTA
+    # 16. hero_cta_magnet_finale: خاتمة سينمائية متجددة (Web Vector / Crown Badge / Rocket Portal)
     # -------------------------------------------------------------------------
-    mag_r = int(min(st_w, st_h) * 0.22 * sp_main)
-    draw.arc([(cx - mag_r, cy - mag_r - 12), (cx + mag_r, cy + mag_r - 12)], start=0, end=180, fill=(244, 63, 94, 255), width=20)
-    draw.rectangle([(cx - mag_r, cy - mag_r - 28), (cx - mag_r + 20, cy - 12)], fill=(226, 232, 240, 255))
-    draw.rectangle([(cx + mag_r - 20, cy - mag_r - 28), (cx + mag_r, cy - 12)], fill=(226, 232, 240, 255))
+    if variant_id in (0, 1):
+        return render_web_fetched_motion_scene(
+            img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
+            style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
+            kpi_val=kpi_val, kpi_lbl=kpi_lbl, draw_contained_text_fn=draw_contained_text_fn,
+            draw_arabic_text_fn=draw_arabic_text_fn, get_font_fn=get_font_fn, draw_cursor_fn=draw_cursor_fn
+        )
+    portal_r = int(min(st_w, st_h) * 0.25 * sp_main)
+    for ri in range(3):
+        rr = portal_r + ri * 16
+        draw.ellipse([(cx - rr, cy - rr - 10), (cx + rr, cy + rr - 10)], outline=(*primary_c, max(45, 210 - ri * 65)), width=3)
+    draw.ellipse([(cx - portal_r, cy - portal_r - 10), (cx + portal_r, cy + portal_r - 10)], fill=(*primary_c, 240), outline=(255, 255, 255, 245), width=3)
+    ck_pts = [(cx - 24, cy - 8), (cx - 6, cy + 12), (cx + 28, cy - 24)]
+    draw.line(ck_pts, fill=(255, 255, 255, 255), width=7)
 
-    btn_w, btn_h = int(st_w * 0.78), 54
-    bx1, by1 = cx - btn_w // 2, cy + mag_r + 12
+    btn_w, btn_h = int(st_w * 0.72), 52
+    bx1, by1 = cx - btn_w // 2, cy + portal_r + 18
     bx2, by2 = bx1 + btn_w, by1 + btn_h
-    draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=27, fill=(*primary_c, 255), outline=(255, 255, 255, 235), width=2)
-    draw_contained_text_fn(draw, (bx1 + 16, by1, bx2 - 16, by2), f"🚀 {concept_title}", initial_font_size=18, fill=(255, 255, 255, 255))
+    draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=26, fill=(*accent_c, 255), outline=(255, 255, 255, 235), width=2)
+    cta_lbl = kpi_val if (kpi_val and kpi_val not in concept_title) else "✨ ابدأ الآن مجاناً"
+    draw_contained_text_fn(draw, (bx1 + 16, by1, bx2 - 16, by2), cta_lbl, initial_font_size=18, fill=(255, 255, 255, 255))
     draw_cursor_fn(draw, (bx2 - 12, by2 + 34), (cx, (by1 + by2) // 2), choreo_u, accent_rgb=secondary_c)
     return img
 
@@ -1154,8 +1181,8 @@ ARABIC_TO_ENGLISH_VISUAL_CONCEPTS: Dict[str, List[str]] = {
     "باطل": ["gift-sparkles", "tag-discount", "star-badge"],
     "اكموندي": ["shopping-cart", "cursor-click", "bag-check", "package-send"],
     "اطلب": ["shopping-bag", "mouse-pointer-click", "check-circle"],
-    "أهلاً": ["hand-wave", "sparkles", "user-star", "smile-badge"],
-    "السلام": ["hand-wave", "star-crescent", "sparkles", "globe"],
+    "أهلاً": ["sparkles", "rocket-growth", "star-badge", "crown-star"],
+    "السلام": ["sparkles", "rocket-growth", "lightbulb-idea", "dashboard-layout"],
     "أبني": ["hammer-wrench", "code-brackets", "blocks-build", "rocket"],
     "أحاول": ["compass", "target-bullseye", "lightbulb", "gear-cog"],
     "أغلب": ["users-group", "pie-chart", "globe-users"],
@@ -1233,7 +1260,12 @@ def translate_scene_to_web_vector_queries(scene_text_ar: str, fallback_topic: st
     clean_txt = re.sub(r"[،,.!؟?()\[\]\-\":؛]", " ", str(scene_text_ar or "")).strip()
     tokens = [t.strip() for t in clean_txt.split() if len(t.strip()) >= 2]
 
-    for tok in tokens:
+    # إعطاء الأولوية للكلمات الموضوعية الفعلية في الجملة على كلمات التحية الافتتاحية (مثل السلام عليكم)
+    greeting_set = {"السلام", "سلام", "عليكم", "أهلاً", "اهلا", "مرحبا", "صباح", "مساء"}
+    topic_tokens = [t for t in tokens if t.lower() not in greeting_set]
+    ordered_tokens = topic_tokens + [t for t in tokens if t.lower() in greeting_set]
+
+    for tok in ordered_tokens:
         tok_low = tok.lower()
         # مطابقة مباشرة أو جزئية في القاموس البصري
         if tok_low in ARABIC_TO_ENGLISH_VISUAL_CONCEPTS:
@@ -1850,11 +1882,10 @@ def render_web_fetched_motion_scene(
     bar_h = 52
     bx1 = cx - bar_w // 2
     by1 = cy + orbit_r + 24
-    if by1 + bar_h < st_y2 + 24 and choreo_u >= 0.20:
+    if by1 + bar_h < st_y2 + 24 and choreo_u >= 0.20 and kpi_lbl and (kpi_lbl not in concept_title) and (concept_title not in kpi_lbl):
         draw.rounded_rectangle([(bx1 + 2, by1 + 6), (bx1 + bar_w + 2, by1 + bar_h + 6)], radius=26, fill=(8, 10, 18, 65))
         draw.rounded_rectangle([(bx1, by1), (bx1 + bar_w, by1 + bar_h)], radius=26, fill=pod_bg, outline=(*primary_c, 225), width=2)
-        summary_line = kpi_lbl if (kpi_lbl and kpi_lbl != concept_title) else concept_title
-        draw_contained_text_fn(draw, (bx1 + 18, by1 + 6, bx1 + bar_w - 18, by1 + bar_h - 6), summary_line, initial_font_size=16, fill=(*txt_main, 255))
+        draw_contained_text_fn(draw, (bx1 + 18, by1 + 6, bx1 + bar_w - 18, by1 + bar_h - 6), kpi_lbl, initial_font_size=16, fill=(*txt_main, 255))
 
     return img
 

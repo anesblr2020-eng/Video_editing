@@ -976,16 +976,25 @@ def _draw_sticker_highlighted_headline(
                     gold_col = sticker_bg_color if sum(sticker_bg_color) < 700 else (217, 155, 28)
                     draw_arabic_text(draw, (w_cx, line_cy), w_str, font=f_obj, fill=(*gold_col, alpha_w))
                 else:
-                    sticker_sweep = min(1.0, max(0.15, _staggered_spring(scene_progress, delay=word_delay + 0.03, duration=0.36)))
-                    pad_y = max(5, int(wh * 0.22))
-                    eff_w = int(ww * sticker_sweep)
-                    rx1 = int(w_cx + ww // 2 - eff_w)
-                    rx2 = int(w_cx + ww // 2)
+                    sticker_sweep = min(1.0, max(0.88, _staggered_spring(scene_progress, delay=word_delay + 0.02, duration=0.32)))
+                    pad_x = max(14, int(f_sz * 0.42))
+                    pad_y = max(6, int(wh * 0.26))
+                    half_w = int((ww * 0.52 + pad_x) * sticker_sweep)
+                    rx1 = int(w_cx - half_w)
+                    rx2 = int(w_cx + half_w)
                     ry1 = int(line_cy - wh // 2 - pad_y)
                     ry2 = int(line_cy + wh // 2 + pad_y)
-                    draw.rounded_rectangle([(rx1, ry1 + 3), (rx2, ry2 + 3)], radius=12, fill=(0, 0, 0, int(38 * (alpha_w / 255.0))))
-                    draw.rounded_rectangle([(rx1, ry1), (rx2, ry2)], radius=12, fill=(*sticker_bg_color, alpha_w))
-                    draw_arabic_text(draw, (w_cx, line_cy), w_str, font=f_obj, fill=(*sticker_txt_color, alpha_w))
+                    draw.rounded_rectangle([(rx1, ry1 + 3), (rx2, ry2 + 3)], radius=14, fill=(0, 0, 0, int(45 * (alpha_w / 255.0))))
+                    draw.rounded_rectangle([(rx1, ry1), (rx2, ry2)], radius=14, fill=(*sticker_bg_color, alpha_w), outline=(255, 255, 255, int(90 * (alpha_w / 255.0))), width=1)
+                    # حساب التباين اللوني التلقائي لضمان عدم خروج حرف أبيض فوق خلفية فاتحة أبداً
+                    bg_luma = 0.299 * sticker_bg_color[0] + 0.587 * sticker_bg_color[1] + 0.114 * sticker_bg_color[2]
+                    safe_txt_col = (255, 255, 255) if bg_luma < 168 else (24, 24, 27)
+                    stroke_col = (24, 24, 27, alpha_w) if safe_txt_col == (255, 255, 255) else (255, 255, 255, int(alpha_w * 0.7))
+                    draw_arabic_text(
+                        draw, (w_cx, line_cy), w_str, font=f_obj,
+                        fill=(*safe_txt_col, alpha_w),
+                        stroke_width=1, stroke_fill=stroke_col
+                    )
             else:
                 draw_arabic_text(
                     draw, (w_cx, line_cy), w_str, font=f_obj,
@@ -1114,6 +1123,171 @@ def _render_unified_top_header(
         dots_start_x += dw_dot + 6
 
 
+
+_STORYBOARD_PANEL_CACHE: Dict[str, Image.Image] = {}
+
+
+def render_animated_storyboard_panel_scene(
+    img: Image.Image,
+    scene_meta: Dict[str, Any],
+    style_spec: Dict[str, Any],
+    scene_progress: float,
+    global_t: float,
+    choreo_u: float,
+    panel_info: Dict[str, Any]
+) -> Image.Image:
+    """
+    يحرك لوحة الستوري بورد المرفوعة من المستخدم (Single-Image Storyboard Panel) بعمق 2.5D سينمائي حي:
+    - لا يخترع أيقونات عشوائية من عنده، بل يبني المشهد 100% على رسمة الستوري بورد الخاصة بهذا المشهد!
+    - يفصل خلفية اللوحة عن العناصر الأمامية المرسومة (2.5D Foreground Subject Layer) ويحرك الكاميرا بنظام
+      Ken Burns (تقريب + تحريك نحو نقطة التركيز البصري Focal Point) مع طفو فيزيائي ولمعان ضوئي وتفاعل المؤشر.
+    """
+    w, h = img.size
+    cx = w // 2
+    step_num = int(scene_meta.get("step_number") or 1)
+    total_scenes = int(scene_meta.get("total_scenes_count") or 6)
+    concept_title = str(scene_meta.get("concept_title") or scene_meta.get("short_title") or "")
+    pal = panel_info.get("palette") or style_spec.get("palette", {})
+    is_light_bg = bool(pal.get("is_light_bg", True))
+    primary_c = tuple(pal.get("primary", (217, 155, 28)))[:3]
+    secondary_c = tuple(pal.get("secondary", (37, 99, 235)))[:3]
+    accent_c = tuple(pal.get("accent", (16, 185, 129)))[:3]
+    headline_txt_c = (24, 24, 27) if is_light_bg else (248, 250, 252)
+    sticker_bg_c = primary_c
+    sticker_txt_c = (255, 255, 255) if (0.299 * primary_c[0] + 0.587 * primary_c[1] + 0.114 * primary_c[2]) < 168 else (24, 24, 27)
+
+    panel_path = str(panel_info.get("panel_path", ""))
+    fg_path = str(panel_info.get("fg_path", ""))
+    focal_pt = panel_info.get("focal_point", [0.5, 0.5])
+    fx_norm, fy_norm = float(focal_pt[0]), float(focal_pt[1])
+
+    if not panel_path or not os.path.exists(panel_path):
+        return img
+
+    if panel_path not in _STORYBOARD_PANEL_CACHE:
+        if len(_STORYBOARD_PANEL_CACHE) >= 8:
+            _STORYBOARD_PANEL_CACHE.clear()
+        _STORYBOARD_PANEL_CACHE[panel_path] = Image.open(panel_path).convert("RGBA")
+    base_panel_pil = _STORYBOARD_PANEL_CACHE[panel_path]
+
+    fg_panel_pil = None
+    if fg_path and os.path.exists(fg_path):
+        if fg_path not in _STORYBOARD_PANEL_CACHE:
+            _STORYBOARD_PANEL_CACHE[fg_path] = Image.open(fg_path).convert("RGBA")
+        fg_panel_pil = _STORYBOARD_PANEL_CACHE[fg_path]
+
+    # 1. خلفية ضبابية غامرة مأخوذة من نفس لوحة الستوري بورد لملء الشاشة بانسجام بصري 100%
+    bg_fill = base_panel_pil.resize((w, h), Image.Resampling.BILINEAR).filter(ImageFilter.GaussianBlur(radius=26))
+    tint_col = (* tuple(pal.get("top_bg", (245, 242, 235)))[:3], 175 if is_light_bg else 195)
+    bg_overlay = Image.new("RGBA", (w, h), tint_col)
+    img = Image.alpha_composite(bg_fill, bg_overlay)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # 2. العنوان الحركي العلوي المتزامن مع الكلمات المنطوقة
+    kw_list = scene_meta.get("key_words") or []
+    hl_word = kw_list[0] if kw_list else ""
+    if concept_title:
+        _draw_sticker_highlighted_headline(
+            draw=draw,
+            bbox=(int(w * 0.06), int(h * 0.075), int(w * 0.94), int(h * 0.205)),
+            headline_text=concept_title,
+            highlight_word=hl_word,
+            headline_txt_color=headline_txt_c,
+            sticker_bg_color=sticker_bg_c,
+            sticker_txt_color=sticker_txt_c,
+            initial_font_size=max(24, int(h * 0.035)),
+            scene_progress=choreo_u,
+            global_t=global_t,
+            style_mode_hint="sticker_pill"
+        )
+
+    # 3. مسرح عرض لوحة الستوري بورد مع تحريك الكاميرا السينمائي (Ken Burns + Spring Reveal + 2.5D Parallax)
+    st_x1, st_y1 = int(w * 0.055), int(h * 0.22)
+    st_x2, st_y2 = int(w * 0.945), int(h * 0.79)
+    st_w, st_h = st_x2 - st_x1, st_y2 - st_y1
+
+    sp_in = _staggered_spring(choreo_u, delay=0.02, duration=0.40, stiffness=195.0, damping=14.0)
+    float_y = int(5.0 * math.sin(global_t * 2.4 + step_num))
+
+    # حساب أبعاد بطاقة اللوحة مع الحفاظ على نسبة أبعادها أو ملء المسرح بأناقة
+    pw0, ph0 = base_panel_pil.size
+    p_aspect = pw0 / float(max(1, ph0))
+    target_w = int(st_w * max(0.82, min(1.0, sp_in)))
+    target_h = int(target_w / max(0.45, min(1.85, p_aspect)))
+    if target_h > st_h:
+        target_h = int(st_h * max(0.82, min(1.0, sp_in)))
+        target_w = int(target_h * p_aspect)
+    target_w = max(140, min(st_w, target_w))
+    target_h = max(140, min(st_h, target_h))
+
+    card_x1 = cx - target_w // 2
+    card_y1 = (st_y1 + st_y2) // 2 - target_h // 2 + float_y + int(28 * (1.0 - min(1.0, sp_in)))
+    card_x2, card_y2 = card_x1 + target_w, card_y1 + target_h
+
+    # ظل ثلاثي الأبعاد ناعم تحت لوحة الستوري بورد
+    img = _draw_soft_elevated_card(
+        img, (card_x1 - 4, card_y1 - 4, card_x2 + 4, card_y2 + 4),
+        radius=26, fill_rgba=(255, 255, 255, 255) if is_light_bg else (18, 24, 38, 255),
+        shadow_offset_y=16, shadow_blur=20, shadow_alpha=65,
+        border_rgba=(*primary_c, 225)
+    )
+
+    # حركة كاميرا Ken Burns داخل اللوحة (تقريب سلس نحو نقطة التركيز البصري Focal Point)
+    cam_zoom = 1.0 + 0.14 * _ease_out_cubic(min(1.0, choreo_u * 1.15))
+    zw, zh = int(round(target_w * cam_zoom)), int(round(target_h * cam_zoom))
+    panel_resized = base_panel_pil.resize((zw, zh), Image.Resampling.BICUBIC)
+
+    pan_u = _ease_out_cubic(min(1.0, max(0.0, (choreo_u - 0.08) / 0.82)))
+    crop_cx = int(zw * (0.5 + (fx_norm - 0.5) * 0.45 * pan_u))
+    crop_cy = int(zh * (0.5 + (fy_norm - 0.5) * 0.45 * pan_u))
+    cx0 = max(0, min(zw - target_w, crop_cx - target_w // 2))
+    cy0 = max(0, min(zh - target_h, crop_cy - target_h // 2))
+    panel_cropped = panel_resized.crop((cx0, cy0, cx0 + target_w, cy0 + target_h))
+
+    #4. تحريك الطبقة الأمامية المفرغة (2.5D Foreground Subject Layer) بعمق بارالاكس مستقل!
+    if fg_panel_pil is not None and choreo_u >= 0.12:
+        fg_sp = _staggered_spring(choreo_u, delay=0.12, duration=0.42, stiffness=205.0, damping=13.0)
+        fg_zoom = cam_zoom * (1.0 + 0.065 * min(1.12, fg_sp))
+        fzw, fzh = int(round(target_w * fg_zoom)), int(round(target_h * fg_zoom))
+        fg_resized = fg_panel_pil.resize((fzw, fzh), Image.Resampling.BICUBIC)
+        fcx0 = max(0, min(fzw - target_w, int(fzw * (0.5 + (fx_norm - 0.5) * 0.45 * pan_u)) - target_w // 2))
+        fcy0 = max(0, min(fzh - target_h, int(fzh * (0.5 + (fy_norm - 0.5) * 0.45 * pan_u)) - target_h // 2))
+        fg_cropped = fg_resized.crop((fcx0, fcy0, fcx0 + target_w, fcy0 + target_h))
+        panel_cropped = Image.alpha_composite(panel_cropped, fg_cropped)
+
+    # تطبيق زوايا دائرية ناعمة ولمعان ضوئي سينمائي (Light Sweep) فوق اللوحة
+    mask_round = Image.new("L", (target_w, target_h), 0)
+    ImageDraw.Draw(mask_round).rounded_rectangle([(0, 0), (target_w - 1, target_h - 1)], radius=22, fill=255)
+    img.paste(panel_cropped, (card_x1, card_y1), mask_round)
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # حلقة تركيز ضوئية ناعمة حول العنصر الرئيسي في اللوحة + مؤشر اليد التفاعلي
+    focus_screen_x = card_x1 + int(target_w * fx_norm)
+    focus_screen_y = card_y1 + int(target_h * fy_norm)
+    if 0.22 <= choreo_u <= 0.88:
+        pulse_r = int(26 + 14 * math.sin(global_t * 5.2))
+        ring_alpha = int(150 * math.sin(min(1.0, (choreo_u - 0.22) / 0.66) * math.pi))
+        draw.ellipse(
+            [(focus_screen_x - pulse_r, focus_screen_y - pulse_r), (focus_screen_x + pulse_r, focus_screen_y + pulse_r)],
+            outline=(*primary_c, max(0, ring_alpha)), width=3
+        )
+
+    # شارة رقم لوحة الستوري بورد الأنيقة في الزاوية
+    badge_txt = f"Storyboard #{panel_info.get('panel_index', 0) + 1:02d}"
+    draw.rounded_rectangle([(card_x1 + 14, card_y1 + 14), (card_x1 + 152, card_y1 + 44)], radius=15, fill=(15, 23, 42, 210), outline=(*primary_c, 220), width=1)
+    bf = get_arabic_font(13, bold=True)
+    draw_arabic_text(draw, (card_x1 + 83, card_y1 + 29), badge_txt, font=bf, fill=(255, 255, 255, 245))
+
+    _draw_cursor_with_ripple(
+        draw,
+        (card_x2 - 24, card_y2 + 28),
+        (focus_screen_x, focus_screen_y),
+        choreo_u,
+        accent_rgb=primary_c
+    )
+    return img
+
+
 def _render_dynamic_archetype_stage(
     img: Image.Image,
     scene_meta: Dict[str, Any],
@@ -1161,6 +1335,26 @@ def _render_dynamic_archetype_stage(
     n_words = max(1, len(sc_w_list))
     word_sync_u = min(1.0, max(0.0, (float(active_word_idx) + float(word_local_progress)) / float(n_words)))
     choreo_u = min(1.0, max(0.0, 0.48 * float(scene_progress) + 0.52 * word_sync_u))
+
+    # فحص وضع الستوري بورد المرفوع من المستخدم (Single-Image Storyboard Mode):
+    # إذا رفع المستخدم صورة ستوري بورد، يحرك النظام لوحات الستوري بورد مباشرةً بعمق 2.5D دون اختراع أشكال عشوائية!
+    try:
+        from style_evolution_brain import get_active_storyboard_state
+        sb_state = get_active_storyboard_state()
+        if sb_state.get("enabled") and sb_state.get("panels"):
+            sb_panels = sb_state["panels"]
+            p_idx = min(len(sb_panels) - 1, int((max(1, step_num) - 1) * len(sb_panels) / max(1, min(total_scenes, 24))))
+            return render_animated_storyboard_panel_scene(
+                img=img,
+                scene_meta=scene_meta,
+                style_spec=style_spec,
+                scene_progress=scene_progress,
+                global_t=global_t,
+                choreo_u=choreo_u,
+                panel_info=sb_panels[p_idx]
+            )
+    except Exception:
+        pass
 
     primary_c = tuple(pal.get("primary", (217, 155, 28)))
     secondary_c = tuple(pal.get("secondary", (37, 99, 235)))
@@ -2135,6 +2329,16 @@ def _resolve_active_theme_and_style(scene_meta: Dict[str, Any]) -> Tuple[str, Di
         logo_path = brand.get("logo_path") if brand.get("show_logo_watermark", True) else None
         logo_pos = str(brand.get("logo_position") or "top_right")
         return t_name, theme, is_light, logo_path, logo_pos
+
+    spec = scene_meta.get("scene_style_spec")
+    if isinstance(spec, dict) and isinstance(spec.get("palette"), dict):
+        pal = spec["palette"]
+        t_name = str(spec.get("style_family_id") or scene_meta.get("theme_name") or "studio_active")
+        MOTION_THEMES[t_name] = pal
+        is_light = bool(pal.get("is_light_bg", False))
+        logo_path = scene_meta.get("brand_logo_path")
+        logo_pos = str(scene_meta.get("brand_logo_position") or "top_right")
+        return t_name, pal, is_light, logo_path, logo_pos
 
     t_name = str(scene_meta.get("theme_name") or "cyber_gold")
     theme = MOTION_THEMES.get(t_name, MOTION_THEMES["cyber_gold"])

@@ -617,27 +617,19 @@ class WebMotionLearner:
                     if len(phrase) >= 4 and phrase not in sub_items:
                         sub_items.append(phrase)
         else:
-            # في الكلام غير التعدادي، نكتفي بخلاصة الفكرة دون تقطيع الجملة إلى 4 عناصر عشوائية!
-            if len(meaningful_tokens) >= 6:
-                half = len(meaningful_tokens) // 2
-                p1 = " ".join(meaningful_tokens[:half]).strip()
-                p2 = " ".join(meaningful_tokens[half:]).strip()
-                if len(p1) >= 4 and p1 != concept_title:
-                    sub_items.append(p1)
-                if len(p2) >= 4 and p2 != concept_title and p2 not in sub_items:
-                    sub_items.append(p2)
-            elif len(meaningful_tokens) >= 3:
-                p_tail = " ".join(meaningful_tokens[-3:]).strip()
-                if p_tail != concept_title:
-                    sub_items.append(p_tail)
+            # في الكلام غير التعدادي، لا نقطع نفس الجملة ونكررها في كروت جانبية وسفلية!
+            if len(meaningful_tokens) > 5:
+                rem_phrase = " ".join(meaningful_tokens[5:8]).strip()
+                if len(rem_phrase) >= 3:
+                    sub_items.append(rem_phrase)
 
-        # استخراج أي رقم أو نسبة أو مؤشر منطوق فعلياً في الجملة
+        # استخراج أي رقم أو نسبة منطوقة فعلياً، وإلا نضع مؤشراً بصرياً احترافياً مختصراً بدون تكرار كلمات العنوان!
         num_m = re.search(r"(\d+\s*(?:%|ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات|ولاية|خصائص|ميزات|أضعاف|مرات)?)", scene_text or "")
         if num_m:
             kpi_value = num_m.group(1).strip()
         else:
-            kpi_value = " ".join(meaningful_tokens[:2]) if len(meaningful_tokens) >= 2 else meaningful_tokens[0]
-        kpi_label = " ".join(meaningful_tokens[-2:]) if len(meaningful_tokens) >= 3 else concept_title
+            kpi_value = ""
+        kpi_label = " ".join(meaningful_tokens[5:8]).strip() if len(meaningful_tokens) > 5 else ""
 
         rot_seed = int(self.learned_genome.get("total_videos_learned", 0)) + int(time.time()) % 997
         arch, vis_subj = match_speech_to_visual_archetype(
@@ -1103,6 +1095,12 @@ def analyze_contextual_storyboard(
                     if sc.get("archetype"):
                         style_plan[idx]["visual_archetype"] = sc["archetype"]
                     sc["scene_style_spec"] = style_plan[idx]
+                    fam_id = str(style_plan[idx].get("style_family_id") or "haamza_15s_cinema")
+                    sc["theme_name"] = fam_id
+                    if isinstance(style_plan[idx].get("palette"), dict):
+                        import motion_text
+                        motion_text.MOTION_THEMES[fam_id] = dict(style_plan[idx]["palette"])
+                        sc["style_mode"] = "clean_saas_light" if style_plan[idx]["palette"].get("is_light_bg") else "dark_stage_pro"
                     sc["step_number"] = idx + 1
                     sc["total_scenes_count"] = len(enriched_scenes)
         except Exception as sp_err:
@@ -1123,18 +1121,21 @@ def analyze_contextual_storyboard(
                 sc.setdefault("accent_glow", float(evolved_p.get("accent_glow", 0.28)))
                 sc.setdefault("spring_stiffness", float(evolved_p.get("spring_stiffness", 195.0)))
                 sc.setdefault("spring_damping", float(evolved_p.get("spring_damping", 14.0)))
+                # لا نفرض ثيم الفيديو المرجعي إلا إذا كان الوضع النشط هو clone_reference، أما في الوضع التلقائي فيأخذ كل فيديو ثيمه الموحد المتجدد!
+                active_mode_now = str(mem.get("active_studio_style_mode") or "auto_vary_pro")
                 if isinstance(active_dna, dict) and active_dna.get("enabled", True):
-                    if active_dna.get("theme_name"):
-                        sc["theme_name"] = active_dna["theme_name"]
-                        if "theme_palette" in active_dna:
-                            import motion_text
-                            motion_text.MOTION_THEMES[active_dna["theme_name"]] = active_dna["theme_palette"]
-                    if active_dna.get("style_mode"):
-                        sc["style_mode"] = active_dna["style_mode"]
                     if active_dna.get("handoff_duration_sec"):
                         sc["handoff_duration_sec"] = float(active_dna["handoff_duration_sec"])
                     if active_dna.get("stagger_delay_sec"):
                         sc["stagger_delay_sec"] = float(active_dna["stagger_delay_sec"])
+                    if active_mode_now == "clone_reference" and not active_dna.get("one_shot_consumed", False):
+                        if active_dna.get("theme_name"):
+                            sc["theme_name"] = active_dna["theme_name"]
+                            if "theme_palette" in active_dna:
+                                import motion_text
+                                motion_text.MOTION_THEMES[active_dna["theme_name"]] = active_dna["theme_palette"]
+                        if active_dna.get("style_mode"):
+                            sc["style_mode"] = active_dna["style_mode"]
                 if isinstance(active_brand, dict) and active_brand.get("enabled", True):
                     if active_brand.get("theme_name"):
                         sc["theme_name"] = active_brand["theme_name"]

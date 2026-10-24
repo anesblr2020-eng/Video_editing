@@ -878,19 +878,28 @@ with col2:
             extract_brand_palette_from_image,
             apply_custom_brand_colors,
             get_active_brand_theme,
-            clear_active_brand_theme
+            clear_active_brand_theme,
+            reset_sticky_reference_lock_and_enable_auto_rotation
         )
 
+        # إذا كان النظام عالقاً من جلسة سابقة على ثيم ثابت أو مرجع قديم، نعيده تلقائياً عند فتح الصفحة لوضع التنويع التلقائي لكل فيديو!
+        if "initialized_auto_vary_session" not in st.session_state:
+            reset_sticky_reference_lock_and_enable_auto_rotation()
+            st.session_state["initialized_auto_vary_session"] = True
+
         studio_mode_map = {
+            "🎲 تنويع تلقائي ذكي: ثيم احترافي موحد ومختلف لكل فيديو جديد (Auto-Rotate Theme Per Video - موصى به)": "auto_vary_pro",
             "🌟 ستايل المونتاج السينمائي الفاخر 15s (تدرج كريمي دافئ بدون مربعات • انتقالات سلسة وموشن 3D)": "haamza_15s_cinema",
-            "🎲 اختيار ستايل احترافي عشوائي موحد لكل فيديو جديد (Auto-Pick Cohesive Style Per Video)": "auto_vary_pro",
-            "🎯 تطبيق ستايل ورسومات وأنيميشن الفيديو المرجعي المستنسخ (Cloned Reference Video)": "clone_reference",
             "🎬 ستايل وكالة السيان والكحلي الاحترافي (بطاقات بيضاء مائلة وستيكر نصي)": "byw_cyan_agency",
             "📐 ستايل المخطط الهندسي السماوي (إطارات تحديد ذكية ورسومات مشرقة)": "mazen_blueprint_collage",
             "🟣 ستايل مختبر الإعلانات البنفسجي الفاخر (تبويبات علوية وواجهات داكنة)": "baghdadi_luxury_plum",
             "🌿 ستايل الفينتك الزمردي الداكن (مخططات مالية وتقارير أداء)": "emerald_fintech_mint",
             "👑 ستايل الكوبالت الملكي والذهبي السينمائي": "royal_cobalt_gold",
-            "🔥 ستايل الإديتوريال المرجاني الدافئ": "sunset_coral_editorial"
+            "🔥 ستايل الإديتوريال المرجاني الدافئ": "sunset_coral_editorial",
+            "⚡ ستايل الأوبسيديان النيون السيبراني (خلفية كربونية داكنة مع سيان وأرجواني)": "obsidian_neon_cyber",
+            "❄️ ستايل القطب الفضي والإنديجو المشرق (خلفية ثلجية ناعمة مع نيلي ملكي)": "arctic_indigo_minimal",
+            "☕ ستايل الموكا والكهرباء الدافئ (خلفية إسبريسو سينمائية مع برتقالي وذهبي)": "mocha_amber_cinema",
+            "🎯 تطبيق ثيم الفيديو المرجعي المستنسخ (للفيديو الحالي فقط ثم يعود للتنويع التلقائي)": "clone_reference"
         }
 
         cur_studio_mode = get_active_studio_style_mode()
@@ -902,13 +911,22 @@ with col2:
                 break
 
         selected_studio_label = st.selectbox(
-            "اختر ستايل الفيديو (يُطبق كستايل موحد ومتناسق على كامل الفيديو):",
+            "اختر نظام ثيم الفيديو (في الوضع الأول يختار النظام ثيماً موحداً جديداً ومختلفاً لكل فيديو تصنعه):",
             options=mode_labels,
             index=def_mode_idx,
             key="main_studio_style_mode_selector"
         )
         chosen_studio_mode_code = studio_mode_map[selected_studio_label]
         set_active_studio_style_mode(chosen_studio_mode_code)
+
+        mem_now = load_evolution_memory()
+        last_th = mem_now.get("last_used_video_style_id")
+        cloned_count = len(mem_now.get("cloned_reference_styles", {}))
+        if chosen_studio_mode_code == "auto_vary_pro":
+            st.caption(
+                f"✅ **التنويع التلقائي بين الفيديوهات مفعّل:** يمتلك النظام الآن `{10 + cloned_count}` ثيمات استوديو احترافية (بما فيها الثيمات المتعلمة من مراجعك). "
+                f"كل فيديو جديد تصنعه سيحصل تلقائياً على ثيم موحد مختلف تماماً عن الفيديو الذي قبله (`آخر ثيم استُخدم: {last_th or 'لا يوجد بعد'}`)."
+            )
 
         st.markdown("**📹 أو ارفع فيديو مرجعي لنسخ أشكاله ورسوماته وأنيميشن التحريك وتطبيقها على الفيديو/التعليق الصوتي:**")
         ref_vid_uploaded = st.file_uploader(
@@ -927,18 +945,118 @@ with col2:
                     shutil.copyfileobj(ref_vid_uploaded, rf, length=524288)
                 force_free_ram()
 
-            # زر واحد فقط تحت الفيديو المرجعي ينسخ الأشكال والرسومات والأنيميشن والتحريك ويطبقها
-            if st.button("🎯 نسخ الفيديو المرجعي وتطبيق نفس الأشكال والرسومات والأنيميشن والتحريك على مشروعي", use_container_width=True):
-                with st.spinner("🔬 جاري استخراج الأشكال والرسومات وفيزياء الأنيميشن والتحريك من الفيديو المرجعي..."):
-                    dna = extract_reference_video_dna(ref_save_path_ready, style_alias=f"ref_{ref_hash}")
-                    set_active_studio_style_mode("clone_reference")
-                    st.session_state["last_cloned_ref_hash"] = ref_hash
-                st.success(
-                    f"✅ **تم نسخ أشكال ورسومات وأنيميشن الفيديو المرجعي بنجاح!**\n"
-                    f"- الهوية المستخرجة: **{dna.get('detected_family_label_ar', dna.get('detected_design_family'))}**\n"
-                    f"- أنماط الرسومات المستنسخة: `{len(dna.get('cloned_archetype_sequence', []))}` أنماط تفاعلية | فيزياء الحركة: `{dna['spring_stiffness']}`"
-                )
+            ref_b_col1, ref_b_col2 = st.columns([1.8, 1.2])
+            with ref_b_col1:
+                if st.button("🎯 استخراج ثيم وأشكال الفيديو المرجعي (يُطبق للفيديو الحالي ويُضاف لسلة التنويع)", use_container_width=True):
+                    with st.spinner("🔬 جاري استخراج الأشكال والرسومات وفيزياء الأنيميشن والتحريك من الفيديو المرجعي..."):
+                        dna = extract_reference_video_dna(ref_save_path_ready, style_alias=f"ref_{ref_hash}")
+                        set_active_studio_style_mode("clone_reference")
+                        st.session_state["last_cloned_ref_hash"] = ref_hash
+                    st.success(
+                        f"✅ **تم استخراج ثيم وأشكال الفيديو المرجعي!** سيُطبق على الفيديو القادم ثم يعود النظام تلقائياً للتنويع في الفيديوهات التي بعده.\n"
+                        f"- الهوية المستخرجة: **{dna.get('detected_family_label_ar', dna.get('detected_design_family'))}**"
+                    )
+                    st.rerun()
+            with ref_b_col2:
+                if st.button("🔄 إلغاء قفل المرجع والعودة للتنويع التلقائي", use_container_width=True):
+                    reset_sticky_reference_lock_and_enable_auto_rotation()
+                    st.success("✅ تم فك القفل! كل فيديو جديد سيأخذ ثيماً مختلفاً عن الفيديو الذي بعده.")
+                    st.rerun()
+
+
+    # ==========================================================================
+    # القسم 3.5: خانة رفع صورة ستوري بورد كاملة (Single-Image Storyboard Animator)
+    # ==========================================================================
+    with st.expander("📋 3.5 جديد: رفع صورة ستوري بورد (Storyboard في صورة واحدة) لتحريكها وبناء الفيديو عليها مباشرةً (بدون اختراع رسومات عشوائية)", expanded=True):
+        from style_evolution_brain import (
+            analyze_and_slice_storyboard_sheet,
+            get_active_storyboard_state,
+            clear_active_storyboard_state
+        )
+        st.caption(
+            "🎯 **ميزة التحريك المباشر للستوري بورد:** ارفع صورة واحدة تحتوي على الستوري بورد الخاص بالفيديو (مثلاً شبكة مشاهد 2×2 أو 2×3 أو 3×2 أو 3×3)، "
+            "وسيقوم النظام تلقائياً بتحليلها وقص لوحاتها بالترتيب، وفصل طبقاتها بعمق **2.5D Parallax** وتحريكها مع الكاميرا والمؤثرات الصوتية والكابشن "
+            "**دون أن يخترع أي أشكال أو رسومات عشوائية من عنده!**"
+        )
+
+        sb_state_now = get_active_storyboard_state()
+        if sb_state_now.get("enabled") and sb_state_now.get("panels"):
+            st.success(
+                f"✅ **وضع تحريك الستوري بورد مفعّل حالياً!** تم استخراج `{len(sb_state_now['panels'])}` مشاهد/لوحات من صورة الستوري بورد "
+                f"(الشبكة: `{sb_state_now.get('grid_shape', [0, 0])[0]}×{sb_state_now.get('grid_shape', [0, 0])[1]}`). "
+                "سيتم بناء الفيديو القادم بالكامل من لوحات الستوري بورد المرفوعة!"
+            )
+            sb_preview_cols = st.columns(min(4, max(1, len(sb_state_now["panels"]))))
+            for p_i, p_meta in enumerate(sb_state_now["panels"][:8]):
+                with sb_preview_cols[p_i % len(sb_preview_cols)]:
+                    if os.path.exists(str(p_meta.get("panel_path", ""))):
+                        st.image(p_meta["panel_path"], caption=f"مشهد #{p_i + 1}", use_container_width=True)
+            if st.button("🗑️ إلغاء وضع الستوري بورد والعودة لتوليد الموشن جرافيك التلقائي", use_container_width=True, key="btn_clear_storyboard_mode"):
+                clear_active_storyboard_state()
+                st.info("تم إيقاف وضع الستوري بورد والعودة للتوليد الديناميكي المتنوع.")
                 st.rerun()
+
+        sb_uploaded_img = st.file_uploader(
+            "📸 ارفع صورة الستوري بورد الكاملة هنا (PNG, JPG, JPEG, WEBP):",
+            type=["png", "jpg", "jpeg", "webp"],
+            key="single_image_storyboard_uploader"
+        )
+
+        sb_col1, sb_col2 = st.columns(2)
+        with sb_col1:
+            sb_grid_choice = st.selectbox(
+                "تخطيط شبكة اللوحات في الصورة:",
+                options=[
+                    "🔍 اكتشاف تلقائي ذكي للفواصل واللوحات (Auto-Detect Grid)",
+                    "2×2 (4 مشاهد)",
+                    "2×3 (6 مشاهد - صفين × 3 أعمدة)",
+                    "3×2 (6 مشاهد - 3 صفوف × عمودين)",
+                    "3×3 (9 مشاهد)",
+                    "4×2 (8 مشاهد)",
+                    "1×4 (4 مشاهد أفقية)",
+                    "4×1 (4 مشاهد عمودية)",
+                    "1×1 (لوحة ستوري بورد واحدة شاملة)"
+                ],
+                index=0,
+                key="sb_grid_layout_selector"
+            )
+        with sb_col2:
+            sb_order_choice = st.selectbox(
+                "ترتيب قراءة مشاهد الستوري بورد:",
+                options=[
+                    "من اليمين لليسار (RTL - عربي) ⬅️",
+                    "من اليسار لليمين (LTR - إنجليزي) ➡️"
+                ],
+                index=0,
+                key="sb_reading_order_selector"
+            )
+
+        if sb_uploaded_img is not None:
+            sb_hash = hashlib.md5(f"{sb_uploaded_img.name}_{getattr(sb_uploaded_img, 'size', 0)}".encode()).hexdigest()[:8]
+            sb_ext = os.path.splitext(sb_uploaded_img.name)[1].lower() or ".png"
+            sb_save_path = os.path.join(INPUTS_DIR, f"storyboard_sheet_{sb_hash}{sb_ext}")
+            if not os.path.exists(sb_save_path):
+                sb_uploaded_img.seek(0)
+                with open(sb_save_path, "wb") as sbf:
+                    shutil.copyfileobj(sb_uploaded_img, sbf)
+
+            if st.button("🎬 تحليل وتقطيع صورة الستوري بورد وتفعيل التحريك 2.5D عليها", use_container_width=True, key="btn_activate_storyboard_sheet"):
+                forced_g = None
+                m_grid = re.match(r"^(\d+)×(\d+)", sb_grid_choice.strip())
+                if m_grid:
+                    forced_g = (int(m_grid.group(1)), int(m_grid.group(2)))
+                r_order = "rtl" if "اليمين" in sb_order_choice else "ltr"
+                with st.spinner("🔬 جاري تحليل صورة الستوري بورد وفصل اللوحات والطبقات الأمامية (2.5D Parallax)..."):
+                    sb_res = analyze_and_slice_storyboard_sheet(
+                        image_path=sb_save_path,
+                        reading_order=r_order,
+                        forced_grid=forced_g
+                    )
+                if sb_res.get("ok"):
+                    st.success(f"🎉 {sb_res.get('message')}")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {sb_res.get('message')}")
 
     # ==========================================================================
     # القسم 4: اللوقو وألوان الهوية البصرية المخصصة (اختياري)
@@ -1209,12 +1327,14 @@ if start_btn:
     else:
         clear_custom_caption_override()
 
-        # إذا رفع المستخدم فيديو مرجعي وضغط زر البدء مباشرة، نستنسخ الفيديو المرجعي تلقائياً
+        # ملاحظة: لا نقفل النظام تلقائياً على الفيديو المرجعي عند الضغط على زر البدء إلا إذا اختار المستخدم ذلك صراحةً،
+        # بل نضيف الفيديو المرجعي (إن لم يُقرأ بعد) إلى سلة الثيمات المتعلمة مع بقاء التنويع التلقائي بين الفيديوهات نشطاً!
         if ref_save_path_ready and os.path.exists(ref_save_path_ready):
             ref_h = os.path.basename(ref_save_path_ready)
             if st.session_state.get("last_cloned_ref_hash") != ref_h:
                 extract_reference_video_dna(ref_save_path_ready, style_alias=f"ref_{ref_h[:8]}")
-                set_active_studio_style_mode("clone_reference")
+                if chosen_studio_mode_code != "clone_reference":
+                    reset_sticky_reference_lock_and_enable_auto_rotation()
                 st.session_state["last_cloned_ref_hash"] = ref_h
 
         if auto_optimize and media_analysis is not None:

@@ -870,6 +870,150 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "headline_txt": (255, 255, 255)
             }
         }
+    },
+    "obsidian_neon_cyber": {
+        "style_id": "obsidian_neon_cyber",
+        "label_ar": "⚡ ستايل الأوبسيديان النيون السيبراني (خلفية كربونية داكنة مع سيان وأرجواني متوهج)",
+        "design_family": "obsidian_neon_cyber",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "step_dots_pill",
+        "headline_style": "sticker_highlight",
+        "card_tilt_deg": 1.4,
+        "preferred_archetypes": [
+            "web_dynamic_scene", "hero_ai_neural_core", "hero_smartphone_reels",
+            "dark_cinema_fanned_cards", "bezier_growth_nodes", "radar_target_sweep"
+        ],
+        "unified_palette": {
+            "top_bg": (10, 14, 26),
+            "bottom_bg": (22, 28, 52),
+            "glow": (6, 182, 212),
+            "primary": (6, 182, 212),
+            "secondary": (236, 72, 153),
+            "accent": (16, 185, 129),
+            "card_bg": (20, 26, 46),
+            "is_light_bg": False,
+            "sticker_bg": (6, 182, 212),
+            "sticker_txt": (10, 14, 26),
+            "headline_txt": (255, 255, 255)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (10, 14, 26), "bottom_bg": (22, 28, 52), "glow": (6, 182, 212),
+                "primary": (6, 182, 212), "secondary": (236, 72, 153), "accent": (16, 185, 129),
+                "card_bg": (20, 26, 46), "is_light_bg": False, "sticker_bg": (6, 182, 212),
+                "sticker_txt": (10, 14, 26), "headline_txt": (255, 255, 255)
+            },
+            "body_steps": {
+                "top_bg": (10, 14, 26), "bottom_bg": (22, 28, 52), "glow": (6, 182, 212),
+                "primary": (6, 182, 212), "secondary": (236, 72, 153), "accent": (16, 185, 129),
+                "card_bg": (20, 26, 46), "is_light_bg": False, "sticker_bg": (6, 182, 212),
+                "sticker_txt": (10, 14, 26), "headline_txt": (255, 255, 255)
+            },
+            "outro_finale": {
+                "top_bg": (10, 14, 26), "bottom_bg": (22, 28, 52), "glow": (6, 182, 212),
+                "primary": (6, 182, 212), "secondary": (236, 72, 153), "accent": (16, 185, 129),
+                "card_bg": (20, 26, 46), "is_light_bg": False, "sticker_bg": (236, 72, 153),
+                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
+            }
+        }
+    },
+    "arctic_indigo_minimal": {
+        "style_id": "arctic_indigo_minimal",
+        "label_ar": "❄️ ستايل القطب الفضي والإنديجو المشرق (خلفية ثلجية ناعمة مع نيلي ملكي وبنفسجي)",
+        "design_family": "arctic_indigo_minimal",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "none_clean",
+        "headline_style": "sticker_highlight",
+        "card_tilt_deg": 1.0,
+        "preferred_archetypes": [
+            "web_dynamic_scene", "hero_platform_workspace", "hero_viral_rocket_chart",
+            "pack_3d_extruding_pillars", "reels_6card_showcase_grid", "bezier_growth_nodes"
+        ],
+        "unified_palette": {
+            "top_bg": (241, 245, 249),
+            "bottom_bg": (224, 231, 255),
+            "glow": (79, 70, 229),
+            "primary": (79, 70, 229),
+            "secondary": (14, 165, 233),
+            "accent": (16, 185, 129),
+            "card_bg": (255, 255, 255),
+            "is_light_bg": True,
+            "sticker_bg": (79, 70, 229),
+            "sticker_txt": (255, 255, 255),
+            "headline_txt": (15, 23, 42)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (79, 70, 229),
+                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+            },
+            "body_steps": {
+                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (79, 70, 229),
+                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+            },
+            "outro_finale": {
+                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (14, 165, 233),
+                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+            }
+        }
+    },
+    "mocha_amber_cinema": {
+        "style_id": "mocha_amber_cinema",
+        "label_ar": "☕ ستايل الموكا والكهرباء الدافئ (خلفية إسبريسو سينمائية مع برتقالي كهرماني وذهبي)",
+        "design_family": "mocha_amber_cinema",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "none_clean",
+        "headline_style": "sticker_highlight",
+        "card_tilt_deg": 1.5,
+        "preferred_archetypes": [
+            "web_dynamic_scene", "hero_camera_production", "hero_sound_wave_mixer",
+            "dark_cinema_fanned_cards", "pack_3d_extruding_pillars", "kinetic_quote_dm_finale"
+        ],
+        "unified_palette": {
+            "top_bg": (28, 19, 16),
+            "bottom_bg": (54, 34, 24),
+            "glow": (245, 158, 11),
+            "primary": (245, 158, 11),
+            "secondary": (56, 189, 248),
+            "accent": (16, 185, 129),
+            "card_bg": (40, 27, 22),
+            "is_light_bg": False,
+            "sticker_bg": (245, 158, 11),
+            "sticker_txt": (24, 16, 12),
+            "headline_txt": (255, 251, 235)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (28, 19, 16), "bottom_bg": (54, 34, 24), "glow": (245, 158, 11),
+                "primary": (245, 158, 11), "secondary": (56, 189, 248), "accent": (16, 185, 129),
+                "card_bg": (40, 27, 22), "is_light_bg": False, "sticker_bg": (245, 158, 11),
+                "sticker_txt": (24, 16, 12), "headline_txt": (255, 251, 235)
+            },
+            "body_steps": {
+                "top_bg": (28, 19, 16), "bottom_bg": (54, 34, 24), "glow": (245, 158, 11),
+                "primary": (245, 158, 11), "secondary": (56, 189, 248), "accent": (16, 185, 129),
+                "card_bg": (40, 27, 22), "is_light_bg": False, "sticker_bg": (245, 158, 11),
+                "sticker_txt": (24, 16, 12), "headline_txt": (255, 251, 235)
+            },
+            "outro_finale": {
+                "top_bg": (28, 19, 16), "bottom_bg": (54, 34, 24), "glow": (245, 158, 11),
+                "primary": (245, 158, 11), "secondary": (56, 189, 248), "accent": (16, 185, 129),
+                "card_bg": (40, 27, 22), "is_light_bg": False, "sticker_bg": (56, 189, 248),
+                "sticker_txt": (15, 23, 42), "headline_txt": (255, 251, 235)
+            }
+        }
     }
 }
 
@@ -974,6 +1118,21 @@ def _select_non_repeating_archetype_sequence(
     return seq
 
 
+def reset_sticky_reference_lock_and_enable_auto_rotation() -> Dict[str, Any]:
+    """
+    يلغي قفل الفيديو المرجعي الثابت ويعيد النظام إلى وضع التنويع التلقائي (`auto_vary_pro`)
+    بحيث يأخذ كل فيديو جديد ثيماً/ستايلاً مختلفاً عن الفيديو الذي سبقه، مع الاحتفاظ بالثيمات المستخرجة
+    داخل سلة التناوب التلقائي!
+    """
+    mem = load_evolution_memory()
+    mem["active_studio_style_mode"] = "auto_vary_pro"
+    if isinstance(mem.get("active_reference_dna"), dict):
+        mem["active_reference_dna"]["one_shot_consumed"] = True
+        mem["active_reference_dna"]["sticky_lock"] = False
+    save_evolution_memory(mem)
+    return mem
+
+
 def build_dynamic_scene_style_assignment(
     num_scenes: int,
     force_style_mode: Optional[str] = None,
@@ -981,40 +1140,47 @@ def build_dynamic_scene_style_assignment(
     scenes: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
-    يبني خطة التصميم البصري والأنيميشن لكل مشهد في الفيديو مع ضمان **وحدة الستايل والهوية البصرية طوال الفيديو الواحد**:
-    - لا يتم أبداً خلط خلفيات متضاربة (مثل أزرق فاتح ثم بنفسجي داكن ثم أخضر) داخل نفس الفيديو!
-    - في وضع `auto_vary_pro`: يتم اختيار **ستايل واحد متكامل** لكامل الفيديو الحالي، وفي الفيديو القادم ينتقل العداد
-      ليختار ستايلاً جديداً للفيديو الجديد.
-    - في وضع `clone_reference`: يطبق ألوان وأشكال ورسومات وفيزياء حركة الفيديو المرجعي المستنسخ على جميع المشاهد.
-    - داخل الفيديو الواحد، تتنوع **الأشكال والرسومات والـ Animations (`visual_archetype`)** من مشهد لآخر بما يناسب الكلام!
+    يبني خطة التصميم البصري والأنيميشن لكل مشهد في الفيديو مع ضمان:
+    1. **وحدة الثيم والهوية البصرية داخل الفيديو الواحد (`One Cohesive Theme Per Video`)**:
+       جميع مشاهد الفيديو الواحد تشترك في نفس الثيم الموحد بدون خلط خلفيات متضاربة.
+    2. **التنويع التلقائي الحتمي من فيديو لآخر (`Guaranteed Video-to-Video Theme Rotation`)**:
+       - حتى لو رفع المستخدم فيديو مرجعياً من قبل، لا يعلق النظام على ذلك الثيم للأبد!
+       - إذا ضغط المستخدم زر استنساخ الفيديو المرجعي، يُطبق ثيم المرجع على الفيديو الحالي فقط (`one_shot_clone`)،
+         ثم يتحول النظام تلقائياً في الفيديو التالي إلى التناوب بين الـ 10 ثيمات الاحترافية + الثيمات المتعلمة،
+         بحيث يضمن دائماً أن `chosen_style_id != last_used_video_style_id`!
     """
     mem = load_evolution_memory()
     mode = str(force_style_mode or mem.get("active_studio_style_mode") or "auto_vary_pro")
     rot_idx = int(mem.get("style_rotation_counter", 0))
+    last_video_style_id = str(mem.get("last_used_video_style_id") or "")
 
     if advance_rotation_counter:
         rot_idx += 1
         mem["style_rotation_counter"] = rot_idx
-        save_evolution_memory(mem)
 
     style_aliases = {
-        "warm_editorial_cream": "editorial_cream",
-        "obsidian_gold_exec": "editorial_dark",
-        "crimson_velvet_studio": "editorial_crimson",
-        "mint_sage_broadcast": "editorial_mint",
+        "warm_editorial_cream": "haamza_15s_cinema",
+        "obsidian_gold_exec": "obsidian_neon_cyber",
+        "crimson_velvet_studio": "sunset_coral_editorial",
+        "mint_sage_broadcast": "emerald_fintech_mint",
         "royal_cobalt": "royal_cobalt_gold",
     }
-    if force_style_mode in style_aliases:
-        force_style_mode = style_aliases[force_style_mode]
-    family_keys = list(PRO_STUDIO_STYLE_FAMILIES.keys())
+    if mode in style_aliases:
+        mode = style_aliases[mode]
+
     active_ref = mem.get("active_reference_dna")
 
-    # 1. وضع استنساخ الفيديو المرجعي ("نسخ الفيديو المرجعي وتطبيق نفس الأشكال والرسومات والأنيميشن")
+    # فحص ما إذا كان وضع الفيديو المرجعي قد استُهلك في الفيديو السابق ولم يطلب المستخدم قفله للأبد
+    if mode == "clone_reference" and isinstance(active_ref, dict):
+        if active_ref.get("one_shot_consumed", False) and not active_ref.get("sticky_lock", False):
+            mode = "auto_vary_pro"
+            mem["active_studio_style_mode"] = "auto_vary_pro"
+
+    # 1. وضع استنساخ الفيديو المرجعي (يُطبق على الفيديو الحالي، ثم يفتح التناوب التلقائي للفيديو القادم!)
     if mode == "clone_reference" and isinstance(active_ref, dict) and active_ref.get("enabled", True):
         detected_fam_key = str(active_ref.get("detected_design_family") or "byw_cyan_agency")
         base_fam = json.loads(json.dumps(PRO_STUDIO_STYLE_FAMILIES.get(detected_fam_key, PRO_STUDIO_STYLE_FAMILIES["byw_cyan_agency"])))
 
-        # توحيد باليت الفيديو المرجعي المستنسخ لمنع أي قفزات لونية مزعجة
         cloned_unified_pal = dict(base_fam.get("unified_palette", base_fam["acts"]["body_steps"]))
         if "multi_act_palettes" in active_ref and isinstance(active_ref["multi_act_palettes"], dict):
             body_p = active_ref["multi_act_palettes"].get("body_steps")
@@ -1026,6 +1192,15 @@ def build_dynamic_scene_style_assignment(
             cloned_arch_seq = _select_non_repeating_archetype_sequence(
                 num_scenes, base_fam.get("preferred_archetypes", ALL_DYNAMIC_VISUAL_ARCHETYPES), rotation_seed=rot_idx
             )
+
+        if advance_rotation_counter:
+            # بعد تطبيق ثيم الفيديو المرجعي على هذا الفيديو، نفك القفل تلقائياً حتى ينوع النظام في الفيديو القادم!
+            active_ref["one_shot_consumed"] = True
+            mem["active_reference_dna"] = active_ref
+            if not active_ref.get("sticky_lock", False):
+                mem["active_studio_style_mode"] = "auto_vary_pro"
+            mem["last_used_video_style_id"] = str(active_ref.get("style_id") or detected_fam_key)
+            save_evolution_memory(mem)
 
         plan: List[Dict[str, Any]] = []
         used_in_plan: List[str] = []
@@ -1043,7 +1218,7 @@ def build_dynamic_scene_style_assignment(
                 arch_for_scene = "kinetic_quote_dm_finale" if (idx == num_scenes - 1 and num_scenes >= 2) else cloned_arch_seq[idx % len(cloned_arch_seq)]
             used_in_plan.append(arch_for_scene)
             plan.append({
-                "style_family_id": base_fam["style_id"],
+                "style_family_id": str(active_ref.get("style_id") or base_fam["style_id"]),
                 "design_family": base_fam["design_family"],
                 "act_name": act_name,
                 "step_number": idx + 1,
@@ -1063,12 +1238,50 @@ def build_dynamic_scene_style_assignment(
             })
         return plan
 
-    # 2. اختيار ستايل واحد متكامل للفيديو بالكامل (إما باختيار المستخدم أو باختيار النظام العشوائي/التلقائي لكل فيديو جديد)
-    if mode in PRO_STUDIO_STYLE_FAMILIES:
-        chosen_fam = PRO_STUDIO_STYLE_FAMILIES[mode]
+    # 2. بناء سلة التناوب الكاملة (10 ثيمات استوديو احترافية + أي ثيمات متعلمة من الفيديوهات المرجعية)
+    combined_families: Dict[str, Dict[str, Any]] = dict(PRO_STUDIO_STYLE_FAMILIES)
+    cloned_map = mem.get("cloned_reference_styles", {})
+    if isinstance(cloned_map, dict):
+        for c_id, c_dna in cloned_map.items():
+            if isinstance(c_dna, dict) and c_id not in combined_families:
+                det_fam = str(c_dna.get("detected_design_family") or "byw_cyan_agency")
+                base_f = PRO_STUDIO_STYLE_FAMILIES.get(det_fam, PRO_STUDIO_STYLE_FAMILIES["byw_cyan_agency"])
+                c_pal = dict(base_f.get("unified_palette", {}))
+                if isinstance(c_dna.get("multi_act_palettes"), dict) and isinstance(c_dna["multi_act_palettes"].get("body_steps"), dict):
+                    c_pal.update(c_dna["multi_act_palettes"]["body_steps"])
+                combined_families[c_id] = {
+                    "style_id": c_id,
+                    "label_ar": f"🎯 ثيم متعلم من مرجع ({c_dna.get('source_video', c_id)})",
+                    "design_family": det_fam,
+                    "has_grid": False,
+                    "has_floating_diamonds": False,
+                    "has_giant_bg_numbers": False,
+                    "header_style": str(c_dna.get("header_style", base_f["header_style"])),
+                    "headline_style": str(c_dna.get("headline_style", base_f["headline_style"])),
+                    "card_tilt_deg": float(c_dna.get("card_tilt_deg", base_f.get("card_tilt_deg", 1.2))),
+                    "preferred_archetypes": list(base_f.get("preferred_archetypes", ALL_DYNAMIC_VISUAL_ARCHETYPES)),
+                    "unified_palette": c_pal,
+                    "acts": {"hook_problem": c_pal, "body_steps": c_pal, "outro_finale": c_pal}
+                }
+
+    family_keys = list(combined_families.keys())
+
+    # إذا اختار المستخدم ثيماً بعينه يدوياً من القائمة، ولكن في الفيديو السابق استُخدم نفس الثيم،
+    # ففي وضع auto_vary_pro ننتقل دائماً للثيم التالي لضمان تنوع كل فيديو عن الفيديو الذي بعده!
+    if mode in combined_families and mode != "auto_vary_pro":
+        chosen_fam_key = mode
     else:
         chosen_fam_key = family_keys[rot_idx % len(family_keys)]
-        chosen_fam = PRO_STUDIO_STYLE_FAMILIES[chosen_fam_key]
+        if chosen_fam_key == last_video_style_id and len(family_keys) > 1:
+            rot_idx += 1
+            mem["style_rotation_counter"] = rot_idx
+            chosen_fam_key = family_keys[rot_idx % len(family_keys)]
+
+    chosen_fam = combined_families[chosen_fam_key]
+
+    if advance_rotation_counter:
+        mem["last_used_video_style_id"] = chosen_fam_key
+        save_evolution_memory(mem)
 
     unified_pal = dict(chosen_fam.get("unified_palette", chosen_fam["acts"]["body_steps"]))
     arch_seq = _select_non_repeating_archetype_sequence(
@@ -1094,6 +1307,7 @@ def build_dynamic_scene_style_assignment(
         used_in_plan.append(arch_for_scene)
         plan.append({
             "style_family_id": chosen_fam["style_id"],
+            "style_label_ar": chosen_fam.get("label_ar", chosen_fam["style_id"]),
             "design_family": chosen_fam["design_family"],
             "act_name": act_name,
             "step_number": idx + 1,
@@ -1115,21 +1329,27 @@ def build_dynamic_scene_style_assignment(
 
 
 def get_best_params_for_scene_type(scene_type: str) -> Dict[str, Any]:
-    """استرجاع أفضل معاملات تصميم تطور إليها النظام سابقاً لهذا النوع من المشاهد مع احترام الثيم المخصص."""
+    """
+    استرجاع أفضل معاملات الفيزياء والتصميم لهذا النوع من المشاهد:
+    ملاحظة حاسمة: لا يتم فرض ثيم الفيديو المرجعي (`cloned_theme_name`) إلا إذا كان الوضع النشط فعلياً هو `clone_reference`
+    ولم يُستهلك بعد، حتى لا يطغى الفيديو المرجعي القديم على الثيمات المتنوعة للفيديوهات الجديدة!
+    """
     mem = load_evolution_memory()
     best_map = mem.get("scene_type_best_params", {})
     params = dict(best_map.get("default", _default_evolution_memory()["scene_type_best_params"]["default"]))
     if scene_type in best_map and isinstance(best_map[scene_type], dict):
         params.update(best_map[scene_type])
 
+    active_mode = str(mem.get("active_studio_style_mode") or "auto_vary_pro")
     active_ref = mem.get("active_reference_dna")
     if isinstance(active_ref, dict) and active_ref.get("enabled", True):
         if "spring_stiffness" in active_ref:
             params["spring_stiffness"] = float(active_ref["spring_stiffness"])
         if "spring_damping" in active_ref:
             params["spring_damping"] = float(active_ref["spring_damping"])
-        if "theme_name" in active_ref:
-            params["cloned_theme_name"] = str(active_ref["theme_name"])
+        if active_mode == "clone_reference" and not active_ref.get("one_shot_consumed", False):
+            if "theme_name" in active_ref:
+                params["cloned_theme_name"] = str(active_ref["theme_name"])
 
     active_brand = mem.get("active_brand_theme")
     if isinstance(active_brand, dict) and active_brand.get("enabled", True):
@@ -1732,6 +1952,8 @@ def extract_reference_video_dna(
         except Exception:
             pass
 
+    dna_profile["one_shot_consumed"] = False
+    dna_profile["sticky_lock"] = False
     mem = load_evolution_memory()
     mem["active_reference_dna"] = dna_profile
     mem["active_studio_style_mode"] = "clone_reference"
@@ -1917,3 +2139,301 @@ def evaluate_and_evolve_frame(
             logger.debug(f"Evolution memory persistence notice: {e}")
 
     return curr_frame, report
+
+
+# ==============================================================================
+# 9. محرك تحليل وتقطيع وتحريك الستوري بورد من صورة واحدة (Single-Image Storyboard Analyzer & 2.5D Slicer)
+# ==============================================================================
+STORYBOARD_STATE_PATH = os.path.join(_CURRENT_DIR, "outputs", "active_storyboard_state.json")
+STORYBOARD_PANELS_DIR = os.path.join(_CURRENT_DIR, "outputs", "storyboard_panels")
+
+
+def get_active_storyboard_state() -> Dict[str, Any]:
+    """يرجع حالة الستوري بورد المرفوع حالياً وقائمة المشاهد/اللوحات المستخرجة منه."""
+    if os.path.exists(STORYBOARD_STATE_PATH):
+        try:
+            with open(STORYBOARD_STATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict) and data.get("enabled") and data.get("panels"):
+                valid_panels = [p for p in data["panels"] if os.path.exists(str(p.get("panel_path", "")))]
+                if valid_panels:
+                    data["panels"] = valid_panels
+                    return data
+        except Exception:
+            pass
+    return {"enabled": False, "panels": [], "grid_shape": [0, 0], "source_image": ""}
+
+
+def clear_active_storyboard_state() -> None:
+    """إلغاء تفعيل وضع الستوري بورد والعودة للتوليد الديناميكي المتنوع."""
+    try:
+        if os.path.exists(STORYBOARD_STATE_PATH):
+            with open(STORYBOARD_STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump({"enabled": False, "panels": [], "grid_shape": [0, 0], "source_image": ""}, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _extract_panel_palette_and_foreground(panel_rgb: np.ndarray, panel_idx: int, out_dir: str) -> Dict[str, Any]:
+    """
+    يستخرج:
+    1. لوحة الألوان السائدة في اللوحة (الخلفية، اللون الأساسي، الثانوي، التباين).
+    2. طبقة العناصر الأمامية المفرغة جزئياً (2.5D Foreground Subject Layer) لتحريكها بعمق بارالاكس مستقل!
+    3. نقطة التركيز البصري (Focal Point cx, cy) داخل اللوحة لتوجيه الكاميرا والمؤشر التفاعلي.
+    """
+    from PIL import Image, ImageFilter
+    h, w, _ = panel_rgb.shape
+    os.makedirs(out_dir, exist_ok=True)
+
+    # حفظ صورة اللوحة النظيفة
+    panel_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}.png")
+    Image.fromarray(panel_rgb).save(panel_path, format="PNG")
+
+    # حساب لون الخلفية من حواف اللوحة
+    border_pixels = np.concatenate([
+        panel_rgb[:max(2, h // 16), :, :].reshape(-1, 3),
+        panel_rgb[-max(2, h // 16):, :, :].reshape(-1, 3),
+        panel_rgb[:, :max(2, w // 16), :].reshape(-1, 3),
+        panel_rgb[:, -max(2, w // 16):, :].reshape(-1, 3),
+    ], axis=0).astype(np.float32)
+
+    bg_median = np.median(border_pixels, axis=0)
+    bg_rgb = tuple(int(np.clip(v, 0, 255)) for v in bg_median)
+    bg_luma = 0.299 * bg_rgb[0] + 0.587 * bg_rgb[1] + 0.114 * bg_rgb[2]
+    is_light_bg = bool(bg_luma >= 145.0)
+
+    # حساب المسافة اللونية والتباين لفصل العناصر المرسومة في اللوحة عن خلفية اللوحة
+    diff = np.linalg.norm(panel_rgb.astype(np.float32) - bg_median[None, None, :], axis=2)
+    # تعزيز الحواف الداخلية
+    gy, gx = np.gradient(np.mean(panel_rgb.astype(np.float32), axis=2))
+    edge_mag = np.hypot(gx, gy)
+    salience = diff * 0.75 + edge_mag * 1.35
+
+    thresh = max(24.0, float(np.percentile(salience, 62)))
+    fg_alpha = np.clip((salience - thresh * 0.65) / max(10.0, thresh * 0.85), 0.0, 1.0)
+    # تصفير الحواف الخارجية تماماً حتى تندمج طبقة البارالاكس الأمامية بنعومة
+    yy, xx = np.mgrid[0:h, 0:w]
+    edge_fade_x = np.minimum(xx / max(1.0, w * 0.08), (w - 1 - xx) / max(1.0, w * 0.08))
+    edge_fade_y = np.minimum(yy / max(1.0, h * 0.08), (h - 1 - yy) / max(1.0, h * 0.08))
+    vignette_mask = np.clip(np.minimum(edge_fade_x, edge_fade_y), 0.0, 1.0)
+    fg_alpha = (fg_alpha * vignette_mask * 255.0).astype(np.uint8)
+
+    fg_rgba = np.dstack([panel_rgb, fg_alpha])
+    fg_pil = Image.fromarray(fg_rgba, mode="RGBA")
+    # تنعيم قناة ألفا قليلاً
+    r_ch, g_ch, b_ch, a_ch = fg_pil.split()
+    a_ch = a_ch.filter(ImageFilter.GaussianBlur(radius=1.5))
+    fg_pil = Image.merge("RGBA", (r_ch, g_ch, b_ch, a_ch))
+    fg_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}_fg.png")
+    fg_pil.save(fg_path, format="PNG")
+
+    # استخراج الألوان البارزة للعناصر المرسومة
+    fg_mask = diff > max(28.0, float(np.percentile(diff, 70)))
+    if np.any(fg_mask):
+        fg_pts = panel_rgb[fg_mask].astype(np.float32)
+        sat = np.max(fg_pts, axis=1) - np.min(fg_pts, axis=1)
+        vivid_mask = sat > np.percentile(sat, 55)
+        vivid_pts = fg_pts[vivid_mask] if np.any(vivid_mask) else fg_pts
+        primary_rgb = tuple(int(np.clip(v, 0, 255)) for v in np.median(vivid_pts, axis=0))
+        p_high = tuple(int(np.clip(v, 0, 255)) for v in np.percentile(vivid_pts, 80, axis=0))
+    else:
+        primary_rgb = (217, 155, 28) if is_light_bg else (56, 189, 248)
+        p_high = (37, 99, 235) if is_light_bg else (250, 204, 21)
+
+    # إذا كان اللون الأساسي باهتاً جداً، نعززه قليلاً
+    if max(primary_rgb) - min(primary_rgb) < 35:
+        primary_rgb = (217, 155, 28) if is_light_bg else (56, 189, 248)
+
+    # حساب مركز الثقل البصري (Focal Point) داخل اللوحة
+    weights = np.maximum(0.0, salience - thresh * 0.5)
+    total_w = float(np.sum(weights))
+    if total_w > 10.0:
+        focal_x = float(np.sum(xx * weights) / total_w) / float(max(1, w))
+        focal_y = float(np.sum(yy * weights) / total_w) / float(max(1, h))
+    else:
+        focal_x, focal_y = 0.5, 0.5
+
+    focal_x = round(max(0.22, min(0.78, focal_x)), 3)
+    focal_y = round(max(0.22, min(0.78, focal_y)), 3)
+
+    top_bg = bg_rgb
+    bottom_bg = tuple(max(0, min(255, int(c * (0.93 if is_light_bg else 0.78)))) for c in bg_rgb)
+
+    return {
+        "panel_index": panel_idx,
+        "panel_path": panel_path,
+        "fg_path": fg_path,
+        "width": int(w),
+        "height": int(h),
+        "focal_point": [focal_x, focal_y],
+        "palette": {
+            "is_light_bg": is_light_bg,
+            "top_bg": list(top_bg),
+            "bottom_bg": list(bottom_bg),
+            "primary": list(primary_rgb),
+            "secondary": list(p_high),
+            "accent": [16, 185, 129] if is_light_bg else [56, 189, 248],
+            "headline_txt": [24, 24, 27] if is_light_bg else [248, 250, 252],
+            "sticker_bg": list(primary_rgb),
+            "sticker_txt": [255, 255, 255] if (0.299 * primary_rgb[0] + 0.587 * primary_rgb[1] + 0.114 * primary_rgb[2]) < 165 else [24, 24, 27],
+        }
+    }
+
+
+def _find_gutter_splits(sheet_np: np.ndarray, axis: int = 0, min_segments: int = 2, max_segments: int = 5) -> List[Tuple[int, int]]:
+    """
+    يكتشف الفواصل الأفقية (axis=0) أو العمودية (axis=1) في صورة الستوري بورد الواحدة
+    عبر فحص تطابق الخطوط مع لون خلفية الورقة/الفاصل وانخفاض التباين اللوني على طول الخط الفاصل.
+    """
+    sh_h, sh_w, _ = sheet_np.shape
+    length = sh_h if axis == 0 else sh_w
+    if length < 80:
+        return [(0, length)]
+
+    # لون الفاصل/الهامش الخارجي للصورة
+    border_strip = np.concatenate([
+        sheet_np[:max(2, sh_h // 40), :, :].reshape(-1, 3),
+        sheet_np[-max(2, sh_h // 40):, :, :].reshape(-1, 3),
+        sheet_np[:, :max(2, sh_w // 40), :].reshape(-1, 3),
+        sheet_np[:, -max(2, sh_w // 40):, :].reshape(-1, 3),
+    ], axis=0).astype(np.float32)
+    gutter_color = np.median(border_strip, axis=0)
+
+    # لكل صف أو عمود، نحسب كم نسبة البكسلات المطابقة للون الفاصل (أو البياض/السواد)
+    diff_from_gutter = np.linalg.norm(sheet_np.astype(np.float32) - gutter_color[None, None, :], axis=2)
+    line_std = np.std(np.mean(sheet_np.astype(np.float32), axis=2), axis=(1 if axis == 0 else 0))
+    line_mean_diff = np.mean(diff_from_gutter, axis=(1 if axis == 0 else 0))
+
+    is_gutter = (line_mean_diff <= 22.0) & (line_std <= 18.0)
+
+    content_spans: List[Tuple[int, int]] = []
+    in_content = False
+    start_idx = 0
+    min_span_len = int(length * 0.14)
+    min_gutter_w = max(3, int(length * 0.006))
+
+    i = 0
+    while i < length:
+        if not is_gutter[i] and not in_content:
+            in_content = True
+            start_idx = i
+            i += 1
+        elif is_gutter[i] and in_content:
+            g_end = i
+            while g_end < length and is_gutter[g_end]:
+                g_end += 1
+            if (g_end - i) >= min_gutter_w:
+                if (i - start_idx) >= min_span_len:
+                    content_spans.append((start_idx, i))
+                in_content = False
+            i = g_end
+        else:
+            i += 1
+
+    if in_content and (length - start_idx) >= min_span_len:
+        content_spans.append((start_idx, length))
+
+    if min_segments <= len(content_spans) <= max_segments:
+        return content_spans
+    return [(0, length)]
+
+
+def analyze_and_slice_storyboard_sheet(
+    image_path: str,
+    reading_order: str = "rtl",
+    forced_grid: Optional[Tuple[int, int]] = None
+) -> Dict[str, Any]:
+    """
+    يستقبل صورة ستوري بورد واحدة (Single-Image Storyboard Sheet) تحتوي على عدة مشاهد/لوحات،
+    ويقوم بـ:
+    1. اكتشاف شبكة اللوحات تلقائياً (مثلاً 2×2، 2×3، 3×2، 3×3، 4×2، أو شريط طولي/عرضي) أو تقسيمها وفق الاختيار.
+    2. قص كل لوحة بدقة مع إزالة الحواف المزعجة واستخراج ألوانها وطبقة الـ 2.5D الأمامية الخاصة بها.
+    3. حفظ حالة الستوري بورد لتتم رندرة الفيديو بالكامل بناءً على لوحات الستوري بورد بالترتيب دون اختراع رسومات عشوائية!
+    """
+    from PIL import Image
+    if not image_path or not os.path.exists(image_path):
+        return {"ok": False, "message": "ملف صورة الستوري بورد غير موجود."}
+
+    os.makedirs(STORYBOARD_PANELS_DIR, exist_ok=True)
+    # تنظيف اللوحات القديمة
+    try:
+        for old_f in os.listdir(STORYBOARD_PANELS_DIR):
+            if old_f.startswith("sb_panel_"):
+                os.remove(os.path.join(STORYBOARD_PANELS_DIR, old_f))
+    except Exception:
+        pass
+
+    with Image.open(image_path) as im:
+        rgb_im = im.convert("RGB")
+        # تحجيم آمن للذاكرة مع الحفاظ على دقة ممتازة لكل لوحة
+        max_sheet_dim = 2048
+        w0, h0 = rgb_im.size
+        if max(w0, h0) > max_sheet_dim:
+            sc = max_sheet_dim / float(max(w0, h0))
+            rgb_im = rgb_im.resize((int(w0 * sc), int(h0 * sc)), Image.Resampling.LANCZOS)
+        sheet_np = np.array(rgb_im, dtype=np.uint8)
+
+    sh_h, sh_w, _ = sheet_np.shape
+
+    if forced_grid and forced_grid[0] >= 1 and forced_grid[1] >= 1:
+        n_rows, n_cols = int(forced_grid[0]), int(forced_grid[1])
+        row_spans = [(int(r * sh_h / n_rows), int((r + 1) * sh_h / n_rows)) for r in range(n_rows)]
+        col_spans = [(int(c * sh_w / n_cols), int((c + 1) * sh_w / n_cols)) for c in range(n_cols)]
+    else:
+        # الاكتشاف الذكي للفواصل الأفقية والعمودية عبر انحراف التباين اللوني (Projection Profiles)
+        row_spans = _find_gutter_splits(sheet_np, axis=0, min_segments=1, max_segments=5)
+        col_spans = _find_gutter_splits(sheet_np, axis=1, min_segments=1, max_segments=5)
+
+        # إذا كانت الصورة لا تحتوي على فواصل بيضاء/سوداء صريحة (مثلاً لوحات متلاصقة أو لوحة ستوري بورد موحدة)،
+        # نقسمها بذكاء حسب نسبة أبعاد الصورة إلى شبكة قياسية (2x2 أو 2x3 أو 3x2)
+        if len(row_spans) == 1 and len(col_spans) == 1:
+            aspect = sh_w / float(max(1, sh_h))
+            if aspect >= 1.35:
+                n_rows, n_cols = 2, 3
+            elif aspect <= 0.75:
+                n_rows, n_cols = 3, 2
+            else:
+                n_rows, n_cols = 2, 2
+            row_spans = [(int(r * sh_h / n_rows), int((r + 1) * sh_h / n_rows)) for r in range(n_rows)]
+            col_spans = [(int(c * sh_w / n_cols), int((c + 1) * sh_w / n_cols)) for c in range(n_cols)]
+
+    panels_meta: List[Dict[str, Any]] = []
+    panel_idx = 0
+
+    for (ry1, ry2) in row_spans:
+        ordered_cols = list(reversed(col_spans)) if str(reading_order).lower() == "rtl" else list(col_spans)
+        for (cx1, cx2) in ordered_cols:
+            # تقليم 3% من الحواف الداخلية لكل خلية لإزالة خطوط الشبكة السوداء/البيضاء
+            pad_y = max(2, int((ry2 - ry1) * 0.03))
+            pad_x = max(2, int((cx2 - cx1) * 0.03))
+            py1, py2 = min(ry2 - 10, ry1 + pad_y), max(ry1 + 10, ry2 - pad_y)
+            px1, px2 = min(cx2 - 10, cx1 + pad_x), max(cx1 + 10, cx2 - pad_x)
+            crop_np = sheet_np[py1:py2, px1:px2]
+            if crop_np.shape[0] < 32 or crop_np.shape[1] < 32:
+                continue
+            p_info = _extract_panel_palette_and_foreground(crop_np, panel_idx, STORYBOARD_PANELS_DIR)
+            panels_meta.append(p_info)
+            panel_idx += 1
+
+    state_payload = {
+        "enabled": len(panels_meta) > 0,
+        "source_image": os.path.abspath(image_path),
+        "reading_order": reading_order,
+        "grid_shape": [len(row_spans), len(col_spans)],
+        "panels_count": len(panels_meta),
+        "panels": panels_meta,
+    }
+    try:
+        os.makedirs(os.path.dirname(STORYBOARD_STATE_PATH), exist_ok=True)
+        with open(STORYBOARD_STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump(state_payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    return {
+        "ok": len(panels_meta) > 0,
+        "panels_count": len(panels_meta),
+        "grid_shape": [len(row_spans), len(col_spans)],
+        "panels": panels_meta,
+        "message": f"تم تحليل صورة الستوري بورد وتقطيعها إلى {len(panels_meta)} مشاهد/لوحات جاهزة للتحريك السينمائي 2.5D!"
+    }
