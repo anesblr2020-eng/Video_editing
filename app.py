@@ -24,7 +24,7 @@ import logging
 import importlib
 import threading
 import traceback
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, List, Tuple, Optional, Callable, Union
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 if _CURRENT_DIR not in sys.path:
@@ -1307,8 +1307,8 @@ if result_path and os.path.exists(result_path):
                         if cur_sfx_m not in sfx_mode_options:
                             cur_sfx_m = "auto_all"
 
-                        with st.expander(f"🎬 المشهد #{sc_i + 1} ({s_st:.1f}s - {s_en:.1f}s): {sc_data.get(concept_title, )[:38]}", expanded=(sc_i < 2)):
-                            st.caption(f"🎙️ **الكلام المنطوق:** {sc_data.get(text, )}")
+                        with st.expander(f"🎬 المشهد #{sc_i + 1} ({s_st:.1f}s - {s_en:.1f}s): {sc_data.get('concept_title', '')[:38]}", expanded=(sc_i < 2)):
+                            st.caption(f"🎙️ **الكلام المنطوق:** {sc_data.get('text', '')}")
                             chosen_arch = st.selectbox(
                                 f"🎨 الرسمة / المجسم التعبيري للمشهد #{sc_i + 1}:",
                                 options=arch_keys,
@@ -1392,7 +1392,7 @@ if result_path and os.path.exists(result_path):
                                 json.dump(saved_session, sf, ensure_ascii=False, indent=2)
                         except Exception:
                             pass
-                        st.success(f"✅ تم تحديث الساوند ديزاين فوراً ({sfx_rep_new.get(cues_count, 0)} مؤثر صوتي متزامن)!")
+                        st.success(f"✅ تم تحديث الساوند ديزاين فوراً ({sfx_rep_new.get('cues_count', 0)} مؤثر صوتي متزامن)!")
                         st.rerun()
 
                 if full_scene_submit and active_input_path:

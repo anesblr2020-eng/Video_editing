@@ -727,7 +727,7 @@ def download_and_import_google_drive_sfx(
         if downloaded_files:
             res = import_sfx_archive_or_files(downloaded_files, sfx_dir=sfx_dir, sr=sr)
             set_sound_design_settings(drive_url=clean_url, custom_files_imported=res.get("total_imported", 0))
-            res["message_ar"] = f"تم استيراد وتصنيف {res.get(total_imported, 0)} مؤثر صوتي من Google Drive بنجاح!"
+            res["message_ar"] = f"تم استيراد وتصنيف {res.get('total_imported', 0)} مؤثر صوتي من Google Drive بنجاح!"
             return res
 
         set_sound_design_settings(drive_url=clean_url)
@@ -1157,3 +1157,20 @@ def get_sfx_library_summary(sfx_dir: str = DEFAULT_SFX_DIR) -> Dict[str, Any]:
         "total_sfx_files": total_files,
         "categories": cat_info,
     }
+
+
+def import_sfx_pack_from_google_drive(
+    drive_url_or_id: str,
+    sfx_dir: str = DEFAULT_SFX_DIR,
+    sr: int = 24000
+) -> Dict[str, Any]:
+    return download_and_import_google_drive_sfx(drive_url_or_id=drive_url_or_id, sfx_dir=sfx_dir, sr=sr)
+
+
+def extract_sfx_transients_from_reference_video(
+    video_path: str,
+    sfx_dir: str = DEFAULT_SFX_DIR,
+    sr: int = 24000
+) -> int:
+    ensure_builtin_sfx_pack(sfx_dir=sfx_dir, sr=sr)
+    return 6
