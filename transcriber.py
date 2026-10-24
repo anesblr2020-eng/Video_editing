@@ -170,6 +170,19 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
 }
 
 PHRASE_LEVEL_FIXES = [
+    (r"عليكم\s+بالي\s+راك", "عليكم على بالي راك"),
+    (r"(?<!على\s)بالي\s+راك\s+تعاني", "على بالي راك تعاني"),
+    (r"وكم\s+خلي\s+الحساب", "ومخلي الحساب"),
+    (r"وكم\s+خلي", "ومخلي"),
+    (r"السوشيال\s+ميديا\s+عم(?!و)", "السوشيال ميديا عموماً"),
+    (r"ميديا\s+عم(?!و)", "ميديا عموماً"),
+    (r"منصة\s+اسمها\s+فيديو\s+تاع", "منصة للمونتاج بالذكاء الاصطناعي"),
+    (r"تع\s+الصمت\s+من\s+الفيديو", "تنحي الصمت من الفيديو"),
+    (r"تع\s+الصمت", "تنحي الصمت"),
+    (r"مجاني\s+وبالاي", "مجاني وبالذكاء الاصطناعي"),
+    (r"وبالاي(?!\w)", "وبالذكاء الاصطناعي"),
+    (r"وبالمونتاج\s+العادي\s+وبقا\s+الصوت", "وبالمونتاج العادي وتنقي الصوت"),
+    (r"وبقا\s+الصوت", "وتنقي الصوت"),
     (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
     (r"قطع[،,]?\s+يتقطع", "قاع يتقطع"),
     (r"المتوفرس\s+على", "راه متوفر"),
@@ -277,6 +290,24 @@ def repair_truncated_words_and_sentences(words_list):
     for i, w_obj in enumerate(repaired):
         raw_w = str(w_obj.get("word", "")).strip()
         clean_w = raw_w.strip("،,.!؟?")
+        # إصلاحات مباشرة لتسلسلات الدارجة الجزائرية الشائعة في صناعة المحتوى والمونتاج
+        if clean_w == "بالي" and i > 0 and i + 1 < n:
+            prev_c = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
+            next_c = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if prev_c != "على" and next_c in {"راك", "راكم", "انك", "بلي"}:
+                repaired[i]["word"] = "على بالي"
+        if clean_w == "وكم" and i + 1 < n and str(repaired[i + 1].get("word", "")).strip("،,.!؟?") == "خلي":
+            repaired[i]["word"] = "ومخلي"
+            repaired[i + 1]["word"] = ""
+        if clean_w == "عم" and i > 0 and "ميديا" in str(repaired[i - 1].get("word", "")):
+            repaired[i]["word"] = "عموماً"
+        if clean_w in {"وبالاي", "بالاي"}:
+            repaired[i]["word"] = "وبالذكاء الاصطناعي"
+        if clean_w == "تع" and i + 1 < n and "صمت" in _orthographic_skeleton(repaired[i + 1].get("word", "")):
+            repaired[i]["word"] = "تنحي"
+        if clean_w == "وبقا" and i + 1 < n and "صوت" in _orthographic_skeleton(repaired[i + 1].get("word", "")):
+            repaired[i]["word"] = "وتنقي"
+
         if clean_w in {"للرز", "للريز", "لريز"}:
             repaired[i]["word"] = "للريلز"
             clean_w = "للريلز"

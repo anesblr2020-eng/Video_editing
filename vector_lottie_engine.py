@@ -551,7 +551,7 @@ def render_contextual_hero_illustration(
     def _draw_floating_pod(bx1: int, by1: int, bx2: int, by2: int, title_t: str, sub_t: str = "", badge_col=primary_c, radius: int = 18):
         if bx2 - bx1 < 20 or by2 - by1 < 18:
             return
-        draw.rounded_rectangle([(bx1 + 2, by1 + 6), (bx2 + 2, by2 + 6)], radius=radius, fill=(10, 12, 20, 55))
+        draw.rounded_rectangle([(bx1 + 3, by1 + 8), (bx2 + 3, by2 + 8)], radius=radius, fill=(8, 12, 24, 68))
         draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=radius, fill=pod_bg, outline=(*badge_col, 215), width=2)
         dot_r = 6
         draw.ellipse([(bx2 - 18 - dot_r, (by1 + by2) // 2 - dot_r), (bx2 - 18 + dot_r, (by1 + by2) // 2 + dot_r)], fill=(*badge_col, 255))
@@ -625,87 +625,107 @@ def render_contextual_hero_illustration(
         )
 
     # -------------------------------------------------------------------------
-    # 1. hero_smartphone_reels: مجسم الهاتف الذكي ومشغل الريلز التفاعلي
+    # 1. hero_smartphone_reels: مجسم الهاتف الذكي الثلاثي الأبعاد مع بطاقات الريلز العائمة حوله
     # -------------------------------------------------------------------------
     if archetype == "hero_smartphone_reels":
-        ph_w = int(st_w * 0.42 * sp_main)
-        ph_h = int(st_h * 0.64 * sp_main)
-        px1, py1 = cx - ph_w // 2, cy - ph_h // 2 - 10
+        ph_w = int(st_w * 0.44 * sp_main)
+        ph_h = int(st_h * 0.68 * sp_main)
+        px1, py1 = cx - ph_w // 2, cy - ph_h // 2 - 8
         px2, py2 = px1 + ph_w, py1 + ph_h
 
-        # ظل وإطار الهاتف الثلاثي الأبعاد
-        draw.rounded_rectangle([(px1 + 8, py1 + 12), (px2 + 8, py2 + 12)], radius=28, fill=(8, 10, 18, 95))
-        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=28, fill=(18, 22, 36, 252), outline=(*primary_c, 245), width=3)
-        # شاشة الريلز الداخلية
-        sc_x1, sc_y1, sc_x2, sc_y2 = px1 + 10, py1 + 14, px2 - 10, py2 - 14
-        draw.rounded_rectangle([(sc_x1, sc_y1), (sc_x2, sc_y2)], radius=20, fill=(30, 41, 68, 255))
-        # نوتش علوي (Dynamic Island)
-        isl_w = max(36, int(ph_w * 0.30))
-        draw.rounded_rectangle([(cx - isl_w // 2, sc_y1 + 8), (cx + isl_w // 2, sc_y1 + 18)], radius=5, fill=(10, 12, 18, 255))
+        # بطاقتان جانبيتان عائمتان خلف وحول الهاتف لإعطاء عمق 3D Studio غني
+        side_cards = [
+            (st_x1 + 4, py1 + int(ph_h * 0.14), px1 - 10, py1 + int(ph_h * 0.44), secondary_c, "REELS 9:16", 0.14),
+            (px2 + 10, py1 + int(ph_h * 0.48), st_x2 - 4, py1 + int(ph_h * 0.78), accent_c, kpi_lbl or "HD STUDIO", 0.24),
+        ]
+        for sx1, sy1, sx2, sy2, scol, slbl, sdel in side_cards:
+            if sx2 - sx1 >= 55 and choreo_u >= sdel:
+                ssp = _spring(choreo_u, delay=sdel, dur=0.35)
+                dy_s = int(18 * (1.0 - min(1.0, ssp)))
+                draw.rounded_rectangle([(sx1 + 3, sy1 + dy_s + 8), (sx2 + 3, sy2 + dy_s + 8)], radius=18, fill=(8, 12, 24, 65))
+                draw.rounded_rectangle([(sx1, sy1 + dy_s), (sx2, sy2 + dy_s)], radius=18, fill=pod_bg, outline=(*scol, 225), width=2)
+                scx, scy = (sx1 + sx2) // 2, sy1 + dy_s + int((sy2 - sy1) * 0.38)
+                draw.ellipse([(scx - 16, scy - 16), (scx + 16, scy + 16)], fill=(*scol, 45), outline=(*scol, 240), width=2)
+                draw.polygon([(scx - 4, scy - 6), (scx - 4, scy + 6), (scx + 7, scy)], fill=(*scol, 255))
+                draw_contained_text_fn(draw, (sx1 + 6, sy1 + dy_s + int((sy2 - sy1) * 0.62), sx2 - 6, sy2 + dy_s - 6), slbl, initial_font_size=12, fill=(*txt_main, 255))
 
-        # زر تشغيل الريلز النابض في قلب الشاشة
-        play_r = max(20, int(ph_w * 0.18 * (0.92 + 0.08 * math.sin(global_t * 5.0))))
-        p_cy = (sc_y1 + sc_y2) // 2 - 14
-        draw.ellipse([(cx - play_r - 8, p_cy - play_r - 8), (cx + play_r + 8, p_cy + play_r + 8)], fill=(*primary_c, 55))
-        draw.ellipse([(cx - play_r, p_cy - play_r), (cx + play_r, p_cy + play_r)], fill=(*primary_c, 255))
+        # ظل Gaussian ثلاثي الأبعاد وإطار الهاتف
+        sh_ph = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(sh_ph, "RGBA").rounded_rectangle([(px1 + 6, py1 + 16), (px2 + 6, py2 + 18)], radius=32, fill=(8, 10, 20, 95))
+        img = Image.alpha_composite(img, sh_ph.filter(ImageFilter.GaussianBlur(radius=14)))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=30, fill=(15, 23, 42, 255), outline=(*primary_c, 245), width=3)
+        sc_x1, sc_y1, sc_x2, sc_y2 = px1 + 10, py1 + 12, px2 - 10, py2 - 12
+        draw.rounded_rectangle([(sc_x1, sc_y1), (sc_x2, sc_y2)], radius=22, fill=(24, 34, 62, 255))
+
+        isl_w = max(38, int(ph_w * 0.32))
+        draw.rounded_rectangle([(cx - isl_w // 2, sc_y1 + 8), (cx + isl_w // 2, sc_y1 + 18)], radius=5, fill=(8, 10, 18, 255))
+
+        play_r = max(22, int(ph_w * 0.19 * (0.94 + 0.06 * math.sin(global_t * 5.0))))
+        p_cy = (sc_y1 + sc_y2) // 2 - 16
+        draw.ellipse([(cx - play_r - 10, p_cy - play_r - 10), (cx + play_r + 10, p_cy + play_r + 10)], fill=(*primary_c, 58))
+        draw.ellipse([(cx - play_r, p_cy - play_r), (cx + play_r, p_cy + play_r)], fill=(*primary_c, 255), outline=(255, 255, 255, 230), width=2)
         tri = [(cx - play_r // 3, p_cy - play_r // 2), (cx - play_r // 3, p_cy + play_r // 2), (cx + play_r // 2, p_cy)]
         draw.polygon(tri, fill=(255, 255, 255, 255))
 
-        # موجات الصوت الحية وشريط التقدم أسفل شاشة الهاتف
-        wave_y = sc_y2 - 36
+        wave_y = sc_y2 - 38
         n_bars = 14
         bw = max(3, (sc_x2 - sc_x1 - 28) // (n_bars * 2))
         for bi in range(n_bars):
-            bh = int(6 + 14 * abs(math.sin(global_t * 4.5 + bi * 0.55)))
+            bh = int(6 + 15 * abs(math.sin(global_t * 4.5 + bi * 0.55)))
             bx = sc_x1 + 16 + bi * (bw * 2)
             b_col = secondary_c if (bi / float(n_bars)) <= choreo_u else (148, 163, 184)
             draw.rounded_rectangle([(bx, wave_y - bh), (bx + bw, wave_y + bh)], radius=2, fill=(*b_col, 245))
 
-        # شارات بصرية نظيفة حول الهاتف بدون تكرار نفس جملة العنوان العلوي
-        if choreo_u >= 0.18 and kpi_val and kpi_val not in concept_title:
-            _draw_floating_pod(st_x1, py1 + 22, px1 - 8, py1 + 74, kpi_val, badge_col=secondary_c, radius=14)
-
-        _draw_bottom_speech_pills(py2 + 16)
         draw_cursor_fn(draw, (px2 + 24, p_cy + 40), (cx, p_cy), choreo_u, accent_rgb=secondary_c)
         return img
 
     # -------------------------------------------------------------------------
-    # 2. hero_camera_production: عدسة الكاميرا السينمائية ومؤشر التسجيل REC
+    # 2. hero_camera_production: استوديو التصوير والمونتاج الثلاثي الأبعاد (3D Viewfinder Deck + Timeline)
     # -------------------------------------------------------------------------
     if archetype == "hero_camera_production":
-        lens_r = int(min(st_w, st_h) * 0.27 * sp_main)
-        # أركان الـ Viewfinder السينمائية
-        vf_x1, vf_y1, vf_x2, vf_y2 = st_x1 + 14, st_y1 + 10, st_x2 - 14, cy + lens_r + 28
-        cl = 22
-        for (vx, vy, dx, dy) in [(vf_x1, vf_y1, 1, 1), (vf_x2, vf_y1, -1, 1), (vf_x1, vf_y2, 1, -1), (vf_x2, vf_y2, -1, -1)]:
-            draw.line([(vx, vy), (vx + dx * cl, vy)], fill=(*primary_c, 220), width=3)
-            draw.line([(vx, vy), (vx, vy + dy * cl)], fill=(*primary_c, 220), width=3)
+        deck_w = int(st_w * 0.88 * sp_main)
+        deck_h = int(st_h * 0.64 * sp_main)
+        dx1, dy1 = cx - deck_w // 2, cy - deck_h // 2 - 6
+        dx2, dy2 = dx1 + deck_w, dy1 + deck_h
 
-        # شارة REC الحمراء النابضة
-        rec_alpha = int(155 + 100 * math.sin(global_t * 6.0))
-        draw.ellipse([(vf_x1 + 18, vf_y1 + 14), (vf_x1 + 30, vf_y1 + 26)], fill=(239, 68, 68, rec_alpha))
-        f_rec = get_font_fn(14, bold=True)
-        draw_arabic_text_fn(draw, (vf_x1 + 62, vf_y1 + 20), "REC 30FPS", font=f_rec, fill=(239, 68, 68, 255))
+        sh_cam = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(sh_cam, "RGBA").rounded_rectangle([(dx1 + 4, dy1 + 16), (dx2 + 4, dy2 + 18)], radius=26, fill=(8, 12, 24, 82))
+        img = Image.alpha_composite(img, sh_cam.filter(ImageFilter.GaussianBlur(radius=15)))
+        draw = ImageDraw.Draw(img, "RGBA")
 
-        # حلقات عدسة الكاميرا المتعددة وشفرات الـ Aperture المتحركة
-        draw.ellipse([(cx - lens_r - 10, cy - lens_r - 10), (cx + lens_r + 10, cy + lens_r + 10)], fill=(15, 23, 42, 240), outline=(*primary_c, 245), width=4)
-        draw.ellipse([(cx - int(lens_r * 0.82), cy - int(lens_r * 0.82)), (cx + int(lens_r * 0.82), cy + int(lens_r * 0.82))], fill=(24, 34, 62, 250), outline=(*secondary_c, 210), width=2)
+        draw.rounded_rectangle([(dx1, dy1), (dx2, dy2)], radius=26, fill=pod_bg, outline=(*primary_c, 225), width=2)
 
-        n_blades = 6
-        ap_open = 0.28 + 0.25 * math.sin(choreo_u * math.pi)
-        inner_r = int(lens_r * ap_open)
-        for bi in range(n_blades):
-            ang = bi * (2.0 * math.pi / n_blades) + global_t * 0.45
-            x_a = cx + int(lens_r * 0.75 * math.cos(ang))
-            y_a = cy + int(lens_r * 0.75 * math.sin(ang))
-            x_b = cx + int(inner_r * math.cos(ang + 0.55))
-            y_b = cy + int(inner_r * math.sin(ang + 0.55))
-            draw.line([(x_a, y_a), (x_b, y_b)], fill=(*primary_c, 200), width=3)
+        # شريط علوي للكاميرا مع شارة REC نظيفة ومفصولة عن النقطة الحمراء
+        draw.rounded_rectangle([(dx1 + 14, dy1 + 12), (dx1 + 142, dy1 + 40)], radius=14, fill=(15, 23, 42, 240))
+        rec_alpha = int(170 + 85 * math.sin(global_t * 6.0))
+        draw.ellipse([(dx1 + 24, dy1 + 20), (dx1 + 36, dy1 + 32)], fill=(239, 68, 68, rec_alpha))
+        f_rec = get_font_fn(13, bold=True)
+        draw_arabic_text_fn(draw, (dx1 + 88, dy1 + 26), "4K 60FPS", font=f_rec, fill=(255, 255, 255, 255))
 
-        draw.ellipse([(cx - inner_r, cy - inner_r), (cx + inner_r, cy + inner_r)], fill=(*primary_c, 75), outline=(255, 255, 255, 220), width=2)
-        draw_contained_text_fn(draw, (cx - inner_r, cy - 18, cx + inner_r, cy + 18), kpi_val, initial_font_size=18, fill=(255, 255, 255, 255))
+        # عدسة سينمائية مرسومة بنعومة في النصف العلوي من البطاقة
+        lens_cy = dy1 + int(deck_h * 0.44)
+        lens_r = int(min(deck_w, deck_h) * 0.24)
+        draw.ellipse([(cx - lens_r - 8, lens_cy - lens_r - 8), (cx + lens_r + 8, lens_cy + lens_r + 8)], fill=(15, 23, 42, 248), outline=(*primary_c, 245), width=3)
+        draw.ellipse([(cx - int(lens_r * 0.74), lens_cy - int(lens_r * 0.74)), (cx + int(lens_r * 0.74), lens_cy + int(lens_r * 0.74))], fill=(24, 34, 62, 252), outline=(*secondary_c, 225), width=2)
+        in_r = int(lens_r * (0.36 + 0.10 * math.sin(choreo_u * math.pi)))
+        draw.ellipse([(cx - in_r, lens_cy - in_r), (cx + in_r, lens_cy + in_r)], fill=(*primary_c, 235), outline=(255, 255, 255, 235), width=2)
 
-        _draw_bottom_speech_pills(vf_y2 + 14)
+        # شريط تايملاين المونتاج ثلاثي المسارات في النصف السفلي من البطاقة
+        tl_y1 = dy2 - int(deck_h * 0.28)
+        tl_y2 = dy2 - 14
+        draw.rounded_rectangle([(dx1 + 16, tl_y1), (dx2 - 16, tl_y2)], radius=14, fill=(15, 23, 42, 242))
+        for ti in range(2):
+            ty = tl_y1 + 10 + ti * 20
+            t_prog = min(1.0, max(0.25, choreo_u * 1.3 - ti * 0.15))
+            tw = int((deck_w - 56) * t_prog)
+            tcol = primary_c if ti == 0 else accent_c
+            draw.rounded_rectangle([(dx1 + 28, ty), (dx1 + 28 + tw, ty + 12)], radius=6, fill=(*tcol, 245))
+        ph_x = dx1 + 28 + int((deck_w - 56) * min(1.0, choreo_u * 1.15))
+        draw.line([(ph_x, tl_y1 - 4), (ph_x, tl_y2 + 4)], fill=(239, 68, 68, 255), width=3)
+
+        draw_cursor_fn(draw, (dx2 - 18, dy2 + 24), (ph_x, (tl_y1 + tl_y2) // 2), choreo_u, accent_rgb=secondary_c)
         return img
 
     # -------------------------------------------------------------------------
@@ -778,7 +798,7 @@ def render_contextual_hero_illustration(
     # 5. hero_chrono_speedometer: 3 أشكال حركية متجددة للسرعة والزمن (Web Vector / Dual Rings / Turbo Gauge)
     # -------------------------------------------------------------------------
     if archetype == "hero_chrono_speedometer":
-        if variant_id == 0:
+        if False:
             return render_web_fetched_motion_scene(
                 img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
                 style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
@@ -988,7 +1008,7 @@ def render_contextual_hero_illustration(
     # 13. hero_platform_workspace: واجهة الاستوديو الذكي متعددة الأنماط بدون تكرار العنوان
     # -------------------------------------------------------------------------
     if archetype == "hero_platform_workspace":
-        if variant_id == 0:
+        if False:
             return render_web_fetched_motion_scene(
                 img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
                 style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
@@ -1068,7 +1088,7 @@ def render_contextual_hero_illustration(
     # -------------------------------------------------------------------------
     # 16. hero_cta_magnet_finale: خاتمة سينمائية متجددة (Web Vector / Crown Badge / Rocket Portal)
     # -------------------------------------------------------------------------
-    if variant_id in (0, 1):
+    if False:
         return render_web_fetched_motion_scene(
             img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
             style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
@@ -1698,14 +1718,12 @@ def render_recolored_svg_motion_canvas(
     stroke_scale: float = 1.0
 ) -> Image.Image:
     """
-    يرسم أي شكل فيكتور (SVG) مجلوب من الإنترنت أو من حزمة الـ 400MB+ بعد:
-    1. تجريده من ألوانه العشوائية الأصلية وإعادة تلوينه بالكامل بألوان ثيم الفيديو النشط (`primary`, `secondary`, `accent`).
-    2. تطبيق أنيميشن الرسم التدريجي الحي للمسارات (`Trim Paths` 0% -> 100%) المتزامن مع الكلمات المنطوقة (`choreo_u`).
-    3. إضافة عمق 2.5D وظل ناعم وحلقات طاقة مدارية مرسومة فوقه.
+    يرسم أي شكل فيكتور (SVG) بدقة استوديو فائقة النعومة (`PyCairo Sub-Pixel Anti-Aliasing + Linear Gradients`):
+    - يستخدم `cairo.ANTIALIAS_BEST` مع `LINE_CAP_ROUND` و`LINE_JOIN_ROUND` وتدرجات لونية متوهجة.
+    - لا يرسم أبداً خطوطاً منكسرة أو كرات صفراء فاقعة في نهاية الخطوط!
     """
-    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(canvas, "RGBA")
-
+    width = max(32, int(width))
+    height = max(32, int(height))
     primary_c = tuple(theme_palette.get("primary", (56, 189, 248)))[:3]
     secondary_c = tuple(theme_palette.get("secondary", (250, 204, 21)))[:3]
     accent_c = tuple(theme_palette.get("accent", (16, 185, 129)))[:3]
@@ -1713,9 +1731,8 @@ def render_recolored_svg_motion_canvas(
 
     polylines, vb_w, vb_h = extract_all_polylines_from_svg(svg_xml)
     if not polylines:
-        return canvas
+        return Image.new("RGBA", (width, height), (0, 0, 0, 0))
 
-    # حساب حدود المسارات الفعلية لتوسيط الشكل بدقة داخل الكانفاس
     all_x = [p[0] for line in polylines for p in line]
     all_y = [p[1] for line in polylines for p in line]
     min_x, max_x = min(all_x), max(all_x)
@@ -1723,7 +1740,7 @@ def render_recolored_svg_motion_canvas(
     span_w = max(1e-3, max_x - min_x)
     span_h = max(1e-3, max_y - min_y)
 
-    pad = 0.18
+    pad = 0.20
     usable_w = width * (1.0 - 2 * pad)
     usable_h = height * (1.0 - 2 * pad)
     scale = min(usable_w / span_w, usable_h / span_h)
@@ -1733,45 +1750,87 @@ def render_recolored_svg_motion_canvas(
     cx_can = width * 0.5
     cy_can = height * 0.5
 
-    # نسبة الرسم التدريجي للمسارات (Trim Paths)
-    trim_prog = min(1.0, max(0.22, choreo_u * 1.35))
-    line_w = max(3, int(min(width, height) * 0.036 * stroke_scale))
+    trim_prog = min(1.0, max(0.35, choreo_u * 1.45))
+    line_w = max(2.8, min(width, height) * 0.048 * stroke_scale)
 
+    if _HAS_CAIRO:
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, width, height)
+        ctx = cairo.Context(surface)
+        ctx.set_antialias(cairo.ANTIALIAS_BEST)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+
+        for l_idx, line in enumerate(polylines):
+            col1 = palette_cycle[l_idx % len(palette_cycle)]
+            col2 = palette_cycle[(l_idx + 1) % len(palette_cycle)]
+            transformed = [
+                (
+                    cx_can + (pt[0] - cx_svg) * scale,
+                    cy_can + (pt[1] - cy_svg) * scale
+                )
+                for pt in line
+            ]
+            if len(transformed) < 2:
+                continue
+
+            is_closed = (math.hypot(transformed[0][0] - transformed[-1][0], transformed[0][1] - transformed[-1][1]) <= 6.5)
+            vis_count = max(2, int(math.ceil(len(transformed) * trim_prog)))
+            vis_pts = transformed[:vis_count]
+
+            # تعبئة ناعمة بتدرج زجاجي للمسارات المغلقة
+            if is_closed and len(transformed) >= 4 and trim_prog >= 0.55:
+                ctx.new_path()
+                ctx.move_to(transformed[0][0], transformed[0][1])
+                for px, py in transformed[1:]:
+                    ctx.line_to(px, py)
+                ctx.close_path()
+                grad_fill = cairo.LinearGradient(0, 0, width, height)
+                grad_fill.add_color_stop_rgba(0.0, col1[0] / 255.0, col1[1] / 255.0, col1[2] / 255.0, 0.24)
+                grad_fill.add_color_stop_rgba(1.0, col2[0] / 255.0, col2[1] / 255.0, col2[2] / 255.0, 0.08)
+                ctx.set_source(grad_fill)
+                ctx.fill()
+
+            # هالة التوهج الناعمة خلف المسار
+            ctx.new_path()
+            ctx.move_to(vis_pts[0][0], vis_pts[0][1])
+            for px, py in vis_pts[1:]:
+                ctx.line_to(px, py)
+            if is_closed and trim_prog >= 0.96:
+                ctx.close_path()
+            ctx.set_source_rgba(col1[0] / 255.0, col1[1] / 255.0, col1[2] / 255.0, 0.22)
+            ctx.set_line_width(line_w * 2.1)
+            ctx.stroke_preserve()
+
+            # المسار الرئيسي بتدرج لوني فائق النعومة
+            grad_stroke = cairo.LinearGradient(0, 0, width, height)
+            grad_stroke.add_color_stop_rgba(0.0, col1[0] / 255.0, col1[1] / 255.0, col1[2] / 255.0, 0.98)
+            grad_stroke.add_color_stop_rgba(1.0, col2[0] / 255.0, col2[1] / 255.0, col2[2] / 255.0, 0.98)
+            ctx.set_source(grad_stroke)
+            ctx.set_line_width(line_w)
+            ctx.stroke()
+
+        buf = surface.get_data()
+        arr = np.ndarray(shape=(height, width, 4), dtype=np.uint8, buffer=buf).copy()
+        arr = arr[:, :, [2, 1, 0, 3]]
+        return Image.fromarray(arr, "RGBA")
+
+    # Fallback: Supersampled 2x Anti-Aliased Pillow
+    ss = 2
+    canvas_ss = Image.new("RGBA", (width * ss, height * ss), (0, 0, 0, 0))
+    draw_ss = ImageDraw.Draw(canvas_ss, "RGBA")
     for l_idx, line in enumerate(polylines):
         col = palette_cycle[l_idx % len(palette_cycle)]
         transformed = [
             (
-                int(round(cx_can + (pt[0] - cx_svg) * scale)),
-                int(round(cy_can + (pt[1] - cy_svg) * scale))
+                int(round((cx_can + (pt[0] - cx_svg) * scale) * ss)),
+                int(round((cy_can + (pt[1] - cy_svg) * scale) * ss))
             )
             for pt in line
         ]
-        if len(transformed) < 2:
-            continue
-
-        # إذا كان المسار مغلقاً ومرسوم بالكامل، نملأه بشفافية ثيم الفيديو الأنيقة
-        is_closed = (math.hypot(transformed[0][0] - transformed[-1][0], transformed[0][1] - transformed[-1][1]) <= 6.0)
-        if is_closed and len(transformed) >= 4 and trim_prog >= 0.65:
-            fill_alpha = int(42 * min(1.0, (trim_prog - 0.55) / 0.45))
-            draw.polygon(transformed, fill=(*col, fill_alpha))
-
-        # أخذ الجزء المرسوم تدريجياً حسب تقدم الصوت
-        vis_count = max(2, int(math.ceil(len(transformed) * trim_prog)))
-        vis_pts = transformed[:vis_count]
-
-        # ظل ثلاثي الأبعاد ناعم للمسار
-        shadow_pts = [(p[0] + 3, p[1] + 5) for p in vis_pts]
-        draw.line(shadow_pts, fill=(8, 12, 24, 95), width=line_w + 2)
-        # المسار الملون بثيم الفيديو النشط
-        draw.line(vis_pts, fill=(*col, 255), width=line_w)
-
-        # نقطة رأس القلم المضيئة أثناء الرسم التدريجي (Glowing Laser Drawing Tip)
-        if trim_prog < 0.98 and vis_pts:
-            tip_x, tip_y = vis_pts[-1]
-            tip_r = line_w + 3
-            draw.ellipse([(tip_x - tip_r, tip_y - tip_r), (tip_x + tip_r, tip_y + tip_r)], fill=(*secondary_c, 240))
-
-    return canvas
+        if len(transformed) >= 2:
+            vis_count = max(2, int(math.ceil(len(transformed) * trim_prog)))
+            draw_ss.line(transformed[:vis_count], fill=(*col, 255), width=max(3, int(line_w * ss)))
+    return canvas_ss.resize((width, height), Image.Resampling.LANCZOS)
 
 
 def render_web_fetched_motion_scene(
@@ -1790,103 +1849,212 @@ def render_web_fetched_motion_scene(
     draw_cursor_fn
 ) -> Image.Image:
     """
-    يرسم مشهداً سينمائياً متكاملاً يجمع بين:
-    1. أشكال الموشن جرافيك والفيكتور المجلوبة حياً من الإنترنت (`search_and_fetch_web_vectors`) أو من حزمة الـ 400MB+
-       بعد إعادة تلوينها بالكامل لتطابق ثيم الفيديو النشط (`primary`, `secondary`, `accent`).
-    2. الرسم الإجرائي المتحرك فوقها وحولها (حلقات مدارية، إضاءة محيطية، مسارات متوهجة، وعناصر فيزيائية متزامنة مع الصوت).
-    بدون أي لوحات مرقمة خاطئة وبدون تكرار نفس الأيقونة!
+    مشهد استوديو ثلاثي الأبعاد فائق الاحترافية (`3D Glass Bento & PyCairo Live Vector Showcase`):
+    - يستبدل الدائرة السوداء البدائية ببطاقة واجهة زجاجية ثلاثية الأبعاد (Apple/SaaS 3D Glass Card)
+      ذات ظلال Gaussian ناعمة، شريط نافذة علوي أنيق، أيقونات فيكتور مرسومة بـ PyCairo،
+      ومنحنى طاقة متوهج متحرك مع بطاقتين عائمتين بفيزياء الزنبرك!
     """
+    w, h = img.size
     st_x1, st_y1, st_x2, st_y2 = stage_bbox
-    st_w = max(120, st_x2 - st_x1)
-    st_h = max(120, st_y2 - st_y1)
+    st_w = max(160, st_x2 - st_x1)
+    st_h = max(160, st_y2 - st_y1)
     cx = (st_x1 + st_x2) // 2
-    cy = st_y1 + int(st_h * 0.45)
+    cy = st_y1 + int(st_h * 0.46)
 
     pal = style_spec.get("palette", {})
     is_light_bg = bool(pal.get("is_light_bg", False))
     primary_c = tuple(pal.get("primary", (56, 189, 248)))[:3]
     secondary_c = tuple(pal.get("secondary", (250, 204, 21)))[:3]
     accent_c = tuple(pal.get("accent", (16, 185, 129)))[:3]
-    txt_main = (24, 24, 27) if is_light_bg else (248, 250, 252)
-    pod_bg = (255, 255, 255, 238) if is_light_bg else (18, 25, 44, 232)
+    txt_main = (20, 24, 33) if is_light_bg else (248, 250, 252)
+    card_bg = (255, 255, 255, 244) if is_light_bg else (17, 24, 39, 238)
+    sub_card_bg = (248, 250, 252, 248) if is_light_bg else (30, 41, 59, 242)
 
     raw_speech = str(scene_meta.get("text") or concept_title or "")
     fallback_topic = str(scene_meta.get("visual_subject") or scene_meta.get("scene_type") or "")
     svgs = search_and_fetch_web_vectors(raw_speech, fallback_topic=fallback_topic, max_assets=3)
 
-    img = render_radial_ambient_glow(img, (cx, cy), int(min(st_w, st_h) * 0.48), primary_c, intensity=0.25 if is_light_bg else 0.35)
+    img = render_radial_ambient_glow(img, (cx, cy), int(min(st_w, st_h) * 0.50), primary_c, intensity=0.24 if is_light_bg else 0.36)
     img = render_floating_particles_layer(
         canvas_rgba=img,
         global_t=global_t,
         theme={"primary": primary_c, "secondary": secondary_c},
-        count=12,
+        count=10,
         region_bbox=stage_bbox
     )
+
+    p_in = min(1.0, max(0.08, choreo_u * 2.1))
+    sp_main = 1.0 - math.exp(-6.2 * p_in) * math.cos(8.0 * p_in)
+    float_dy = int(5.0 * math.sin(global_t * 2.4))
+
+    # 1. البطاقة الزجاجية الرئيسية ثلاثية الأبعاد (3D Elevated Studio Glass Deck)
+    deck_w = int(st_w * 0.88 * max(0.75, min(1.03, sp_main)))
+    deck_h = int(st_h * 0.58 * max(0.75, min(1.03, sp_main)))
+    dx1 = cx - deck_w // 2
+    dy1 = cy - deck_h // 2 - int(st_h * 0.06) + float_dy
+    dx2, dy2 = dx1 + deck_w, dy1 + deck_h
+
+    # ظل Gaussian عميق ثلاثي الأبعاد خلف البطاقة
+    sh_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sh_draw = ImageDraw.Draw(sh_layer, "RGBA")
+    sh_draw.rounded_rectangle([(dx1 + 4, dy1 + 16), (dx2 + 4, dy2 + 18)], radius=28, fill=(8, 12, 24, 78 if is_light_bg else 125))
+    sh_layer = sh_layer.filter(ImageFilter.GaussianBlur(radius=16))
+    img = Image.alpha_composite(img, sh_layer)
+
     draw = ImageDraw.Draw(img, "RGBA")
+    draw.rounded_rectangle([(dx1, dy1), (dx2, dy2)], radius=26, fill=card_bg, outline=(*primary_c, 215), width=2)
 
-    # فيزياء انبثاق المسرح المركزي
-    p_in = min(1.0, max(0.05, choreo_u * 2.2))
-    sp_main = 1.0 - math.exp(-6.0 * p_in) * math.cos(8.0 * p_in)
-    float_dy = int(6.0 * math.sin(global_t * 2.6))
-    cy += float_dy
+    # شريط علوي أنيق بأسلوب نافذة macOS Studio
+    hdr_h = max(32, int(deck_h * 0.17))
+    draw.rounded_rectangle([(dx1 + 2, dy1 + 2), (dx2 - 2, dy1 + hdr_h)], radius=24, fill=(*primary_c, 26 if is_light_bg else 38))
+    dot_cols = [(239, 68, 68), (245, 158, 11), (16, 185, 129)]
+    for di, dcol in enumerate(dot_cols):
+        dot_x = dx1 + 22 + di * 16
+        dot_y = dy1 + hdr_h // 2
+        draw.ellipse([(dot_x - 5, dot_y - 5), (dot_x + 5, dot_y + 5)], fill=(*dcol, 245))
 
-    # رسم الحلقات المدارية الهندسية حول الشكل المجلوب من الإنترنت
-    orbit_r = int(min(st_w, st_h) * 0.34 * max(0.3, sp_main))
-    draw.ellipse([(cx - orbit_r, cy - orbit_r), (cx + orbit_r, cy + orbit_r)], fill=(*pod_bg[:3], 175), outline=(*primary_c, 225), width=3)
-    rot_deg = (global_t * 62.0) % 360.0
-    draw.arc([(cx - orbit_r - 12, cy - orbit_r - 12), (cx + orbit_r + 12, cy + orbit_r + 12)], start=rot_deg, end=rot_deg + 115, fill=(*secondary_c, 235), width=4)
-    draw.arc([(cx - orbit_r - 12, cy - orbit_r - 12), (cx + orbit_r + 12, cy + orbit_r + 12)], start=rot_deg + 180, end=rot_deg + 295, fill=(*accent_c, 235), width=4)
+    # كبسولة حالة ذكية في يمين الهيدر
+    pill_w = min(130, int(deck_w * 0.34))
+    draw.rounded_rectangle([(dx2 - pill_w - 14, dy1 + 7), (dx2 - 14, dy1 + hdr_h - 7)], radius=12, fill=(*primary_c, 45), outline=(*primary_c, 180), width=1)
+    draw.ellipse([(dx2 - 26, dy1 + hdr_h // 2 - 4), (dx2 - 18, dy1 + hdr_h // 2 + 4)], fill=(*accent_c, 255))
 
-    # رندرة الشكل الرئيسي المجلوب من الإنترنت في المركز بعد تلوينه بثيم الفيديو
+    # 2. قسم الأيقونة ثلاثية الأبعاد المرسومة بـ PyCairo داخل كبسولة متوهجة
+    icon_box_sz = int(min(deck_w * 0.36, (deck_h - hdr_h) * 0.76))
+    ic_cx = dx1 + int(deck_w * 0.26)
+    ic_cy = dy1 + hdr_h + (deck_h - hdr_h) // 2
+    ir = icon_box_sz // 2
+    draw.rounded_rectangle(
+        [(ic_cx - ir, ic_cy - ir), (ic_cx + ir, ic_cy + ir)],
+        radius=22,
+        fill=(*primary_c, 24 if is_light_bg else 38),
+        outline=(*primary_c, 165),
+        width=2
+    )
     if svgs:
-        main_sz = int(orbit_r * 1.42)
+        svg_render_sz = int(icon_box_sz * 0.82)
         main_svg_img = render_recolored_svg_motion_canvas(
             svg_xml=svgs[0],
-            width=main_sz,
-            height=main_sz,
+            width=svg_render_sz,
+            height=svg_render_sz,
             theme_palette=pal,
             choreo_u=choreo_u,
             global_t=global_t,
-            stroke_scale=1.15
+            stroke_scale=1.05
         )
-        img.alpha_composite(main_svg_img, (cx - main_sz // 2, cy - main_sz // 2))
+        img.alpha_composite(main_svg_img, (ic_cx - svg_render_sz // 2, ic_cy - svg_render_sz // 2))
         draw = ImageDraw.Draw(img, "RGBA")
 
-    # رندرة شكلين ثانويين مجلوبين من الإنترنت في مدار جانبي متزامن مع تقدم الكلام
-    sat_positions = [
-        (cx - int(st_w * 0.32), cy - int(st_h * 0.18), secondary_c, 0.18),
-        (cx + int(st_w * 0.32), cy + int(st_h * 0.12), accent_c, 0.32),
-    ]
-    for s_idx, (sx, sy, s_col, s_delay) in enumerate(sat_positions):
-        if choreo_u >= s_delay and len(svgs) > s_idx + 1:
-            sat_u = min(1.0, (choreo_u - s_delay) / 0.35)
-            sat_sp = 1.0 - math.exp(-6.0 * sat_u) * math.cos(7.5 * sat_u)
-            sat_r = int(min(st_w, st_h) * 0.13 * max(0.3, sat_sp))
-            if sat_r >= 16:
-                draw.line([(cx, cy), (sx, sy)], fill=(*s_col, 145), width=2)
-                draw.ellipse([(sx - sat_r, sy - sat_r), (sx + sat_r, sy + sat_r)], fill=pod_bg, outline=(*s_col, 240), width=2)
-                sat_svg_img = render_recolored_svg_motion_canvas(
-                    svg_xml=svgs[s_idx + 1],
-                    width=int(sat_r * 1.45),
-                    height=int(sat_r * 1.45),
-                    theme_palette={"primary": s_col, "secondary": primary_c, "accent": accent_c},
-                    choreo_u=sat_u,
-                    global_t=global_t,
-                    stroke_scale=0.95
-                )
-                img.alpha_composite(sat_svg_img, (sx - sat_svg_img.width // 2, sy - sat_svg_img.height // 2))
-                draw = ImageDraw.Draw(img, "RGBA")
+    # 3. قسم الرسم البياني الموجي التفاعلي والأعمدة الحية (PyCairo Animated Spline & Meter Bars) على يمين الأيقونة
+    chart_x1 = dx1 + int(deck_w * 0.48)
+    chart_x2 = dx2 - 18
+    chart_y1 = dy1 + hdr_h + 16
+    chart_y2 = dy2 - 16
+    cw_box = max(60, chart_x2 - chart_x1)
+    ch_box = max(50, chart_y2 - chart_y1)
 
-    # شريط معلوماتي سفلي واحد نظيف وأنيق (بدون تكرار الكلمات المبتورة أو تقسيم الجملة إلى 1-2-3-4!)
-    bar_w = int(st_w * 0.84)
-    bar_h = 52
-    bx1 = cx - bar_w // 2
-    by1 = cy + orbit_r + 24
-    if by1 + bar_h < st_y2 + 24 and choreo_u >= 0.20 and kpi_lbl and (kpi_lbl not in concept_title) and (concept_title not in kpi_lbl):
-        draw.rounded_rectangle([(bx1 + 2, by1 + 6), (bx1 + bar_w + 2, by1 + bar_h + 6)], radius=26, fill=(8, 10, 18, 65))
-        draw.rounded_rectangle([(bx1, by1), (bx1 + bar_w, by1 + bar_h)], radius=26, fill=pod_bg, outline=(*primary_c, 225), width=2)
-        draw_contained_text_fn(draw, (bx1 + 18, by1 + 6, bx1 + bar_w - 18, by1 + bar_h - 6), kpi_lbl, initial_font_size=16, fill=(*txt_main, 255))
+    if _HAS_CAIRO and cw_box > 40 and ch_box > 36:
+        csurf = cairo.ImageSurface(cairo.FORMAT_ARGB32, cw_box, ch_box)
+        cctx = cairo.Context(csurf)
+        cctx.set_antialias(cairo.ANTIALIAS_BEST)
+        cctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        cctx.set_line_join(cairo.LINE_JOIN_ROUND)
 
+        # رسم 3 خطوط قياس تقدمية ناعمة في الأعلى
+        for bi in range(3):
+            by = 10 + bi * 15
+            bar_prog = min(1.0, max(0.18, (choreo_u * 1.35 - bi * 0.12)))
+            bcol = [primary_c, secondary_c, accent_c][bi % 3]
+            cctx.set_source_rgba(0.5, 0.55, 0.65, 0.18)
+            cctx.set_line_width(7.0)
+            cctx.move_to(6, by)
+            cctx.line_to(cw_box - 8, by)
+            cctx.stroke()
+
+            cctx.set_source_rgba(bcol[0] / 255.0, bcol[1] / 255.0, bcol[2] / 255.0, 0.95)
+            cctx.set_line_width(7.0)
+            cctx.move_to(6, by)
+            cctx.line_to(6 + (cw_box - 14) * bar_prog, by)
+            cctx.stroke()
+
+        # منحنى موجة PyCairo متوهج أسفل الأشرطة
+        wave_y0 = ch_box * 0.74
+        wave_amp = ch_box * 0.18
+        pts_w = []
+        n_steps = 28
+        vis_steps = max(4, int(n_steps * min(1.0, choreo_u * 1.35)))
+        for si in range(vis_steps):
+            u_x = si / float(n_steps - 1)
+            wx = 6 + u_x * (cw_box - 12)
+            wy = wave_y0 - wave_amp * math.sin(u_x * math.pi * 2.2 + global_t * 3.2) * min(1.0, u_x * 1.8)
+            pts_w.append((wx, wy))
+
+        if len(pts_w) >= 2:
+            cctx.new_path()
+            cctx.move_to(pts_w[0][0], ch_box - 4)
+            for px, py in pts_w:
+                cctx.line_to(px, py)
+            cctx.line_to(pts_w[-1][0], ch_box - 4)
+            cctx.close_path()
+            g_area = cairo.LinearGradient(0, wave_y0 - wave_amp, 0, ch_box)
+            g_area.add_color_stop_rgba(0.0, primary_c[0] / 255.0, primary_c[1] / 255.0, primary_c[2] / 255.0, 0.34)
+            g_area.add_color_stop_rgba(1.0, primary_c[0] / 255.0, primary_c[1] / 255.0, primary_c[2] / 255.0, 0.02)
+            cctx.set_source(g_area)
+            cctx.fill()
+
+            cctx.new_path()
+            cctx.move_to(pts_w[0][0], pts_w[0][1])
+            for px, py in pts_w[1:]:
+                cctx.line_to(px, py)
+            cctx.set_source_rgba(primary_c[0] / 255.0, primary_c[1] / 255.0, primary_c[2] / 255.0, 0.98)
+            cctx.set_line_width(3.5)
+            cctx.stroke()
+
+        cbuf = csurf.get_data()
+        carr = np.ndarray(shape=(ch_box, cw_box, 4), dtype=np.uint8, buffer=cbuf).copy()[:, :, [2, 1, 0, 3]]
+        img.alpha_composite(Image.fromarray(carr, "RGBA"), (chart_x1, chart_y1))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+    # 4. بطاقتان فرعيتان ثلاثيتا الأبعاد أسفل البطاقة الرئيسية (Staggered 3D Floating Bento Pods)
+    words_clean = [w_tok for w_tok in re.findall(r"[؀-ۿa-zA-Z0-9]+", concept_title) if len(w_tok) >= 3]
+    mid_idx = max(1, len(words_clean) // 2)
+    pod1_txt = " ".join(words_clean[:mid_idx]) if words_clean else "تصميم ذكي"
+    pod2_txt = " ".join(words_clean[mid_idx:]) if len(words_clean) > mid_idx else (kpi_lbl if kpi_lbl else "جودة احترافية")
+
+    pod_w = (deck_w - 16) // 2
+    pod_h = max(58, int(st_h * 0.20))
+    pod_y = dy2 + 16
+    for pi, (ptxt, pcol, pdelay) in enumerate([(pod1_txt, secondary_c, 0.16), (pod2_txt, accent_c, 0.28)]):
+        if choreo_u <= pdelay:
+            continue
+        pu = min(1.0, (choreo_u - pdelay) / 0.34)
+        psp = 1.0 - math.exp(-6.0 * pu) * math.cos(7.5 * pu)
+        px1 = dx1 + pi * (pod_w + 16)
+        py1 = pod_y + int(22 * (1.0 - min(1.0, psp)))
+        px2, py2 = px1 + pod_w, py1 + pod_h
+
+        draw.rounded_rectangle([(px1 + 2, py1 + 7), (px2 + 2, py2 + 7)], radius=18, fill=(8, 12, 24, 52))
+        draw.rounded_rectangle([(px1, py1), (px2, py2)], radius=18, fill=sub_card_bg, outline=(*pcol, 210), width=2)
+
+        badge_r = 16
+        bcx = px2 - 24
+        bcy = (py1 + py2) // 2
+        draw.ellipse([(bcx - badge_r, bcy - badge_r), (bcx + badge_r, bcy + badge_r)], fill=(*pcol, 38), outline=(*pcol, 220), width=2)
+        if len(svgs) > pi + 1:
+            sat_svg = render_recolored_svg_motion_canvas(
+                svg_xml=svgs[pi + 1],
+                width=badge_r * 2 - 4,
+                height=badge_r * 2 - 4,
+                theme_palette={"primary": pcol, "secondary": primary_c, "accent": accent_c},
+                choreo_u=pu,
+                global_t=global_t,
+                stroke_scale=0.9
+            )
+            img.alpha_composite(sat_svg, (bcx - sat_svg.width // 2, bcy - sat_svg.height // 2))
+            draw = ImageDraw.Draw(img, "RGBA")
+
+        draw_contained_text_fn(draw, (px1 + 10, py1 + 8, bcx - badge_r - 8, py2 - 8), ptxt, initial_font_size=15, fill=(*txt_main, 255))
+
+    draw_cursor_fn(draw, (dx2 - 18, dy2 + 30), (ic_cx, ic_cy), choreo_u, accent_rgb=primary_c)
     return img
 
 

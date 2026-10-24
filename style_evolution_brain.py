@@ -275,7 +275,7 @@ def match_speech_to_visual_archetype(
         ),
         (
             "hero_commerce_delivery",
-            ["توصيل", "ولاية", "58", "باب الدار", "سعر", "سومة", "بري", "دينار", "مجاني", "باطل", "اكموندي", "اطلب"],
+            ["توصيل", "ولاية", "58", "باب الدار", "شحن", "سلعة", "منتج", "كابل", "اكموندي", "اطلب الآن"],
             ["hero_commerce_delivery", "web_dynamic_scene", "hero_cta_magnet_finale"]
         ),
         (
@@ -329,6 +329,11 @@ def match_speech_to_visual_archetype(
             ["hero_platform_workspace", "web_dynamic_scene", "interactive_profile_follow_card"]
         ),
         (
+            "interactive_profile_follow_card",
+            ["مجاني", "مجانا", "مجاناً", "باطل", "بلا ما نخلصو", "ولا دورو", "بدون دفع", "بدون اشتراك"],
+            ["interactive_profile_follow_card", "hero_cta_magnet_finale", "kinetic_quote_dm_finale"]
+        ),
+        (
             "hero_cta_magnet_finale",
             ["رابط", "أسفل", "اسفل", "تابع", "اشترك", "شارك", "تواصل", "جرب", "ابدأ", "الآن"],
             ["hero_cta_magnet_finale", "kinetic_quote_dm_finale", "interactive_profile_follow_card"]
@@ -336,7 +341,7 @@ def match_speech_to_visual_archetype(
     ]
 
     if scene_index == total_scenes - 1 and total_scenes >= 3:
-        outro_pool = ["hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"]
+        outro_pool = ["interactive_profile_follow_card", "hero_cta_magnet_finale", "kinetic_quote_dm_finale"]
         for cand in outro_pool:
             if cand not in used:
                 return cand, cand

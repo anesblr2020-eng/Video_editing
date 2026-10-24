@@ -13,6 +13,7 @@ app.py - الواجهة التفاعلية لنظام أتمتة المونتا�
 
 import sys
 import os
+import re
 import gc
 import json
 import time
@@ -1040,18 +1041,34 @@ with col2:
                 with open(sb_save_path, "wb") as sbf:
                     shutil.copyfileobj(sb_uploaded_img, sbf)
 
-            if st.button("🎬 تحليل وتقطيع صورة الستوري بورد وتفعيل التحريك 2.5D عليها", use_container_width=True, key="btn_activate_storyboard_sheet"):
-                forced_g = None
-                m_grid = re.match(r"^(\d+)×(\d+)", sb_grid_choice.strip())
-                if m_grid:
-                    forced_g = (int(m_grid.group(1)), int(m_grid.group(2)))
-                r_order = "rtl" if "اليمين" in sb_order_choice else "ltr"
-                with st.spinner("🔬 جاري تحليل صورة الستوري بورد وفصل اللوحات والطبقات الأمامية (2.5D Parallax)..."):
+            forced_g = None
+            m_grid = re.match(r"^(\d+)×(\d+)", sb_grid_choice.strip())
+            if m_grid:
+                forced_g = (int(m_grid.group(1)), int(m_grid.group(2)))
+            r_order = "rtl" if "اليمين" in sb_order_choice else "ltr"
+            sb_Auto_key = f"{sb_hash}_{sb_grid_choice}_{r_order}"
+
+            # تفعيل وتقطيع الستوري بورد تلقائياً فور رفع الصورة بدون الحاجة لضغط زر إضافي!
+            if st.session_state.get("last_sliced_storyboard_key") != sb_Auto_key or not sb_state_now.get("enabled"):
+                with st.spinner("🔬 جاري تحليل صورة الستوري بورد تلقائياً وفصل اللوحات والطبقات الأمامية (2.5D Parallax)..."):
+                    sb_res_auto = analyze_and_slice_storyboard_sheet(
+                        image_path=sb_save_path,
+                        reading_order=r_order,
+                        forced_grid=forced_g
+                    )
+                st.session_state["last_sliced_storyboard_key"] = sb_Auto_key
+                if sb_res_auto.get("ok"):
+                    st.success(f"🎉 {sb_res_auto.get('message')}")
+                    st.rerun()
+
+            if st.button("🔄 إعادة تقسيم وتحليل صورة الستوري بورد بالإعدادات المختارة", use_container_width=True, key="btn_activate_storyboard_sheet"):
+                with st.spinner("🔬 جاري إعادة تحليل صورة الستوري بورد وفصل اللوحات والطبقات الأمامية (2.5D Parallax)..."):
                     sb_res = analyze_and_slice_storyboard_sheet(
                         image_path=sb_save_path,
                         reading_order=r_order,
                         forced_grid=forced_g
                     )
+                st.session_state["last_sliced_storyboard_key"] = sb_Auto_key
                 if sb_res.get("ok"):
                     st.success(f"🎉 {sb_res.get('message')}")
                     st.rerun()

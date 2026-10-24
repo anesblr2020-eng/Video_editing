@@ -584,10 +584,13 @@ class WebMotionLearner:
         if len(meaningful_tokens) < 2:
             meaningful_tokens = all_tokens if all_tokens else ["الفكرة", "الأساسية"]
 
-        # العنوان الرئيسي على الشاشة مأخوذ 100% من الكلمات الفعلية التي نطقها المتحدث في هذا المشهد!
-        concept_title = " ".join(meaningful_tokens[:5])
-        if len(concept_title) < 5 and len(all_tokens) >= 2:
-            concept_title = " ".join(all_tokens[:5])
+        # العنوان الرئيسي على الشاشة يحافظ على سلامة الجملة العربية (حروف الجر وأدوات النفي مثل: على بالي، ما عندكش، من الفيديو)
+        # ولا يحذف إلا كلمات التمهيد الفارغة في أول الجملة فقط!
+        leading_fillers = {"أهلاً", "اهلا", "وسهلاً", "شوف", "شوفوا", "طبعاً", "طبعا", "يعني", "صراحة", "بصراحة"}
+        grammatical_tokens = list(all_tokens)
+        while len(grammatical_tokens) > 3 and grammatical_tokens[0].lower() in leading_fillers:
+            grammatical_tokens.pop(0)
+        concept_title = " ".join(grammatical_tokens[:5]) if grammatical_tokens else " ".join(meaningful_tokens[:5])
 
         next_tokens = [
             w for w in re.sub(r"[،,.!؟?()\[\]\-]+ ", " ", (next_scene_text or "")).split()
