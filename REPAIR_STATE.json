@@ -1,0 +1,88 @@
+{
+  "project": "منصة مونتاج بالذكاء الاصطناعي",
+  "repair_track": "repair-pass-1",
+  "current_phase": 1,
+  "phase_status": "completed_provisionally",
+  "last_completed_action": "Fixed transcript grounding, duplicate style branch, Gemini key argument, and persisted v2 theme rotation.",
+  "source_archive": "1 editing v3.zip",
+  "baseline_file_count": 37,
+  "baseline_sha256": {
+    "motion_text.py": "4d55b991b72b3bc27d189a49a2a466230a456f7d05d36669c268324bb341c43b",
+    "style_evolution_brain.py": "cc0d09c8e98e84d826096f91d674acd7310a149442330778d5ed035d22b27f46",
+    "themes.json": "758697288d13e5e12514c97177bcdfa72583bd9cbd2a3c628b4ddc7be7b32245",
+    "v2_run.py": "49c2750d774c2f42fdfa1793b51b448eeb01c0d8a7a2c595e7c7c27bd205e3a6",
+    "editing_report.md": "c960d7d5e7770e53e211a5f7fe12933b909ecd79a9f12487b9acb6fa310a582b",
+    "manim_generator.py": "ebe413d5ec7b0397dcc31466e3bb93fe8270cb2788a6b51be2980b5d4359f194",
+    "dynamic_edit.py": "8a1d9c5b9fc8f7350532430c2efcf99cd86a7b0520b7462e0b051fa16bfb4f36",
+    "experiments.tsv": "0b92bc0d10d62b114fcdb089dcb3dc6c89491bb184e8dbbf29530281534e9708",
+    "v2_exporter.py": "25d7d5ac0d0260446707b7fbbe0339adb1df7865d8782cf2ad95424fbbde8e5b",
+    "CHANGES.md": "c9729e024f9a1c453b2d429a7c067241478618673eb9c85ddfacb153aa57ee97",
+    "background_worker.py": "a729d182b4c000389eba5bbe44ee7d1939c6da358ac6adb1c499efc605642073",
+    "app.py": "f3d4ae0ecfbf051d65fd8f86ef03bdd4bf89beccbc9da8a91afdac8837e7fab5",
+    "context_director_rules.json": "31ec4c32abca2610fbe01153810c3ffda22cad5ea51a26196e4eb39a326fb65d",
+    "v2_director.py": "9dd3397e0c59ca31c0005ec92844cc595ff8504a7bcb1335ee6cdae08d902e10",
+    "v2_templates_library.py": "d6b233d8d4599f6fab8f1280c41b8729120b27dc99e58d395348f865dbcab860",
+    "auto_cut.py": "20021ac6a99d2f92122cd409020d30d83d2b6a3deccd934dea1009bd96c64cff",
+    "vector_lottie_engine.py": "d7323c93a258211c611dd9220c37c2684dda5c8aba0029b001707544a213192a",
+    "smart_analyzer.py": "6849b81e1ef661a1530f215bc0d790e71f45ed1b02e72a64860afc936a4e326b",
+    "README.md": "3262000229b125d2b71bb2e6ef07f064ca041efbd1b84e9ca25131ae8dc62cbc",
+    "reference_motion_spec.md": "57a5ceaa154fac4b05b289d5108d1b5b7dd277b7fa22a964a949fea0ff68d90e",
+    "v2_qa_self_improve.py": "83b3214dd616b8925b3acc87db5784e00a271e4e60f526c1932fb586d00861c4",
+    "context_engine.py": "a5ee59d94fbd65818ca36961e061cf9e5d9ca3393663d7e494f756579cb382e5",
+    "preferences.json": "c40e8db2aad4517452ba655bc79a5a130a191b15e0e6b0067a35a9b46795438e",
+    "packages.txt": "b9d315c4a382497bc4cbecbdb0443cd272e7fb47585572e7d789201e58c999e6",
+    "stock_video_finder.py": "212c7745414a452f89c85bdaa9543f7dae41486eb75e84018dda9009c63a7904",
+    "v2_transcribe.py": "a26d373886d164be62203dce62ae40d508894d6e510185de2bd954da83afb806",
+    "sound_designer.py": "2f4f4a2e0294c387457f81a2beae653ef2eed61fc6ea3f99068872ae97e29694",
+    "v2_validator.py": "a5e2691ccaadd0ec5380814a8f0f74ab752cee86139a98e8543c1f75d9821083",
+    "v2_renderer.py": "6a1bb9280e81a2c950acb3e1c88c7701af04d233ca1f1877d33b6cc3fe5c4a51",
+    "v2_qa_run_checks.py": "7cb43da719d7d1b8c06f1302bfd30927c24ff8525795f6ab5787387ab8a2cbc3",
+    "darija_lexicon.py": "9fe4a5655a79021a21b70770e7fbd8e09a93f9a9f4a2116797bd698583397b9d",
+    "v2_qa_visual_critic.py": "5cd49302a702383871ee36dff19b37cae4948649cca8075e16aec6541555be0e",
+    "physics_easing.py": "78611bd39a08946fe09640aaf72ffd6206f7922838c5f38663e446495d1251d6",
+    "transcriber.py": "222690c498e2736bf1ab7dd4254f831695068a92a807c4fb84a3f6363652ed96",
+    "audit.md": "661fc61c73943e85fe0d016834d39038189b730d788f4b38f4cb1a90a347c0ae",
+    "requirements.txt": "f70f08e5745cebf6f05bdb82300ee19b77f453295986b7e15c65108b4cd48305",
+    "v2_audio.py": "c568055f8ad6b6c78cb84ea4f72e0102841c9443badc052896a22a08bb039847"
+  },
+  "changed_existing_files": [
+    "v2_run.py",
+    "app.py",
+    "v2_director.py"
+  ],
+  "new_files": [
+    "REPAIR_LOG.md",
+    "REPAIR_STATE.json",
+    "tests/test_repair_regressions.py"
+  ],
+  "deleted_files": [],
+  "current_sha256_for_changed_files": {
+    "v2_run.py": "aba3b6d6f9e30e35696d889b62d14cd87d6438adb4f9602ff6783a06b6184ab1",
+    "app.py": "e1be1a4ed3889edde0981a888902c7d10f2ce329a5ba4a47ee589d784bd95cad",
+    "v2_director.py": "d0a09031677d466441d31ac0be557d20505380b53429e98755bc9c1c28e8be93",
+    "REPAIR_LOG.md": "d530dfbd7622d88e0a2228fd2c19042438487f7951943813b277f47f2104d2ff",
+    "tests/test_repair_regressions.py": "eb048c40b2e66c5c527fb03b5f1f9286b1b702a8d5bdb37c36f15a6b742c61c5"
+  },
+  "checks": {
+    "python_compile": {
+      "passed": 27,
+      "total": 27,
+      "status": "PASS"
+    },
+    "regression_tests": {
+      "passed": 5,
+      "total": 5,
+      "status": "PASS"
+    },
+    "full_video_render": "NOT_RUN",
+    "live_web_vector_integration": "NOT_RUN"
+  },
+  "known_environment_note": "The Python test process emitted an unrelated spreadsheet runtime warmup warning from the environment; unittest returned 0 and all five tests passed.",
+  "next_phase": 2,
+  "next_phase_tasks": [
+    "Trace v2_renderer scene rendering interfaces before integrating vector_lottie_engine.",
+    "Add safe, cached, semantically matched visual assets without making network access mandatory.",
+    "Test template diversity and scene timing against actual transcripts.",
+    "Preserve and rerun all repair-pass-1 regression tests."
+  ]
+}

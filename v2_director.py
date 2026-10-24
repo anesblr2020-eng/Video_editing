@@ -357,135 +357,19 @@ def generate_scene_plan(
     المخرج الذكي (Stage 3): ينتج Scene Plan JSON صارم يطابق الكلام فعلياً،
     مع تنوع كامل بين القوالب العشرة والأيقونات السياقية، وطول مشهد بين 1.5 و3.5 ثوانٍ.
     """
-    full_speech = " ".join(str(w.get("word", "")) for w in (words or []))
-    is_reference_script = ("مشكل الوقت" in full_speech and ("إيديتينغ" in full_speech or "ايديتينغ" in full_speech or "تمنطي" in full_speech or "تمونتي" in full_speech)) or not words
-
-    if is_reference_script:
-        raw_scenes = [
-            {
-                "start": 0.00,
-                "end": 2.00,
-                "speech": "السلام عليكم، على بالي بلي راك تعاني",
-                "intent": "problem",
-                "template": "kinetic_hook",
-                "keywords": ["تعاني من", "أزمة الوقت؟"],
-                "visual_query": "urgent_hook_attention",
-                "numbers": [],
-                "confidence": 0.96,
-            },
-            {
-                "start": 2.00,
-                "end": 4.15,
-                "speech": "من مشكل الوقت وما عندكش الوقت",
-                "intent": "problem",
-                "template": "concept_icon",
-                "keywords": ["استنزاف الوقت", "اليومي"],
-                "visual_query": "hourglass_deadline",
-                "numbers": [],
-                "confidence": 0.94,
-            },
-            {
-                "start": 4.15,
-                "end": 6.75,
-                "speech": "باش تمونطي لي فيديو وتطلعهم في السوشيال",
-                "intent": "comparison",
-                "template": "versus",
-                "keywords": ["مونتاج يدوي مرهق", "نشر سريع ومستمر"],
-                "visual_query": "camera_clapperboard",
-                "numbers": [],
-                "confidence": 0.91,
-            },
-            {
-                "start": 6.75,
-                "end": 9.05,
-                "speech": "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا",
-                "intent": "problem",
-                "template": "phone_reel_mockup",
-                "keywords": ["حساب إنستغرام", "متوقف"],
-                "visual_query": "instagram_decline",
-                "numbers": [],
-                "confidence": 0.93,
-            },
-            {
-                "start": 9.05,
-                "end": 11.25,
-                "speech": "عموماً يموتوا، وأنت ما على بالكش",
-                "intent": "transition",
-                "template": "concept_icon",
-                "keywords": ["موت التفاعل", "دون أن تدري!"],
-                "visual_query": "unknown_transition",
-                "numbers": [],
-                "confidence": 0.62,  # أقل من 0.7 -> سيحولها المدقق الدلالي تلقائياً إلى kinetic_hook!
-            },
-            {
-                "start": 11.25,
-                "end": 13.65,
-                "speech": "بلي كاين منصة اسمها فيديو إيديتينغ",
-                "intent": "solution",
-                "template": "fullscreen_image",
-                "keywords": ["منصة فيديو", "إيديتينغ الذكية"],
-                "visual_query": "clean composition, no text, no letters, no watermark",
-                "numbers": [],
-                "confidence": 0.95,
-            },
-            {
-                "start": 13.65,
-                "end": 16.05,
-                "speech": "تقدر تمونطي لك لي فيديو تاعك بالموشن جرافيك",
-                "intent": "proof",
-                "template": "before_after",
-                "keywords": ["فيديو خام عادي", "موشن جرافيك احترافي"],
-                "visual_query": "viral_rocket_growth",
-                "numbers": [],
-                "confidence": 0.92,
-            },
-            {
-                "start": 16.05,
-                "end": 18.25,
-                "speech": "وبالمونتاج العادي وتنقي الصوت",
-                "intent": "step",
-                "template": "checklist",
-                "keywords": ["موشن جرافيك", "مونتاج تلقائي", "تنقية الصوت"],
-                "visual_query": "studio_microphone",
-                "numbers": [],
-                "confidence": 0.95,
-            },
-            {
-                "start": 18.25,
-                "end": 20.35,
-                "speech": "وتنحي الصمت من الفيديو بشكل مجاني",
-                "intent": "number",
-                "template": "big_number",
-                "keywords": ["حذف الصمت", "مجاناً بالكامل"],
-                "visual_query": "waveform_scissors",
-                "numbers": ["0 DA"],
-                "confidence": 0.94,
-            },
-            {
-                "start": 20.35,
-                "end": 22.10,
-                "speech": "وبالذكاء الاصطناعي برك،",
-                "intent": "step",
-                "template": "steps_flow",
-                "keywords": ["ارفع الصوت", "يعالجه الذكاء", "جاهز للنشر"],
-                "visual_query": "ai_neural_chip",
-                "numbers": [],
-                "confidence": 0.91,
-            },
-            {
-                "start": 22.10,
-                "end": min(duration, 23.60),
-                "speech": "رابط التسجيل في أسفل الفيديو.",
-                "intent": "cta",
-                "template": "cta_end",
-                "keywords": ["سجّل الآن", "الرابط في الأسفل"],
-                "visual_query": "cta_arrow_down",
-                "numbers": [],
-                "confidence": 0.98,
-            },
-        ]
-    else:
-        raw_scenes = build_dynamic_scene_plan_for_any_words(words, duration=duration, storyboard_panels=storyboard_panels)
+    # Never substitute a prerecorded/reference script for the user's actual transcript.
+    # Scene planning must be grounded in the transcribed words for this input.
+    if not words:
+        return {
+            "duration": duration,
+            "scenes": [],
+            "validator_audit_log": [
+                "No transcript words supplied; no scenes generated to avoid inventing speech."
+            ],
+        }
+    raw_scenes = build_dynamic_scene_plan_for_any_words(
+        words, duration=duration, storyboard_panels=storyboard_panels
+    )
 
     if storyboard_panels:
         for i, sc in enumerate(raw_scenes):

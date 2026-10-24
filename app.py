@@ -565,7 +565,11 @@ def run_selected_pipeline(
 
     if style_name in (STYLE_OPTIONS[0], STYLE_OPTIONS[3]):
         from v2_run import run_v2_pipeline_programmatic
-        from style_evolution_brain import get_active_storyboard_state, load_evolution_memory
+        from style_evolution_brain import (
+            get_active_storyboard_state,
+            load_evolution_memory,
+            save_evolution_memory,
+        )
         sb_st = get_active_storyboard_state()
         sb_img = sb_st.get("source_image") if (sb_st.get("enabled") and sb_st.get("source_image")) else None
         mem_st = load_evolution_memory()
@@ -580,6 +584,10 @@ def run_selected_pipeline(
             custom_scenes=custom_planned_scenes,
             progress_callback=progress_cb,
         )
+        # Advance the rotation only after the pipeline returns successfully.
+        mem_st["style_rotation_counter"] = rot_c + 1
+        mem_st["last_used_v2_theme"] = chosen_v2_theme
+        save_evolution_memory(mem_st)
         return rep["deliverables"]["final_video"]
 
     elif style_name == STYLE_OPTIONS[1]:
@@ -596,7 +604,7 @@ def run_selected_pipeline(
             dialect_mode=dialect,
             pexels_api_key=pexels_key,
             groq_api_key=groq_key,
-            gemini_api_key=gemini_api_key,
+            gemini_api_key=gemini_key,
             openai_api_key=openai_key,
             progress_callback=progress_cb,
             caption_mode=caption_mode,
@@ -627,46 +635,6 @@ def run_selected_pipeline(
             custom_sfx_cues=custom_sfx_cues
         )
         return _unwrap_path(res)
-
-    elif style_name == STYLE_OPTIONS[3]:
-        try:
-            v2_dir = os.path.join(BASE_DIR, "v2")
-            if v2_dir not in sys.path:
-                sys.path.insert(0, v2_dir)
-            try:
-                from v2_run import run_v2_pipeline_programmatic
-            except ImportError:
-                from v2.run import run_v2_pipeline_programmatic
-            from style_evolution_brain import get_active_storyboard_state
-            sb_st = get_active_storyboard_state()
-            sb_img = sb_st.get("source_image") if (sb_st.get("enabled") and sb_st.get("source_image")) else None
-            rep = run_v2_pipeline_programmatic(
-                input_path=input_path,
-                output_mp4_path=output_path,
-                theme_name="obsidian_gold",
-                storyboard_path=sb_img,
-                custom_scenes=custom_planned_scenes,
-                progress_callback=progress_cb,
-            )
-            return rep["deliverables"]["final_video"]
-        except Exception as v2_err:
-            logger.warning(f"v2 direct engine fallback notice: {v2_err}")
-            from motion_text import create_kinetic_typography_video
-            res = _safe_call(
-                create_kinetic_typography_video,
-                input_path=input_path,
-                output_path=output_path,
-                whisper_model=eff_whisper_model,
-                ollama_model=ollama_model,
-                dialect_mode=dialect,
-                groq_api_key=groq_key,
-                gemini_api_key=gemini_key,
-                openai_api_key=openai_key,
-                progress_callback=progress_cb,
-                custom_planned_scenes=custom_planned_scenes,
-                custom_sfx_cues=custom_sfx_cues
-            )
-            return _unwrap_path(res)
 
     elif style_name == STYLE_OPTIONS[4]:
         from manim_generator import generate_manim_motion_graphics

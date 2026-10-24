@@ -200,6 +200,11 @@ def run_v2_pipeline_programmatic(
         duration=duration,
         user_overrides=user_word_overrides,
     )
+    if not words:
+        raise RuntimeError(
+            "تعذر استخراج كلمات من الملف الصوتي/الفيديو؛ أُوقف الإنتاج لمنع إنشاء فيديو بنصوص افتراضية لا تطابق كلام المستخدم. "
+            "تحقق من وضوح الصوت وتوفر محرك التفريغ ثم أعد المحاولة."
+        )
 
     panels = []
     if storyboard_path and os.path.exists(storyboard_path):
