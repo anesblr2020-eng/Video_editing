@@ -66,7 +66,9 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "ينوضي": "يمونتي",
     "نوضي": "يمونتي",
     "يمونطي": "يمونتي",
-    "تمونطي": "تمنتج",
+    "تمونطي": "تمونتي",
+    "تمنطي": "تمونتي",
+    "يمنطي": "يمونتي",
     "نمونطي": "نمنتج",
     "مونطي": "مونتاج",
     "مونتاجي": "مونتاج",
@@ -185,7 +187,18 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
 }
 
 PHRASE_LEVEL_FIXES = [
-    (r"باش\s+تنوضي\s+لي\s+فيديو", "باش يمونتي الفيديوهات"),
+    (r"باش\s+تنوضي\s+لي\s+فيديو\s+واش\s+ترفعهم", "باش تمونتي الفيديوهات وترفعهم"),
+    (r"باش\s+يمونتي\s+فيديو\s+الحساب\s+تاعك", "باش تمونتي الفيديوهات وترفعهم في حسابك"),
+    (r"من\s+مشكل\s+وما\s+عندكش\s+الوقت", "من مشكل الوقت وما عندكش الوقت"),
+    (r"عموما\s+يموتوا\s+وانت\s+ما\s+على(?!\s+بالكش)", "عموماً يموتوا وأنت ما على بالكش"),
+    (r"منصة\s+مع\s+فيديو\s+تقدر\s+تمنطي", "منصة فيديو إيديتينغ تقدر تمونتي"),
+    (r"منصة\s+مع\s+فيديو\s+تقدر\s+تمونتي", "منصة فيديو إيديتينغ تقدر تمونتي"),
+    (r"المونتاج\s+العادي\s+قص\s+تع\b", "والمونتاج العادي وقص وتعديل"),
+    (r"قص\s+تع\b", "وقص وتعديل"),
+    (r"الصمت\s+من\s+وهذا\b", "ينحي الصمت من الفيديو مجاناً بالذكاء الاصطناعي"),
+    (r"بشكل\s+مج\s+التسجيل", "بشكل مجاني ورابط التسجيل"),
+    (r"بشكل\s+مج\b", "بشكل مجاني"),
+    (r"باش\s+تنوضي\s+لي\s+فيديو", "باش تمونتي الفيديوهات"),
     (r"باش\s+ينوضي\s+لي\s+فيديو", "باش يمونتي الفيديوهات"),
     (r"تنوضي\s+لي\s+فيديو", "يمونتي الفيديوهات"),
     (r"ينوضي\s+لي\s+فيديو", "يمونتي الفيديوهات"),
@@ -466,12 +479,19 @@ def detect_and_remove_voiceover_retakes(
                     cut_made = True
                     break
 
-            if 2 <= span_len <= 8 and (j + 2) <= n:
-                prefix_match_2 = (
-                    _words_are_equivalent(items[i]["word"], items[j]["word"])
-                    and _words_are_equivalent(items[i + 1]["word"], items[j + 1]["word"])
+            _common_particles = {"تاعك", "تاعي", "قاع", "كاع", "ولا", "باش", "وباش", "في", "من", "على", "مع", "لي", "اللي", "هذا", "هاذ", "ما", "بلي", "وراك", "راك"}
+            if 3 <= span_len <= 6 and (j + 3) <= n:
+                w_i0 = items[i]["word"].strip("،,.!؟?")
+                w_i1 = items[i + 1]["word"].strip("،,.!؟?")
+                w_i2 = items[i + 2]["word"].strip("،,.!؟?")
+                prefix_match_3 = (
+                    w_i0 not in _common_particles
+                    and w_i1 not in _common_particles
+                    and _words_are_equivalent(w_i0, items[j]["word"])
+                    and _words_are_equivalent(w_i1, items[j + 1]["word"])
+                    and _words_are_equivalent(w_i2, items[j + 2]["word"])
                 )
-                if prefix_match_2:
+                if prefix_match_3:
                     cut_idx_start = i
                     cut_s = float(items[cut_idx_start]["start"])
                     cut_e = float(items[j]["start"])
@@ -1177,18 +1197,27 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                 merged_chunks.append([s_pad, e_pad])
             else:
                 prev_s, prev_e = merged_chunks[-1]
-                if (s_pad - prev_e < 220 and (e_pad - prev_s) < 4800) or (prev_e - prev_s < 1200 and (e_pad - prev_s) < 5000):
+                if (s_pad - prev_e < 260 and (e_pad - prev_s) < 8500) or (prev_e - prev_s < 1500 and (e_pad - prev_s) < 9000):
                     merged_chunks[-1][1] = e_pad
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
         final_chunks: List[Tuple[int, int]] = []
+        # Fast network check so offline sandbox never hangs on Google API
+        try:
+            import socket
+            socket.setdefaulttimeout(3.5)
+            with socket.create_connection(("8.8.8.8", 53), timeout=1.5):
+                pass
+        except Exception:
+            return None
+
         for s_ms, e_ms in merged_chunks:
             cur_s = s_ms
-            while (e_ms - cur_s) > 4000:
-                search_start = cur_s + 2000
-                search_end = min(e_ms - 700, cur_s + 3700)
-                best_split = cur_s + 2900
+            while (e_ms - cur_s) > 9500:
+                search_start = cur_s + 5500
+                search_end = min(e_ms - 800, cur_s + 8800)
+                best_split = cur_s + 7200
                 min_rms = float("inf")
                 for probe_ms in range(search_start, max(search_start + 25, search_end), 20):
                     win_slice = audio[probe_ms:probe_ms + 45]

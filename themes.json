@@ -1,0 +1,50 @@
+{
+  "default_theme": "obsidian_gold",
+  "themes": {
+    "obsidian_gold": {
+      "name": "Obsidian Gold (Hormozi High-Retention)",
+      "bg_primary": "#090D16",
+      "bg_secondary": "#111827",
+      "surface_card": "#161F33",
+      "surface_border": "#2A3655",
+      "text_primary": "#FFFFFF",
+      "text_secondary": "#CBD5E1",
+      "accent_primary": "#FACC15",
+      "accent_secondary": "#38BDF8",
+      "danger": "#F43F5E",
+      "success": "#10B981",
+      "font_family": "'Noto Sans Arabic', 'Cairo', 'Tajawal', sans-serif",
+      "weights": [500, 800]
+    },
+    "emerald_studio": {
+      "name": "Emerald Cyber Studio",
+      "bg_primary": "#071318",
+      "bg_secondary": "#0D212A",
+      "surface_card": "#132E3B",
+      "surface_border": "#214D61",
+      "text_primary": "#FFFFFF",
+      "text_secondary": "#CCFBF1",
+      "accent_primary": "#34D399",
+      "accent_secondary": "#FBBF24",
+      "danger": "#FB7185",
+      "success": "#34D399",
+      "font_family": "'Noto Sans Arabic', 'Cairo', 'Tajawal', sans-serif",
+      "weights": [500, 800]
+    },
+    "royal_cobalt": {
+      "name": "Royal Cobalt Neon",
+      "bg_primary": "#0B0C1E",
+      "bg_secondary": "#141836",
+      "surface_card": "#1D224A",
+      "surface_border": "#333D7E",
+      "text_primary": "#FFFFFF",
+      "text_secondary": "#E0E7FF",
+      "accent_primary": "#60A5FA",
+      "accent_secondary": "#F472B6",
+      "danger": "#F43F5E",
+      "success": "#34D399",
+      "font_family": "'Noto Sans Arabic', 'Cairo', 'Tajawal', sans-serif",
+      "weights": [500, 800]
+    }
+  }
+}

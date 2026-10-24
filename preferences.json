@@ -1,0 +1,27 @@
+{
+  "channel_style": "high_retention_arabic_reels",
+  "preferred_theme": "obsidian_gold",
+  "rules_learned_from_feedback": [
+    {
+      "rating": "dislike",
+      "reason": "العنوان العلوي يكرر الكابشن السفلي حرفياً",
+      "rule": "Never duplicate the spoken sentence in the top header; display only 2-4 conceptual keywords in the visual stage."
+    },
+    {
+      "rating": "dislike",
+      "reason": "عناصر عشوائية مثل +44 وأداء احترافي و10x FAST ودوائر سوداء فارغة",
+      "rule": "Strictly forbid any ungrounded numbers or filler badges (+44, Pro Tips, أداء احترافي, AI STUDIO READY, 10x FAST)."
+    },
+    {
+      "rating": "dislike",
+      "reason": "الأيقونة خاطئة (درع عند الانستغرام، بطارية عند يموتوا، شاحنة عند مجاني)",
+      "rule": "Require semantic confidence >= 0.7 between speech and icon; otherwise fallback immediately to kinetic_hook."
+    },
+    {
+      "rating": "dislike",
+      "reason": "النص يتشوش أثناء الانتقال ومربع الكلمة يغطي الكلمات المجاورة",
+      "rule": "Never apply blur to text; highlight spoken word via 1.15x scale + accent color with horizontal margin."
+    }
+  ],
+  "feedback_history": []
+}

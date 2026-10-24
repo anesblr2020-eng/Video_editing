@@ -702,7 +702,7 @@ def render_contextual_hero_illustration(
         rec_alpha = int(170 + 85 * math.sin(global_t * 6.0))
         draw.ellipse([(dx1 + 24, dy1 + 20), (dx1 + 36, dy1 + 32)], fill=(239, 68, 68, rec_alpha))
         f_rec = get_font_fn(13, bold=True)
-        draw_arabic_text_fn(draw, (dx1 + 88, dy1 + 26), "4K 60FPS", font=f_rec, fill=(255, 255, 255, 255))
+        draw_arabic_text_fn(draw, (dx1 + 88, dy1 + 26), "HD STUDIO", font=f_rec, fill=(255, 255, 255, 255))
 
         # عدسة سينمائية مرسومة بنعومة في النصف العلوي من البطاقة
         lens_cy = dy1 + int(deck_h * 0.44)
@@ -761,7 +761,8 @@ def render_contextual_hero_illustration(
         draw.line([(cut_x - 6, sc_y - 2), (cut_x + 10, sc_y + 18)], fill=(255, 255, 255, 255), width=3)
         draw.line([(cut_x + 6, sc_y - 2), (cut_x - 10, sc_y + 18)], fill=(255, 255, 255, 255), width=3)
 
-        _draw_floating_pod(cx - int(st_w * 0.38), track_y2 + 14, cx + int(st_w * 0.38), track_y2 + 62, f"{kpi_val} • {kpi_lbl}", badge_col=accent_c, radius=16)
+        _wf_lbl = f"{kpi_val} • {kpi_lbl}".strip(" •") if (kpi_val or kpi_lbl) else "قص الصمت والفراغات تلقائياً"
+        _draw_floating_pod(cx - int(st_w * 0.42), track_y2 + 16, cx + int(st_w * 0.42), track_y2 + 66, _wf_lbl, badge_col=accent_c, radius=18)
         _draw_bottom_speech_pills(track_y2 + 74)
         return img
 
@@ -788,10 +789,11 @@ def render_contextual_hero_illustration(
         draw.rounded_rectangle([(cx - chip_r, cy - chip_r), (cx + chip_r, cy + chip_r)], radius=24, fill=(18, 24, 44, 252), outline=(*primary_c, 255), width=3)
         in_r = int(chip_r * 0.68)
         draw.ellipse([(cx - in_r, cy - in_r), (cx + in_r, cy + in_r)], fill=(*primary_c, 55), outline=(*secondary_c, 245), width=2)
-        f_ai = get_font_fn(max(22, int(chip_r * 0.42)), bold=True)
-        draw_arabic_text_fn(draw, (cx, cy - 6), "AI", font=f_ai, fill=(255, 255, 255, 255))
-
-        _draw_bottom_speech_pills(cy + int(chip_r * 1.72) + 12)
+        f_ai = get_font_fn(max(26, int(chip_r * 0.48)), bold=True)
+        draw_arabic_text_fn(draw, (cx, cy - 4), "AI", font=f_ai, fill=(255, 255, 255, 255))
+        _ai_lbl = kpi_val if kpi_val else "معالجة ذكية بالذكاء الاصطناعي"
+        _draw_floating_pod(cx - int(st_w * 0.42), cy + int(chip_r * 1.45), cx + int(st_w * 0.42), cy + int(chip_r * 1.45) + 52, _ai_lbl, badge_col=primary_c, radius=18)
+        _draw_bottom_speech_pills(cy + int(chip_r * 1.45) + 64)
         return img
 
     # -------------------------------------------------------------------------
@@ -816,6 +818,8 @@ def render_contextual_hero_illustration(
                 draw.arc([(cx - rr, cy - rr), (cx + rr, cy + rr)], start=rot_a, end=rot_a + 230, fill=(*col_r, 240), width=10)
             bolt_pts = [(cx + 8, cy - 36), (cx - 18, cy + 4), (cx + 2, cy + 4), (cx - 10, cy + 38), (cx + 22, cy - 6), (cx + 2, cy - 6)]
             draw.polygon(bolt_pts, fill=(*secondary_c, 255), outline=(255, 255, 255, 245))
+            _sp_lbl = kpi_val if kpi_val else "اختصار ساعات المونتاج إلى ثوانٍ"
+            _draw_floating_pod(cx - int(st_w * 0.42), cy + sp_r + 24, cx + int(st_w * 0.42), cy + sp_r + 74, _sp_lbl, badge_col=secondary_c, radius=18)
             return img
 
         draw.arc([(cx - sp_r, cy - sp_r), (cx + sp_r, cy + sp_r)], start=135, end=405, fill=(148, 163, 184, 95), width=18)
@@ -833,7 +837,7 @@ def render_contextual_hero_illustration(
         ny = cy + int((sp_r - 28) * math.sin(needle_ang))
         draw.line([(cx, cy), (nx, ny)], fill=(*secondary_c, 255), width=5)
         draw.ellipse([(cx - 12, cy - 12), (cx + 12, cy + 12)], fill=(*secondary_c, 255), outline=(255, 255, 255, 255), width=3)
-        badge_speed = kpi_val if (kpi_val and kpi_val not in concept_title) else "10x FAST"
+        badge_speed = kpi_val if (kpi_val and kpi_val not in concept_title) else "توفير الوقت"
         draw_contained_text_fn(draw, (cx - int(sp_r * 0.70), cy + 18, cx + int(sp_r * 0.70), cy + int(sp_r * 0.65)), badge_speed, initial_font_size=20, fill=(*txt_main, 255))
         return img
 
@@ -887,7 +891,9 @@ def render_contextual_hero_illustration(
             draw.polygon([(rx + 18, ry - 18), (rx - 12, ry - 4), (rx - 4, ry + 12)], fill=(255, 255, 255, 255), outline=(*primary_c, 255))
             draw.ellipse([(rx - 18, ry + 6), (rx - 6, ry + 18)], fill=(244, 63, 94, 235))
 
-        _draw_floating_pod(st_x1 + 16, st_y1 + 16, st_x1 + int(st_w * 0.56), st_y1 + 72, kpi_val, kpi_lbl, badge_col=secondary_c, radius=16)
+        _rk_val = kpi_val if kpi_val else "مضاعفة المشاهدات"
+        _rk_lbl = kpi_lbl if kpi_lbl else "نمو وتفاعل مستمر"
+        _draw_floating_pod(st_x1 + 16, st_y1 + 16, st_x1 + int(st_w * 0.64), st_y1 + 76, _rk_val, _rk_lbl, badge_col=secondary_c, radius=18)
         _draw_bottom_speech_pills(chart_y2 + 16)
         return img
 
@@ -939,9 +945,11 @@ def render_contextual_hero_illustration(
         draw.line(shield_poly + [shield_poly[0]], fill=(*secondary_c, 255), width=4)
 
         # علامة الصح الذهبية/الخضراء في قلب الدرع
-        ck_pts = [(cx - 22, cy + 2), (cx - 4, cy + 20), (cx + 28, cy - 18)]
-        draw.line(ck_pts, fill=(*accent_c, 255), width=7)
-        _draw_bottom_speech_pills(cy + sh_h // 2 + 22)
+        ck_pts = [(cx - 24, cy + 2), (cx - 4, cy + 22), (cx + 30, cy - 18)]
+        draw.line(ck_pts, fill=(*accent_c, 255), width=8)
+        _sh_lbl = kpi_val if kpi_val else "مجاني 100% بالذكاء الاصطناعي"
+        _draw_floating_pod(cx - int(st_w * 0.42), cy + sh_h // 2 + 16, cx + int(st_w * 0.42), cy + sh_h // 2 + 68, _sh_lbl, badge_col=accent_c, radius=18)
+        _draw_bottom_speech_pills(cy + sh_h // 2 + 80)
         return img
 
     # -------------------------------------------------------------------------
@@ -955,7 +963,9 @@ def render_contextual_hero_illustration(
         for pi, (px, py) in enumerate(pins):
             draw.ellipse([(px - 12, py - 12), (px + 12, py + 12)], fill=(*accent_c, 255), outline=(255, 255, 255, 255), width=2)
 
-        _draw_floating_pod(cx - int(st_w * 0.36), cy - map_r - 22, cx + int(st_w * 0.36), cy - map_r + 28, kpi_val, kpi_lbl, badge_col=secondary_c, radius=16)
+        _cm_val = kpi_val if kpi_val else "توصيل سريع"
+        _cm_lbl = kpi_lbl if kpi_lbl else "لجميع الولايات"
+        _draw_floating_pod(cx - int(st_w * 0.38), cy - map_r - 22, cx + int(st_w * 0.38), cy - map_r + 28, _cm_val, _cm_lbl, badge_col=secondary_c, radius=18)
         _draw_bottom_speech_pills(cy + map_r + 18)
         draw_cursor_fn(draw, (cx + 80, cy + map_r + 75), (cx, cy + map_r + 42), choreo_u, accent_rgb=secondary_c)
         return img
@@ -975,9 +985,11 @@ def render_contextual_hero_illustration(
 
         # منحنى Bezier وأيقونة رأس قلم التصميم في المركز
         draw.ellipse([(cx - 34, cy - 34), (cx + 34, cy + 34)], fill=pod_bg, outline=(*primary_c, 255), width=3)
-        pen_poly = [(cx, cy - 20), (cx + 16, cy + 8), (cx, cy + 20), (cx - 16, cy + 8)]
+        pen_poly = [(cx, cy - 22), (cx + 18, cy + 8), (cx, cy + 22), (cx - 18, cy + 8)]
         draw.polygon(pen_poly, fill=(*secondary_c, 255))
-        _draw_bottom_speech_pills(cy + orbit_r + 32)
+        _pal_lbl = kpi_val if kpi_val else "موشن جرافيك ومونتاج احترافي"
+        _draw_floating_pod(cx - int(st_w * 0.42), cy + orbit_r + 24, cx + int(st_w * 0.42), cy + orbit_r + 74, _pal_lbl, badge_col=secondary_c, radius=18)
+        _draw_bottom_speech_pills(cy + orbit_r + 86)
         return img
 
     # -------------------------------------------------------------------------
@@ -1001,7 +1013,9 @@ def render_contextual_hero_illustration(
             ck = [(cx - 20, cy + 2), (cx - 4, cy + 18), (cx + 24, cy - 14)]
             draw.line(ck, fill=(255, 255, 255, 255), width=6)
 
-        _draw_bottom_speech_pills(cy + int(rad_r * 1.38))
+        _rad_lbl = "تم اكتشاف الحل الذكي ✔" if is_solved else "تحليل نقطة الألم والتحدي ⚡"
+        _draw_floating_pod(cx - int(st_w * 0.40), cy + int(rad_r * 1.25), cx + int(st_w * 0.40), cy + int(rad_r * 1.25) + 50, _rad_lbl, badge_col=active_col, radius=18)
+        _draw_bottom_speech_pills(cy + int(rad_r * 1.25) + 62)
         return img
 
     # -------------------------------------------------------------------------
@@ -1039,7 +1053,7 @@ def render_contextual_hero_illustration(
         is_clicked = (choreo_u >= 0.62)
         btn_col = accent_c if is_clicked else primary_c
         draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=21, fill=(*btn_col, 255))
-        btn_txt = "✔ AI STUDIO READY" if is_clicked else "✨ AI AUTO STUDIO"
+        btn_txt = "✔ جاهز للنشر" if is_clicked else "✨ معالجة ذكية"
         draw_contained_text_fn(draw, (btn_x1 + 14, btn_y1, btn_x2 - 14, btn_y2), btn_txt, initial_font_size=15, fill=(255, 255, 255, 255))
 
         draw_cursor_fn(draw, (btn_x2 + 20, btn_y2 + 30), (cx, (btn_y1 + btn_y2) // 2), choreo_u, accent_rgb=secondary_c)
@@ -2015,10 +2029,8 @@ def render_web_fetched_motion_scene(
         draw = ImageDraw.Draw(img, "RGBA")
 
     # 4. بطاقتان فرعيتان ثلاثيتا الأبعاد أسفل البطاقة الرئيسية (Staggered 3D Floating Bento Pods)
-    words_clean = [w_tok for w_tok in re.findall(r"[؀-ۿa-zA-Z0-9]+", concept_title) if len(w_tok) >= 3]
-    mid_idx = max(1, len(words_clean) // 2)
-    pod1_txt = " ".join(words_clean[:mid_idx]) if words_clean else "تصميم ذكي"
-    pod2_txt = " ".join(words_clean[mid_idx:]) if len(words_clean) > mid_idx else (kpi_lbl if kpi_lbl else "جودة احترافية")
+    pod1_txt = "أتمتة المونتاج الذكي"
+    pod2_txt = kpi_lbl if (kpi_lbl and kpi_lbl != "أداء احترافي") else "موشن جرافيك احترافي" 
 
     pod_w = (deck_w - 16) // 2
     pod_h = max(58, int(st_h * 0.20))

@@ -632,7 +632,7 @@ class WebMotionLearner:
             kpi_value = num_m.group(1).strip()
         else:
             kpi_value = ""
-        kpi_label = " ".join(meaningful_tokens[5:8]).strip() if len(meaningful_tokens) > 5 else ""
+        kpi_label = ""
 
         rot_seed = int(self.learned_genome.get("total_videos_learned", 0)) + int(time.time()) % 997
         arch, vis_subj = match_speech_to_visual_archetype(

@@ -221,6 +221,11 @@ def detect_strict_speech_intent(
         forbidden_archetypes.update(COMPARISON_ONLY_ARCHETYPES)
     if not is_explicit_metric_counter or is_greeting_or_intro:
         forbidden_archetypes.update(METRIC_COUNTER_ONLY_ARCHETYPES)
+    # حظر رسومات التوصيل والكابلات في الفيديوهات غير التجارية/التقنية الخاصة بالأجهزة
+    if not any(k in t for k in ["توصيل", "ولاية", "58", "باب الدار", "شحن", "سلعة", "منتج", "اكموندي"]):
+        forbidden_archetypes.add("hero_commerce_delivery")
+    if not any(k in t for k in ["كابل", "شاحن", "تشارجي", "يتشارجا", "بطارية", "سيبور", "ستاند", "سلك"]):
+        forbidden_archetypes.add("hero_power_cable_stand")
 
     return {
         "is_explicit_enumeration": is_explicit_enumeration,
@@ -266,85 +271,77 @@ def match_speech_to_visual_archetype(
         (
             "hero_power_cable_stand",
             ["كابل", "شاحن", "تشارجي", "يتشارجا", "سوبر فاست", "بطارية", "سيبور", "حامل", "ستاند", "سلك"],
-            ["hero_power_cable_stand", "web_dynamic_scene", "pack_3d_extruding_pillars"]
+            ["hero_power_cable_stand", "web_dynamic_scene", "hero_shield_durability"]
         ),
         (
             "hero_shield_durability",
-            ["قماش", "يتقطع", "مغلف", "متين", "متانة", "ضمان", "أصلي", "اصلي", "حماية", "مقاوم", "جودة"],
-            ["hero_shield_durability", "radar_target_sweep", "web_dynamic_scene"]
+            ["قماش", "يتقطع", "مغلف", "متين", "متانة", "ضمان", "أصلي", "اصلي", "حماية", "مقاوم", "جودة", "مجاني", "مجانا", "مجاناً", "باطل", "100%"],
+            ["hero_shield_durability", "hero_viral_rocket_chart", "web_dynamic_scene"]
         ),
         (
             "hero_commerce_delivery",
-            ["توصيل", "ولاية", "58", "باب الدار", "شحن", "سلعة", "منتج", "كابل", "اكموندي", "اطلب الآن"],
-            ["hero_commerce_delivery", "web_dynamic_scene", "hero_cta_magnet_finale"]
+            ["توصيل", "ولاية", "58", "باب الدار", "شحن", "سلعة", "منتج", "اكموندي", "اطلب الآن"],
+            ["hero_commerce_delivery", "hero_cta_magnet_finale", "web_dynamic_scene"]
         ),
         (
             "hero_waveform_scissors",
-            ["قص", "تقطيع", "صمت", "سكوت", "فراغات", "أخطاء", "غلط", "يحذف", "يشيل", "تنقية"],
-            ["hero_waveform_scissors", "web_dynamic_scene", "dark_cinema_fanned_cards"]
+            ["قص", "تقطيع", "صمت", "سكوت", "فراغات", "أخطاء", "غلط", "يحذف", "يشيل", "ينحي", "تنقية", "تعديل"],
+            ["hero_waveform_scissors", "hero_sound_wave_mixer", "web_dynamic_scene"]
         ),
         (
-            "hero_camera_production",
-            ["تصور", "تصوير", "كاميرا", "عدسة", "لقطة", "سجل", "تسجيل", "إضاءة", "استوديو"],
-            ["hero_camera_production", "web_dynamic_scene", "reels_6card_showcase_grid"]
+            "hero_creative_palette_pen",
+            ["موشن", "جرافيك", "غرافيك", "تصميم", "ألوان", "الوان", "ثيم", "لوقو", "شعار", "أشكال", "رسومات", "ستايل", "بالمونتاج"],
+            ["hero_creative_palette_pen", "hero_camera_production", "web_dynamic_scene"]
         ),
         (
             "hero_ai_neural_core",
             ["ذكاء", "اصطناعي", "الاصطناعي", "آلي", "تلقائي", "يفهم", "يحلل", "خوارزمية", "محرك", "ai"],
-            ["hero_ai_neural_core", "neural_hub_spoke_network", "web_dynamic_scene"]
+            ["hero_ai_neural_core", "hero_platform_workspace", "web_dynamic_scene"]
         ),
         (
             "hero_chrono_speedometer",
-            ["وقت", "ساعات", "ساعة", "دقيقة", "دقيقه", "ثواني", "ثانية", "سرعة", "سريع", "أقل من", "اقل من", "توفير"],
-            ["hero_chrono_speedometer", "chrono_ring_3d_counter", "web_dynamic_scene"]
+            ["وقت", "الوقت", "ساعات", "ساعة", "دقيقة", "دقيقه", "ثواني", "ثانية", "سرعة", "سريع", "أقل من", "اقل من", "توفير", "عندكش"],
+            ["hero_chrono_speedometer", "hero_problem_radar_fix", "web_dynamic_scene"]
+        ),
+        (
+            "hero_problem_radar_fix",
+            ["مشكل", "مشكلة", "معاناة", "تعاني", "يعاني", "صعب", "صعيب", "متعب", "ممل", "مشتت", "ضيق", "تعب", "يموت", "يموتوا"],
+            ["hero_problem_radar_fix", "hero_chrono_speedometer", "web_dynamic_scene"]
+        ),
+        (
+            "hero_smartphone_reels",
+            ["ريلز", "للريلز", "تيك توك", "شورتس", "انستغرام", "الانستغرام", "الانستقرام", "يوتيوب", "التواصل الاجتماعي", "السوشيال", "ميديا", "الكونت", "حساب", "الحساب", "تليفون", "هاتف"],
+            ["hero_smartphone_reels", "hero_viral_rocket_chart", "web_dynamic_scene"]
+        ),
+        (
+            "hero_platform_workspace",
+            ["منصة", "تطبيق", "موقع", "برنامج", "نظام", "ايديتينغ", "مسؤولة", "المسؤولة", "جبت لكم", "الحل", "أداة", "تمونتي", "يمونتي", "تمنتج", "يمنتج", "تمنطي"],
+            ["hero_platform_workspace", "hero_ai_neural_core", "hero_camera_production", "web_dynamic_scene"]
+        ),
+        (
+            "hero_camera_production",
+            ["تصور", "تصوير", "كاميرا", "عدسة", "لقطة", "فيديو", "الفيديوهات", "مقطع", "إضاءة", "استوديو"],
+            ["hero_camera_production", "hero_smartphone_reels", "web_dynamic_scene"]
         ),
         (
             "hero_sound_wave_mixer",
             ["صوت", "تعليق", "مايك", "ساوند", "مؤثرات", "ووش", "نغمة", "تردد", "سمع"],
-            ["hero_sound_wave_mixer", "dark_cinema_fanned_cards", "web_dynamic_scene"]
+            ["hero_sound_wave_mixer", "hero_waveform_scissors", "web_dynamic_scene"]
         ),
         (
             "hero_viral_rocket_chart",
-            ["إنتاجية", "انتاجية", "انتشار", "مشاهدات", "تفاعل", "ريتش", "نمو", "يرفع", "ترفع", "مضاعفة", "نتائج", "نجاح"],
-            ["hero_viral_rocket_chart", "bezier_growth_nodes", "web_dynamic_scene"]
-        ),
-        (
-            "hero_smartphone_reels",
-            ["ريلز", "للريلز", "تيك توك", "شورتس", "انستغرام", "يوتيوب", "التواصل الاجتماعي", "فيديوهات", "مقطع", "تليفون", "هاتف"],
-            ["hero_smartphone_reels", "reels_6card_showcase_grid", "web_dynamic_scene"]
-        ),
-        (
-            "hero_creative_palette_pen",
-            ["تصميم", "ألوان", "الوان", "ثيم", "لوقو", "شعار", "موشن", "جرافيك", "غرافيك", "أشكال", "رسومات", "ستايل"],
-            ["hero_creative_palette_pen", "web_dynamic_scene", "pack_3d_extruding_pillars"]
-        ),
-        (
-            "hero_problem_radar_fix",
-            ["مشكل", "مشكلة", "معاناة", "يعاني", "صعب", "صعيب", "متعب", "ممل", "مشتت", "ضيق", "تعب"],
-            ["hero_problem_radar_fix", "radar_target_sweep", "web_dynamic_scene"]
-        ),
-        (
-            "hero_platform_workspace",
-            ["منصة", "تطبيق", "موقع", "برنامج", "نظام", "مسؤولة", "المسؤولة", "جبت لكم", "جيت لكم", "الحل", "أداة", "أبني", "ابني"],
-            ["hero_platform_workspace", "web_dynamic_scene", "interactive_profile_follow_card"]
-        ),
-        (
-            "interactive_profile_follow_card",
-            ["مجاني", "مجانا", "مجاناً", "باطل", "بلا ما نخلصو", "ولا دورو", "بدون دفع", "بدون اشتراك"],
-            ["interactive_profile_follow_card", "hero_cta_magnet_finale", "kinetic_quote_dm_finale"]
+            ["إنتاجية", "انتاجية", "انتشار", "مشاهدات", "تفاعل", "ريتش", "نمو", "يرفع", "ترفع", "ترفعهم", "مضاعفة", "نتائج", "نجاح"],
+            ["hero_viral_rocket_chart", "hero_smartphone_reels", "web_dynamic_scene"]
         ),
         (
             "hero_cta_magnet_finale",
-            ["رابط", "أسفل", "اسفل", "تابع", "اشترك", "شارك", "تواصل", "جرب", "ابدأ", "الآن"],
-            ["hero_cta_magnet_finale", "kinetic_quote_dm_finale", "interactive_profile_follow_card"]
+            ["رابط", "التسجيل", "أسفل", "اسفل", "تابع", "اشترك", "شارك", "تواصل", "جرب", "ابدأ", "الآن"],
+            ["hero_cta_magnet_finale", "hero_viral_rocket_chart", "web_dynamic_scene"]
         ),
     ]
 
     if scene_index == total_scenes - 1 and total_scenes >= 3:
-        outro_pool = ["interactive_profile_follow_card", "hero_cta_magnet_finale", "kinetic_quote_dm_finale"]
-        for cand in outro_pool:
-            if cand not in used:
-                return cand, cand
+        return "hero_cta_magnet_finale", "hero_cta_magnet_finale"
 
     best_subj = None
     best_candidates: List[str] = []
@@ -397,62 +394,64 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "headline_style": "gold_accent_clean",
         "card_tilt_deg": 1.8,
         "preferred_archetypes": [
-            "chrono_ring_3d_counter", "pack_3d_extruding_pillars", "macos_folder_counter_list",
-            "reels_6card_showcase_grid", "dark_cinema_fanned_cards", "interactive_profile_follow_card",
-            "bezier_growth_nodes", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
-            "top_bg": (253, 250, 241),
-            "bottom_bg": (244, 231, 198),
+            "top_bg": (14, 18, 28),
+            "bottom_bg": (28, 34, 52),
             "glow": (234, 179, 8),
             "primary": (217, 155, 28),
             "secondary": (37, 99, 235),
             "accent": (16, 185, 129),
-            "card_bg": (255, 255, 255),
-            "is_light_bg": True,
+            "card_bg": (18, 25, 44),
+            "is_light_bg": False,
             "sticker_bg": (234, 179, 8),
             "sticker_txt": (24, 24, 27),
-            "headline_txt": (24, 24, 27)
+            "headline_txt": (255, 255, 255)
         },
         "acts": {
             "hook_problem": {
-                "top_bg": (253, 250, 241),
-                "bottom_bg": (244, 231, 198),
+                "top_bg": (14, 18, 28),
+                "bottom_bg": (28, 34, 52),
                 "glow": (234, 179, 8),
                 "primary": (217, 155, 28),
                 "secondary": (37, 99, 235),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (234, 179, 8),
                 "sticker_txt": (24, 24, 27),
-                "headline_txt": (24, 24, 27)
+                "headline_txt": (255, 255, 255)
             },
             "body_steps": {
-                "top_bg": (253, 250, 241),
-                "bottom_bg": (244, 231, 198),
+                "top_bg": (14, 18, 28),
+                "bottom_bg": (28, 34, 52),
                 "glow": (234, 179, 8),
                 "primary": (217, 155, 28),
                 "secondary": (37, 99, 235),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (234, 179, 8),
                 "sticker_txt": (24, 24, 27),
-                "headline_txt": (24, 24, 27)
+                "headline_txt": (255, 255, 255)
             },
             "outro_finale": {
-                "top_bg": (253, 250, 241),
-                "bottom_bg": (244, 231, 198),
+                "top_bg": (14, 18, 28),
+                "bottom_bg": (28, 34, 52),
                 "glow": (234, 179, 8),
                 "primary": (217, 155, 28),
                 "secondary": (37, 99, 235),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (234, 179, 8),
                 "sticker_txt": (24, 24, 27),
-                "headline_txt": (24, 24, 27)
+                "headline_txt": (255, 255, 255)
             }
         }
     },
@@ -463,13 +462,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "step_dots_pill",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.5,
         "preferred_archetypes": [
-            "chrono_ring_3d_counter", "bezier_growth_nodes", "live_magnifier_scanner",
-            "radar_target_sweep", "pack_3d_extruding_pillars", "reels_6card_showcase_grid",
-            "dark_cinema_fanned_cards", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (13, 118, 142),
@@ -478,7 +479,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
             "primary": (27, 174, 202),
             "secondary": (250, 204, 21),
             "accent": (16, 185, 129),
-            "card_bg": (255, 255, 255),
+            "card_bg": (18, 25, 44),
             "is_light_bg": False,
             "sticker_bg": (255, 255, 255),
             "sticker_txt": (11, 24, 31),
@@ -492,7 +493,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (27, 174, 202),
                 "secondary": (255, 255, 255),
                 "accent": (244, 63, 94),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (27, 174, 202),
                 "sticker_txt": (255, 255, 255),
@@ -505,7 +506,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (11, 24, 31),
                 "secondary": (27, 174, 202),
                 "accent": (250, 204, 21),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (255, 255, 255),
                 "sticker_txt": (11, 24, 31),
@@ -518,7 +519,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (27, 174, 202),
                 "secondary": (250, 204, 21),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (250, 204, 21),
                 "sticker_txt": (11, 24, 31),
@@ -533,66 +534,68 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "corner_punctuation_watermark",
+        "header_style": "none_clean",
         "headline_style": "selection_box_handle",
         "card_tilt_deg": 0.0,
         "preferred_archetypes": [
-            "macos_folder_counter_list", "damped_balance_scale", "reels_6card_showcase_grid",
-            "interactive_profile_follow_card", "bezier_growth_nodes", "live_magnifier_scanner",
-            "nle_timeline_matrix", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
-            "top_bg": (172, 214, 248),
-            "bottom_bg": (208, 232, 252),
+            "top_bg": (10, 22, 42),
+            "bottom_bg": (18, 38, 72),
             "glow": (2, 132, 199),
             "primary": (2, 132, 199),
             "secondary": (15, 23, 42),
             "accent": (37, 99, 235),
-            "card_bg": (255, 255, 255),
-            "is_light_bg": True,
+            "card_bg": (18, 25, 44),
+            "is_light_bg": False,
             "sticker_bg": (2, 132, 199),
             "sticker_txt": (255, 255, 255),
-            "headline_txt": (15, 23, 42)
+            "headline_txt": (255, 255, 255)
         },
         "acts": {
             "hook_problem": {
-                "top_bg": (178, 218, 250),
-                "bottom_bg": (206, 230, 252),
+                "top_bg": (10, 22, 42),
+                "bottom_bg": (18, 38, 72),
                 "glow": (2, 132, 199),
                 "primary": (2, 132, 199),
                 "secondary": (15, 23, 42),
                 "accent": (37, 99, 235),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (2, 132, 199),
                 "sticker_txt": (255, 255, 255),
-                "headline_txt": (15, 23, 42)
+                "headline_txt": (255, 255, 255)
             },
             "body_steps": {
-                "top_bg": (168, 212, 246),
-                "bottom_bg": (204, 230, 252),
+                "top_bg": (10, 22, 42),
+                "bottom_bg": (18, 38, 72),
                 "glow": (37, 99, 235),
                 "primary": (2, 132, 199),
                 "secondary": (30, 58, 138),
                 "accent": (14, 165, 233),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (37, 99, 235),
                 "sticker_txt": (255, 255, 255),
-                "headline_txt": (15, 23, 42)
+                "headline_txt": (255, 255, 255)
             },
             "outro_finale": {
-                "top_bg": (182, 220, 250),
-                "bottom_bg": (212, 234, 254),
+                "top_bg": (10, 22, 42),
+                "bottom_bg": (18, 38, 72),
                 "glow": (2, 132, 199),
                 "primary": (2, 132, 199),
                 "secondary": (15, 23, 42),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
-                "is_light_bg": True,
+                "card_bg": (18, 25, 44),
+                "is_light_bg": False,
                 "sticker_bg": (15, 23, 42),
                 "sticker_txt": (255, 255, 255),
-                "headline_txt": (15, 23, 42)
+                "headline_txt": (255, 255, 255)
             }
         }
     },
@@ -603,13 +606,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "segmented_3tabs",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.0,
         "preferred_archetypes": [
-            "dark_cinema_fanned_cards", "radar_target_sweep", "bezier_growth_nodes",
-            "pack_3d_extruding_pillars", "damped_balance_scale", "reels_6card_showcase_grid",
-            "live_magnifier_scanner", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (18, 15, 36),
@@ -673,13 +678,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "step_dots_pill",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.2,
         "preferred_archetypes": [
-            "bezier_growth_nodes", "pack_3d_extruding_pillars", "damped_balance_scale",
-            "reels_6card_showcase_grid", "chrono_ring_3d_counter", "radar_target_sweep",
-            "nle_timeline_matrix", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (9, 32, 26),
@@ -688,7 +695,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
             "primary": (16, 185, 129),
             "secondary": (250, 204, 21),
             "accent": (56, 189, 248),
-            "card_bg": (255, 255, 255),
+            "card_bg": (18, 25, 44),
             "is_light_bg": False,
             "sticker_bg": (16, 185, 129),
             "sticker_txt": (255, 255, 255),
@@ -702,7 +709,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (16, 185, 129),
                 "secondary": (250, 204, 21),
                 "accent": (245, 158, 11),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (16, 185, 129),
                 "sticker_txt": (255, 255, 255),
@@ -715,7 +722,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (16, 185, 129),
                 "secondary": (250, 204, 21),
                 "accent": (56, 189, 248),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (250, 204, 21),
                 "sticker_txt": (9, 26, 22),
@@ -728,7 +735,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (16, 185, 129),
                 "secondary": (250, 204, 21),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (16, 185, 129),
                 "sticker_txt": (255, 255, 255),
@@ -743,13 +750,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "segmented_3tabs",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.2,
         "preferred_archetypes": [
-            "interactive_profile_follow_card", "reels_6card_showcase_grid", "bezier_growth_nodes",
-            "radar_target_sweep", "damped_balance_scale", "pack_3d_extruding_pillars",
-            "dark_cinema_fanned_cards", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (11, 20, 44),
@@ -813,13 +822,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "step_dots_pill",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.0,
         "preferred_archetypes": [
-            "chrono_ring_3d_counter", "macos_folder_counter_list", "live_magnifier_scanner",
-            "dark_cinema_fanned_cards", "reels_6card_showcase_grid", "pack_3d_extruding_pillars",
-            "bezier_growth_nodes", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (26, 14, 24),
@@ -828,7 +839,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
             "primary": (244, 63, 94),
             "secondary": (251, 191, 36),
             "accent": (16, 185, 129),
-            "card_bg": (255, 255, 255),
+            "card_bg": (18, 25, 44),
             "is_light_bg": False,
             "sticker_bg": (244, 63, 94),
             "sticker_txt": (255, 255, 255),
@@ -842,7 +853,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (244, 63, 94),
                 "secondary": (251, 191, 36),
                 "accent": (244, 63, 94),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (244, 63, 94),
                 "sticker_txt": (255, 255, 255),
@@ -855,7 +866,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (244, 63, 94),
                 "secondary": (251, 191, 36),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (251, 191, 36),
                 "sticker_txt": (26, 14, 24),
@@ -868,7 +879,7 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "primary": (244, 63, 94),
                 "secondary": (251, 191, 36),
                 "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255),
+                "card_bg": (18, 25, 44),
                 "is_light_bg": False,
                 "sticker_bg": (244, 63, 94),
                 "sticker_txt": (255, 255, 255),
@@ -883,12 +894,15 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "has_grid": False,
         "has_floating_diamonds": False,
         "has_giant_bg_numbers": False,
-        "header_style": "step_dots_pill",
+        "header_style": "none_clean",
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.4,
         "preferred_archetypes": [
-            "web_dynamic_scene", "hero_ai_neural_core", "hero_smartphone_reels",
-            "dark_cinema_fanned_cards", "bezier_growth_nodes", "radar_target_sweep"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (10, 14, 26),
@@ -935,40 +949,43 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.0,
         "preferred_archetypes": [
-            "web_dynamic_scene", "hero_platform_workspace", "hero_viral_rocket_chart",
-            "pack_3d_extruding_pillars", "reels_6card_showcase_grid", "bezier_growth_nodes"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
-            "top_bg": (241, 245, 249),
-            "bottom_bg": (224, 231, 255),
+            "top_bg": (13, 17, 34),
+            "bottom_bg": (26, 32, 64),
             "glow": (79, 70, 229),
             "primary": (79, 70, 229),
             "secondary": (14, 165, 233),
             "accent": (16, 185, 129),
-            "card_bg": (255, 255, 255),
-            "is_light_bg": True,
+            "card_bg": (18, 25, 44),
+            "is_light_bg": False,
             "sticker_bg": (79, 70, 229),
             "sticker_txt": (255, 255, 255),
-            "headline_txt": (15, 23, 42)
+            "headline_txt": (255, 255, 255)
         },
         "acts": {
             "hook_problem": {
-                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "top_bg": (13, 17, 34), "bottom_bg": (26, 32, 64), "glow": (79, 70, 229),
                 "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (79, 70, 229),
-                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+                "card_bg": (18, 25, 44), "is_light_bg": False, "sticker_bg": (79, 70, 229),
+                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
             },
             "body_steps": {
-                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "top_bg": (13, 17, 34), "bottom_bg": (26, 32, 64), "glow": (79, 70, 229),
                 "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (79, 70, 229),
-                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+                "card_bg": (18, 25, 44), "is_light_bg": False, "sticker_bg": (79, 70, 229),
+                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
             },
             "outro_finale": {
-                "top_bg": (241, 245, 249), "bottom_bg": (224, 231, 255), "glow": (79, 70, 229),
+                "top_bg": (13, 17, 34), "bottom_bg": (26, 32, 64), "glow": (79, 70, 229),
                 "primary": (79, 70, 229), "secondary": (14, 165, 233), "accent": (16, 185, 129),
-                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (14, 165, 233),
-                "sticker_txt": (255, 255, 255), "headline_txt": (15, 23, 42)
+                "card_bg": (18, 25, 44), "is_light_bg": False, "sticker_bg": (14, 165, 233),
+                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
             }
         }
     },
@@ -983,8 +1000,11 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
         "headline_style": "sticker_highlight",
         "card_tilt_deg": 1.5,
         "preferred_archetypes": [
-            "web_dynamic_scene", "hero_camera_production", "hero_sound_wave_mixer",
-            "dark_cinema_fanned_cards", "pack_3d_extruding_pillars", "kinetic_quote_dm_finale"
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
         ],
         "unified_palette": {
             "top_bg": (28, 19, 16),
@@ -1731,7 +1751,7 @@ def _build_act_palette_from_pixels(px_chunk: np.ndarray, fallback_family: Dict[s
         "glow": primary_c,
         "primary": primary_c,
         "secondary": secondary_c,
-        "card_bg": (255, 255, 255) if (is_light or _saturation_and_luma(top_bg)[0] > 0.25) else (24, 22, 46),
+        "card_bg": (18, 25, 44) if (is_light or _saturation_and_luma(top_bg)[0] > 0.25) else (24, 22, 46),
         "is_light_bg": is_light,
         "sticker_bg": sticker_bg,
         "sticker_txt": sticker_txt,
@@ -2182,74 +2202,70 @@ def clear_active_storyboard_state() -> None:
 def _extract_panel_palette_and_foreground(panel_rgb: np.ndarray, panel_idx: int, out_dir: str) -> Dict[str, Any]:
     """
     يستخرج:
-    1. لوحة الألوان السائدة في اللوحة (الخلفية، اللون الأساسي، الثانوي، التباين).
-    2. طبقة العناصر الأمامية المفرغة جزئياً (2.5D Foreground Subject Layer) لتحريكها بعمق بارالاكس مستقل!
-    3. نقطة التركيز البصري (Focal Point cx, cy) داخل اللوحة لتوجيه الكاميرا والمؤشر التفاعلي.
+    1. الصافي البصري للوحة الستوري بورد مع قص تلقائي ذكي لشريط النص الصوتي السفلي (🎙️) وشارة الرقم العلوية (1..6) إن وجدت،
+       بحيث يظهر الرسم الفني للوحة بملء الشاشة بدون نصوص مكررة أو تشويش!
+    2. لوحة الألوان السائدة في اللوحة (الخلفية، اللون الأساسي، الثانوي، التباين).
+    3. نقطة التركيز البصري (Focal Point cx, cy) لحركة الكاميرا السينمائية الناعمة (Ken Burns) بدون أي ازدواج بصري (Zero Ghosting)!
     """
-    from PIL import Image, ImageFilter
-    h, w, _ = panel_rgb.shape
+    from PIL import Image
+    h0, w0, _ = panel_rgb.shape
     os.makedirs(out_dir, exist_ok=True)
 
-    # حفظ صورة اللوحة النظيفة
-    panel_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}.png")
-    Image.fromarray(panel_rgb).save(panel_path, format="PNG")
+    raw_panel_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}_raw.png")
+    Image.fromarray(panel_rgb).save(raw_panel_path, format="PNG")
 
-    # حساب لون الخلفية من حواف اللوحة
+    # كشف تلقائي ذكي لشريط السكربت السفلي (🎙️) وشارة الترقيم العلوية في لوحات الستوري بورد
+    crop_y1, crop_y2 = 0, h0
+    if h0 >= 180 and w0 >= 180:
+        bot_strip = panel_rgb[int(h0 * 0.815):int(h0 * 0.97), int(w0 * 0.08):int(w0 * 0.92)]
+        bot_median = float(np.median(bot_strip)) if bot_strip.size > 0 else 128.0
+        bot_p25 = float(np.percentile(bot_strip, 25)) if bot_strip.size > 0 else 128.0
+        if bot_median <= 48.0 and bot_p25 <= 22.0:
+            crop_y2 = int(h0 * 0.785)
+            crop_y1 = int(h0 * 0.095)
+
+    clean_art_rgb = panel_rgb[crop_y1:crop_y2, :, :]
+    if clean_art_rgb.shape[0] < 64:
+        clean_art_rgb = panel_rgb
+
+    h, w, _ = clean_art_rgb.shape
+    panel_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}.png")
+    Image.fromarray(clean_art_rgb).save(panel_path, format="PNG")
+
     border_pixels = np.concatenate([
-        panel_rgb[:max(2, h // 16), :, :].reshape(-1, 3),
-        panel_rgb[-max(2, h // 16):, :, :].reshape(-1, 3),
-        panel_rgb[:, :max(2, w // 16), :].reshape(-1, 3),
-        panel_rgb[:, -max(2, w // 16):, :].reshape(-1, 3),
+        clean_art_rgb[:max(2, h // 16), :, :].reshape(-1, 3),
+        clean_art_rgb[-max(2, h // 16):, :, :].reshape(-1, 3),
+        clean_art_rgb[:, :max(2, w // 16), :].reshape(-1, 3),
+        clean_art_rgb[:, -max(2, w // 16):, :].reshape(-1, 3),
     ], axis=0).astype(np.float32)
 
     bg_median = np.median(border_pixels, axis=0)
     bg_rgb = tuple(int(np.clip(v, 0, 255)) for v in bg_median)
     bg_luma = 0.299 * bg_rgb[0] + 0.587 * bg_rgb[1] + 0.114 * bg_rgb[2]
-    is_light_bg = bool(bg_luma >= 145.0)
+    is_light_bg = False  # نستخدم دائماً إضاءة سينمائية داكنة حول لوحة الستوري بورد لإبراز الرسم والكابشن
 
-    # حساب المسافة اللونية والتباين لفصل العناصر المرسومة في اللوحة عن خلفية اللوحة
-    diff = np.linalg.norm(panel_rgb.astype(np.float32) - bg_median[None, None, :], axis=2)
-    # تعزيز الحواف الداخلية
-    gy, gx = np.gradient(np.mean(panel_rgb.astype(np.float32), axis=2))
+    diff = np.linalg.norm(clean_art_rgb.astype(np.float32) - bg_median[None, None, :], axis=2)
+    gy, gx = np.gradient(np.mean(clean_art_rgb.astype(np.float32), axis=2))
     edge_mag = np.hypot(gx, gy)
     salience = diff * 0.75 + edge_mag * 1.35
-
     thresh = max(24.0, float(np.percentile(salience, 62)))
-    fg_alpha = np.clip((salience - thresh * 0.65) / max(10.0, thresh * 0.85), 0.0, 1.0)
-    # تصفير الحواف الخارجية تماماً حتى تندمج طبقة البارالاكس الأمامية بنعومة
-    yy, xx = np.mgrid[0:h, 0:w]
-    edge_fade_x = np.minimum(xx / max(1.0, w * 0.08), (w - 1 - xx) / max(1.0, w * 0.08))
-    edge_fade_y = np.minimum(yy / max(1.0, h * 0.08), (h - 1 - yy) / max(1.0, h * 0.08))
-    vignette_mask = np.clip(np.minimum(edge_fade_x, edge_fade_y), 0.0, 1.0)
-    fg_alpha = (fg_alpha * vignette_mask * 255.0).astype(np.uint8)
 
-    fg_rgba = np.dstack([panel_rgb, fg_alpha])
-    fg_pil = Image.fromarray(fg_rgba, mode="RGBA")
-    # تنعيم قناة ألفا قليلاً
-    r_ch, g_ch, b_ch, a_ch = fg_pil.split()
-    a_ch = a_ch.filter(ImageFilter.GaussianBlur(radius=1.5))
-    fg_pil = Image.merge("RGBA", (r_ch, g_ch, b_ch, a_ch))
-    fg_path = os.path.join(out_dir, f"sb_panel_{panel_idx + 1:02d}_fg.png")
-    fg_pil.save(fg_path, format="PNG")
-
-    # استخراج الألوان البارزة للعناصر المرسومة
     fg_mask = diff > max(28.0, float(np.percentile(diff, 70)))
     if np.any(fg_mask):
-        fg_pts = panel_rgb[fg_mask].astype(np.float32)
+        fg_pts = clean_art_rgb[fg_mask].astype(np.float32)
         sat = np.max(fg_pts, axis=1) - np.min(fg_pts, axis=1)
         vivid_mask = sat > np.percentile(sat, 55)
         vivid_pts = fg_pts[vivid_mask] if np.any(vivid_mask) else fg_pts
         primary_rgb = tuple(int(np.clip(v, 0, 255)) for v in np.median(vivid_pts, axis=0))
         p_high = tuple(int(np.clip(v, 0, 255)) for v in np.percentile(vivid_pts, 80, axis=0))
     else:
-        primary_rgb = (217, 155, 28) if is_light_bg else (56, 189, 248)
-        p_high = (37, 99, 235) if is_light_bg else (250, 204, 21)
+        primary_rgb = (56, 189, 248)
+        p_high = (250, 204, 21)
 
-    # إذا كان اللون الأساسي باهتاً جداً، نعززه قليلاً
     if max(primary_rgb) - min(primary_rgb) < 35:
-        primary_rgb = (217, 155, 28) if is_light_bg else (56, 189, 248)
+        primary_rgb = (56, 189, 248)
 
-    # حساب مركز الثقل البصري (Focal Point) داخل اللوحة
+    yy, xx = np.mgrid[0:h, 0:w]
     weights = np.maximum(0.0, salience - thresh * 0.5)
     total_w = float(np.sum(weights))
     if total_w > 10.0:
@@ -2258,16 +2274,17 @@ def _extract_panel_palette_and_foreground(panel_rgb: np.ndarray, panel_idx: int,
     else:
         focal_x, focal_y = 0.5, 0.5
 
-    focal_x = round(max(0.22, min(0.78, focal_x)), 3)
-    focal_y = round(max(0.22, min(0.78, focal_y)), 3)
+    focal_x = round(max(0.28, min(0.72, focal_x)), 3)
+    focal_y = round(max(0.28, min(0.72, focal_y)), 3)
 
-    top_bg = bg_rgb
-    bottom_bg = tuple(max(0, min(255, int(c * (0.93 if is_light_bg else 0.78)))) for c in bg_rgb)
+    top_bg = tuple(max(8, min(36, int(c * 0.25))) for c in bg_rgb)
+    bottom_bg = tuple(max(6, min(28, int(c * 0.18))) for c in bg_rgb)
 
     return {
         "panel_index": panel_idx,
         "panel_path": panel_path,
-        "fg_path": fg_path,
+        "raw_panel_path": raw_panel_path,
+        "fg_path": "",  # منع طبقة الـ Foreground المكررة نهائياً لضمان عدم حدوث ازدواج بصري (Zero Ghosting)
         "width": int(w),
         "height": int(h),
         "focal_point": [focal_x, focal_y],
@@ -2277,25 +2294,20 @@ def _extract_panel_palette_and_foreground(panel_rgb: np.ndarray, panel_idx: int,
             "bottom_bg": list(bottom_bg),
             "primary": list(primary_rgb),
             "secondary": list(p_high),
-            "accent": [16, 185, 129] if is_light_bg else [56, 189, 248],
-            "headline_txt": [24, 24, 27] if is_light_bg else [248, 250, 252],
+            "accent": [0, 255, 102],
+            "headline_txt": [255, 255, 255],
             "sticker_bg": list(primary_rgb),
-            "sticker_txt": [255, 255, 255] if (0.299 * primary_rgb[0] + 0.587 * primary_rgb[1] + 0.114 * primary_rgb[2]) < 165 else [24, 24, 27],
+            "sticker_txt": [255, 255, 255] if (0.299 * primary_rgb[0] + 0.587 * primary_rgb[1] + 0.114 * primary_rgb[2]) < 165 else [15, 23, 42],
         }
     }
 
 
 def _find_gutter_splits(sheet_np: np.ndarray, axis: int = 0, min_segments: int = 2, max_segments: int = 5) -> List[Tuple[int, int]]:
-    """
-    يكتشف الفواصل الأفقية (axis=0) أو العمودية (axis=1) في صورة الستوري بورد الواحدة
-    عبر فحص تطابق الخطوط مع لون خلفية الورقة/الفاصل وانخفاض التباين اللوني على طول الخط الفاصل.
-    """
     sh_h, sh_w, _ = sheet_np.shape
     length = sh_h if axis == 0 else sh_w
     if length < 80:
         return [(0, length)]
 
-    # لون الفاصل/الهامش الخارجي للصورة
     border_strip = np.concatenate([
         sheet_np[:max(2, sh_h // 40), :, :].reshape(-1, 3),
         sheet_np[-max(2, sh_h // 40):, :, :].reshape(-1, 3),
@@ -2304,7 +2316,6 @@ def _find_gutter_splits(sheet_np: np.ndarray, axis: int = 0, min_segments: int =
     ], axis=0).astype(np.float32)
     gutter_color = np.median(border_strip, axis=0)
 
-    # لكل صف أو عمود، نحسب كم نسبة البكسلات المطابقة للون الفاصل (أو البياض/السواد)
     diff_from_gutter = np.linalg.norm(sheet_np.astype(np.float32) - gutter_color[None, None, :], axis=2)
     line_std = np.std(np.mean(sheet_np.astype(np.float32), axis=2), axis=(1 if axis == 0 else 0))
     line_mean_diff = np.mean(diff_from_gutter, axis=(1 if axis == 0 else 0))
@@ -2345,22 +2356,21 @@ def _find_gutter_splits(sheet_np: np.ndarray, axis: int = 0, min_segments: int =
 
 def analyze_and_slice_storyboard_sheet(
     image_path: str,
-    reading_order: str = "rtl",
+    reading_order: str = "ltr",
     forced_grid: Optional[Tuple[int, int]] = None
 ) -> Dict[str, Any]:
     """
     يستقبل صورة ستوري بورد واحدة (Single-Image Storyboard Sheet) تحتوي على عدة مشاهد/لوحات،
     ويقوم بـ:
-    1. اكتشاف شبكة اللوحات تلقائياً (مثلاً 2×2، 2×3، 3×2، 3×3، 4×2، أو شريط طولي/عرضي) أو تقسيمها وفق الاختيار.
-    2. قص كل لوحة بدقة مع إزالة الحواف المزعجة واستخراج ألوانها وطبقة الـ 2.5D الأمامية الخاصة بها.
-    3. حفظ حالة الستوري بورد لتتم رندرة الفيديو بالكامل بناءً على لوحات الستوري بورد بالترتيب دون اختراع رسومات عشوائية!
+    1. اكتشاف شبكة اللوحات تلقائياً (مثلاً 3×2، 2×2، 2×3) مع اعتماد الترتيب القياسي للوحات المرقمة (LTR: 1->2->3->4->5->6) افتراضياً.
+    2. قص كل لوحة بدقة مع إزالة شريط السكربت السفلي (🎙️) وشارة الرقم العلوية واستخراج ألوانها بدون أي طبقات مزدوجة مشوشة.
+    3. حفظ حالة الستوري بورد لتتم رندرة الفيديو بالكامل بناءً على لوحات الستوري بورد بالترتيب المتزامن مع الصوت!
     """
     from PIL import Image
     if not image_path or not os.path.exists(image_path):
         return {"ok": False, "message": "ملف صورة الستوري بورد غير موجود."}
 
     os.makedirs(STORYBOARD_PANELS_DIR, exist_ok=True)
-    # تنظيف اللوحات القديمة
     try:
         for old_f in os.listdir(STORYBOARD_PANELS_DIR):
             if old_f.startswith("sb_panel_"):
@@ -2370,7 +2380,6 @@ def analyze_and_slice_storyboard_sheet(
 
     with Image.open(image_path) as im:
         rgb_im = im.convert("RGB")
-        # تحجيم آمن للذاكرة مع الحفاظ على دقة ممتازة لكل لوحة
         max_sheet_dim = 2048
         w0, h0 = rgb_im.size
         if max(w0, h0) > max_sheet_dim:
@@ -2385,12 +2394,9 @@ def analyze_and_slice_storyboard_sheet(
         row_spans = [(int(r * sh_h / n_rows), int((r + 1) * sh_h / n_rows)) for r in range(n_rows)]
         col_spans = [(int(c * sh_w / n_cols), int((c + 1) * sh_w / n_cols)) for c in range(n_cols)]
     else:
-        # الاكتشاف الذكي للفواصل الأفقية والعمودية عبر انحراف التباين اللوني (Projection Profiles)
         row_spans = _find_gutter_splits(sheet_np, axis=0, min_segments=1, max_segments=5)
         col_spans = _find_gutter_splits(sheet_np, axis=1, min_segments=1, max_segments=5)
 
-        # إذا كانت الصورة لا تحتوي على فواصل بيضاء/سوداء صريحة (مثلاً لوحات متلاصقة أو لوحة ستوري بورد موحدة)،
-        # نقسمها بذكاء حسب نسبة أبعاد الصورة إلى شبكة قياسية (2x2 أو 2x3 أو 3x2)
         if len(row_spans) == 1 and len(col_spans) == 1:
             aspect = sh_w / float(max(1, sh_h))
             if aspect >= 1.35:
@@ -2402,15 +2408,24 @@ def analyze_and_slice_storyboard_sheet(
             row_spans = [(int(r * sh_h / n_rows), int((r + 1) * sh_h / n_rows)) for r in range(n_rows)]
             col_spans = [(int(c * sh_w / n_cols), int((c + 1) * sh_w / n_cols)) for c in range(n_cols)]
 
+    # إذا كانت اللوحة الأولى (أعلى اليسار) تحتوي على شارة رقم صفراء/برتقالية في زاويتها اليسرى العليا (مثل 1..6 القياسية)،
+    # نتأكد أن القراءة تبدأ من اليسار لليمين (LTR) حتى لو لم يغير المستخدم الإعداد!
+    eff_order = str(reading_order or "ltr").lower()
+    if len(col_spans) >= 2 and len(row_spans) >= 1:
+        r0_y1, r0_y2 = row_spans[0]
+        c0_x1, c0_x2 = col_spans[0]
+        tl_badge = sheet_np[r0_y1:r0_y1 + max(8, int((r0_y2 - r0_y1) * 0.10)), c0_x1:c0_x1 + max(12, int((c0_x2 - c0_x1) * 0.38))]
+        if tl_badge.size > 0 and (float(np.mean(tl_badge[:, :, 0])) - float(np.mean(tl_badge[:, :, 2]))) > 45.0:
+            eff_order = "ltr"
+
     panels_meta: List[Dict[str, Any]] = []
     panel_idx = 0
 
     for (ry1, ry2) in row_spans:
-        ordered_cols = list(reversed(col_spans)) if str(reading_order).lower() == "rtl" else list(col_spans)
+        ordered_cols = list(reversed(col_spans)) if eff_order == "rtl" else list(col_spans)
         for (cx1, cx2) in ordered_cols:
-            # تقليم 3% من الحواف الداخلية لكل خلية لإزالة خطوط الشبكة السوداء/البيضاء
-            pad_y = max(2, int((ry2 - ry1) * 0.03))
-            pad_x = max(2, int((cx2 - cx1) * 0.03))
+            pad_y = max(2, int((ry2 - ry1) * 0.018))
+            pad_x = max(2, int((cx2 - cx1) * 0.018))
             py1, py2 = min(ry2 - 10, ry1 + pad_y), max(ry1 + 10, ry2 - pad_y)
             px1, px2 = min(cx2 - 10, cx1 + pad_x), max(cx1 + 10, cx2 - pad_x)
             crop_np = sheet_np[py1:py2, px1:px2]
@@ -2423,7 +2438,7 @@ def analyze_and_slice_storyboard_sheet(
     state_payload = {
         "enabled": len(panels_meta) > 0,
         "source_image": os.path.abspath(image_path),
-        "reading_order": reading_order,
+        "reading_order": eff_order,
         "grid_shape": [len(row_spans), len(col_spans)],
         "panels_count": len(panels_meta),
         "panels": panels_meta,
@@ -2440,5 +2455,5 @@ def analyze_and_slice_storyboard_sheet(
         "panels_count": len(panels_meta),
         "grid_shape": [len(row_spans), len(col_spans)],
         "panels": panels_meta,
-        "message": f"تم تحليل صورة الستوري بورد وتقطيعها إلى {len(panels_meta)} مشاهد/لوحات جاهزة للتحريك السينمائي 2.5D!"
+        "message": f"تم تحليل صورة الستوري بورد وتقطيعها إلى {len(panels_meta)} مشاهد نظيفة بالترتيب الصحيح (1..{len(panels_meta)}) جاهزة للتحريك السينمائي!"
     }
