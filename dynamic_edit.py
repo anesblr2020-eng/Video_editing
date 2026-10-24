@@ -2,17 +2,19 @@
 dynamic_edit.py - وحدة المونتاج الديناميكي، دمج المشاهد الرسومية السياقية، مشاهد B-Roll، والمخرج الذكي الشامل
 =================================================================================================================
 معمارية التدفق المباشر باستهلاك ذاكرة ثابت O(1) (Zero-OOM FFmpeg Streaming Pipe Engine for Streamlit Cloud):
-- تعالج الفيديوهات بحجم 55MB و100MB+ دون تجاوز حدود ذاكرة Streamlit Cloud (1GB RAM) على الإطلاق!
-- المرحلة 1 تقص الصمت وتطبّع الدقة إلى 960p qHD (24fps) مباشرة عبر عملية `ffmpeg` أصلية أحادية الخيط خارج ذاكرة بايثون.
-- المرحلة 5 تقرأ الفيديو إطاراً بإطار عبر أنبوب `ffmpeg` مباشر أحادي الخيط (`-threads 1` قبل `-i`)، وتطبق الزوم والموشن جرافيك السياقي وB-Roll،
-  وتضخ الإطار فوراً إلى أنبوب التشفير `ffmpeg` (`-preset ultrafast -tune zerolatency -x264-params rc-lookahead=0:sync-lookahead=0:ref=1:bframes=0 -threads 1`)
-  مع تحرير الذاكرة الفوري لنظام التشغيل (`glibc malloc_trim(0)`) كل 60 إطاراً!
+1. قص الصمت الهجومي (> 0.25s عبر pydub + FFmpeg) وإعادة حساب تواقيت الكلمات آلياً (`recalculate_word_timestamps_after_cuts`).
+2. المزامنة الفورية ثنائية الاتجاه لتعديلات المستخدم في الاستوديو الحي (`sync_live_scene_edits_to_words`):
+   - عندما يعدل المستخدم الكلمات المفتاحية أو العنوان أو النص المنطوق في أسفل الموقع (مثل تعديل "ينوضي" إلى "يمونتي" أو كتابة "ما عنده وقت | يمنتج")،
+     تنتقل التعديلات فوراً إلى الكابشن وإلى رسم الموشن جرافيك وإلى استعلام بحث `Pexels B-Roll` دون أن يعود النص القديم أبداً!
+3. معالجة لقطات `Pexels B-Roll` بتقريب بطيء (`Slow Zoom-in 100% -> 105%`) مع ضبابية غاوسية خفيفة (`Gaussian Blur`) لإبراز النصوص والأيقونات الأمامية.
+4. تغيير المشهد أو الزاوية البصرية كل `2.5` إلى `3` ثوانٍ لكسر الملل (`enforce_fast_hormozi_scene_pacing`).
 """
 
 import sys
 import os
 import gc
 import re
+import json
 import ctypes
 import subprocess
 
@@ -61,7 +63,14 @@ from auto_cut import (
     prune_retake_cuts_from_media,
     force_free_ram
 )
-from transcriber import transcribe_audio, transcribe_sentences, split_words_into_micro_scenes, get_last_detected_retake_cuts, remap_words_after_retake_cuts
+from transcriber import (
+    transcribe_audio,
+    transcribe_sentences,
+    split_words_into_micro_scenes,
+    get_last_detected_retake_cuts,
+    remap_words_after_retake_cuts,
+    sync_live_scene_edits_to_words
+)
 from motion_text import (
     get_arabic_font,
     draw_arabic_text,
@@ -73,9 +82,8 @@ from motion_text import (
     create_kinetic_typography_video,
     MOTION_THEMES
 )
+from context_engine import enforce_fast_hormozi_scene_pacing
 import inspect
-import hashlib
-import requests
 
 def _safe_call(func, **kwargs):
     try:
@@ -89,23 +97,19 @@ def _safe_call(func, **kwargs):
         return func(**kwargs)
 
 try:
-    from stock_video_finder import get_stock_broll_clip, process_broll_clip_for_timeline
+    from stock_video_finder import (
+        get_stock_broll_clip,
+        process_broll_clip_for_timeline,
+        apply_hormozi_broll_slow_zoom_and_blur,
+        build_pexels_query_from_scene_keywords,
+        map_scene_to_stock_category
+    )
 except ImportError:
-    import importlib.util
-    _cur = os.path.dirname(os.path.abspath(__file__))
-    if _cur not in sys.path:
-        sys.path.insert(0, _cur)
-    _stock_path = os.path.join(_cur, "stock_video_finder.py")
-    if os.path.exists(_stock_path):
-        _spec = importlib.util.spec_from_file_location("stock_video_finder", _stock_path)
-        _mod = importlib.util.module_from_spec(_spec)
-        sys.modules["stock_video_finder"] = _mod
-        _spec.loader.exec_module(_mod)
-        get_stock_broll_clip = getattr(_mod, "get_stock_broll_clip")
-        process_broll_clip_for_timeline = getattr(_mod, "process_broll_clip_for_timeline")
-    else:
-        get_stock_broll_clip = None
-        process_broll_clip_for_timeline = None
+    get_stock_broll_clip = None
+    process_broll_clip_for_timeline = None
+    apply_hormozi_broll_slow_zoom_and_blur = None
+    build_pexels_query_from_scene_keywords = None
+    map_scene_to_stock_category = None
 
 try:
     from smart_analyzer import (
@@ -229,7 +233,7 @@ def _execute_master_director_pipeline(
     output_path: str,
     silence_threshold: float = -42.0,
     chunk_size: int = 20,
-    padding_ms: int = 240,
+    padding_ms: int = 55,
     whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",
     product_name_override: Optional[str] = None,
@@ -256,7 +260,7 @@ def _execute_master_director_pipeline(
 
     if not is_video_file(input_path):
         clean_audio = os.path.join(temp_dir, f"temp_clean_audio_{os.getpid()}.mp3")
-        remove_silence(input_path, clean_audio, silence_threshold=silence_threshold, padding_ms=padding_ms)
+        remove_silence(input_path, clean_audio, silence_threshold=silence_threshold, min_silence_len=250, padding_ms=min(65, padding_ms))
         force_free_ram()
         out = create_kinetic_typography_video(
             input_path=clean_audio,
@@ -266,7 +270,9 @@ def _execute_master_director_pipeline(
             groq_api_key=groq_api_key,
             gemini_api_key=gemini_api_key,
             openai_api_key=openai_api_key,
-            progress_callback=progress_callback
+            progress_callback=progress_callback,
+            custom_planned_scenes=kwargs.get("custom_planned_scenes"),
+            custom_sfx_cues=kwargs.get("custom_sfx_cues")
         )
         return out, {"director_plan_scenes": 6}
 
@@ -289,13 +295,14 @@ def _execute_master_director_pipeline(
 
     try:
         force_free_ram()
-        update_progress(0.10, "1/5: تحليل الإشارة الصوتية وقص السكوت الطويل عبر محرك FFmpeg السريع...")
+        update_progress(0.10, "1/5: تحليل الإشارة الصوتية عبر pydub وقص فترات الصمت (> 0.25s Aggressive Jump Cuts)...")
         remove_silence(
             input_path=input_path,
             output_path=jumpcut_temp_video,
             silence_threshold=silence_threshold,
             chunk_size=chunk_size,
-            padding_ms=max(220, padding_ms)
+            min_silence_len=250,
+            padding_ms=min(65, padding_ms)
         )
         force_free_ram()
 
@@ -317,17 +324,30 @@ def _execute_master_director_pipeline(
                 jumpcut_temp_video, retake_cuts, video_duration
             )
             word_data = remap_words_after_retake_cuts(word_data, retake_cuts)
+
+        # تقسيم الكلمات إلى مشاهد سريعة تتغير كل 2.5 إلى 3.0 ثوانٍ لكسر الملل
         micro_scenes = split_words_into_micro_scenes(
             word_data,
             max_words_per_scene=6,
-            max_duration_per_scene=3.1,
+            max_duration_per_scene=2.85,
             min_words_per_scene=3
         )
         force_free_ram()
 
         custom_planned_scenes = kwargs.get("custom_planned_scenes")
         if isinstance(custom_planned_scenes, list) and len(custom_planned_scenes) > 0:
-            master_plan = custom_planned_scenes
+            # مزامنة تعديلات المستخدم الحية (مثل تغيير "ينوضي" إلى "يمونتي" أو كتابة الكلمات المفتاحية)
+            # مباشرة مع مصفوفة الكلمات (word_data) ومع الرسومات التعبيرية!
+            master_plan, word_data = sync_live_scene_edits_to_words(custom_planned_scenes, word_data)
+            for sc_edit in master_plan:
+                if not sc_edit.get("user_override_archetype"):
+                    bp = classify_micro_scene_blueprint(
+                        f"{sc_edit.get('kpi_value', '')} {sc_edit.get('concept_title', '')} {sc_edit.get('text', '')}",
+                        int(sc_edit.get("scene_index", 0)),
+                        len(master_plan)
+                    )
+                    sc_edit["archetype"] = bp.get("visual_subject", sc_edit.get("archetype", "video_montage_studio"))
+                    sc_edit["visual_subject"] = sc_edit["archetype"]
         elif generate_master_director_plan is not None:
             master_plan = _safe_call(
                 generate_master_director_plan,
@@ -342,30 +362,40 @@ def _execute_master_director_pipeline(
                 gemini_api_key=gemini_api_key,
                 openai_api_key=openai_api_key
             )
+            master_plan = enforce_fast_hormozi_scene_pacing(master_plan, min_scene_sec=1.6, max_scene_sec=2.9)
         else:
-            master_plan = micro_scenes
+            master_plan = enforce_fast_hormozi_scene_pacing(micro_scenes, min_scene_sec=1.6, max_scene_sec=2.9)
 
         broll_scenes_count = sum(1 for sc in master_plan if sc.get("layout_mode") == "stock_broll")
-        update_progress(0.42, f"3/5: تحضير {broll_scenes_count} مشاهد B-Roll حقيقية خالية من حقوق الملكية...")
+        update_progress(0.42, f"3/5: تحضير {broll_scenes_count} مشاهد B-Roll حقيقية عبر Pexels API...")
 
         for sc in master_plan:
             if sc.get("layout_mode") == "stock_broll":
                 if enable_stock_broll and callable(get_stock_broll_clip):
                     try:
-                        cat = sc.get("stock_category", "video_editor")
+                        sc_txt = f"{sc.get('kpi_value', '')} {sc.get('concept_title', '')} {sc.get('text', '')}".strip()
+                        cat = map_scene_to_stock_category(str(sc.get("stock_category", "video_editor")), sc_txt) if callable(map_scene_to_stock_category) else sc.get("stock_category", "video_editor")
+                        custom_q = build_pexels_query_from_scene_keywords(
+                            scene_text=str(sc.get("text", "")),
+                            concept_title=str(sc.get("concept_title", "")),
+                            kpi_value=str(sc.get("kpi_value", "")),
+                            category=cat
+                        ) if callable(build_pexels_query_from_scene_keywords) else None
                         dur = max(0.5, float(sc.get("end", 2.5)) - float(sc.get("start", 0.0)))
-                        raw_broll = get_stock_broll_clip(
+                        raw_broll = _safe_call(
+                            get_stock_broll_clip,
                             category=cat,
                             target_duration=dur,
                             cache_dir=stock_dir,
                             width=video_w,
                             height=video_h,
-                            pexels_api_key=pexels_api_key
+                            pexels_api_key=pexels_api_key,
+                            custom_search_query=custom_q,
+                            scene_text=sc_txt
                         )
                         if raw_broll and os.path.exists(raw_broll) and not os.path.basename(raw_broll).startswith("proc_"):
                             sc["broll_file_path"] = raw_broll
                         else:
-                            # ترقية تلقائية إلى المسرح المقسوم التفاعلي بدلاً من تغطية الفيديو بدوائر افتراضية
                             sc["layout_mode"] = "split_screen_stage"
                     except Exception as b_err:
                         logger.warning(f"تعذر تحميل مشهد B-Roll: {b_err}")
@@ -380,7 +410,7 @@ def _execute_master_director_pipeline(
         frame_bytes_len = video_w * video_h * 3
         total_frames = max(1, int(round(video_duration * fps)))
 
-        update_progress(0.60, "4/5: بدء التدفق المباشر للإطارات (Zero-OOM FFmpeg Streaming Pipe)...")
+        update_progress(0.60, "4/5: بدء التدفق المباشر للإطارات (Kinetic Typography + Spring Physics + B-Roll Zoom/Blur)...")
 
         dec_cmd = [
             "ffmpeg", "-v", "error", "-threads", "1",
@@ -418,7 +448,7 @@ def _execute_master_director_pipeline(
 
             active_sc = None
             for sc in master_plan:
-                if sc["start"] <= t_cur <= sc["end"]:
+                if float(sc.get("start", 0.0)) <= t_cur <= float(sc.get("end", 0.0)):
                     active_sc = sc
                     break
 
@@ -442,7 +472,24 @@ def _execute_master_director_pipeline(
                         broll_proc_state["path"] = b_path
                     b_bytes = broll_proc_state["proc"].stdout.read(frame_bytes_len)
                     if b_bytes and len(b_bytes) == frame_bytes_len:
-                        base_frame = np.frombuffer(b_bytes, dtype=np.uint8).reshape((video_h, video_w, 3)).copy()
+                        raw_broll_arr = np.frombuffer(b_bytes, dtype=np.uint8).reshape((video_h, video_w, 3)).copy()
+                        sc_s = float(active_sc.get("start", 0.0))
+                        sc_e = max(sc_s + 0.2, float(active_sc.get("end", sc_s + 2.5)))
+                        sc_prog = max(0.0, min(1.0, (t_cur - sc_s) / (sc_e - sc_s)))
+                        # تطبيق تقريب بطيء (Slow Zoom-in 100% -> 105%) مع ضبابية خفيفة (Gaussian Blur) لإبراز النصوص الأمامية
+                        if callable(apply_hormozi_broll_slow_zoom_and_blur):
+                            base_frame = apply_hormozi_broll_slow_zoom_and_blur(
+                                frame_rgb=raw_broll_arr,
+                                scene_progress=sc_prog,
+                                target_w=video_w,
+                                target_h=video_h,
+                                start_zoom=1.00,
+                                end_zoom=1.05,
+                                gaussian_sigma=2.2,
+                                darken_factor=0.82
+                            )
+                        else:
+                            base_frame = raw_broll_arr
                         used_broll_frame = True
                 except Exception:
                     _close_broll_pipe()
@@ -494,15 +541,15 @@ def _execute_master_director_pipeline(
         force_free_ram()
         sfx_cues_mixed = 0
         try:
-            import json
             from sound_designer import apply_intelligent_sound_design_to_video, LAST_SESSION_PATH
-            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click, Button) في الثانية المناسبة...")
+            update_progress(0.96, "🔊 جاري دمج المؤثرات الصوتية الآلية (Pop عند الكلمات/الأيقونات + Whoosh عند الانتقالات)...")
             output_path, sfx_rep = apply_intelligent_sound_design_to_video(
                 video_path=output_path,
                 planned_scenes=master_plan,
                 total_duration=video_duration,
                 output_path=output_path,
-                custom_cues=kwargs.get("custom_sfx_cues")
+                custom_cues=kwargs.get("custom_sfx_cues"),
+                words_data=word_data
             )
             sfx_cues_mixed = int(sfx_rep.get("cues_count", 0))
             try:
@@ -576,7 +623,7 @@ def apply_product_ad_mode(
     product_name_override: Optional[str] = None,
     cta_override: Optional[str] = None,
     silence_threshold: float = -42.0,
-    padding_ms: int = 240,
+    padding_ms: int = 55,
     whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",
     pexels_api_key: Optional[str] = None,
@@ -612,7 +659,7 @@ def apply_motion_overlay_on_video(
     output_path: str,
     silence_threshold: float = -42.0,
     chunk_size: int = 20,
-    padding_ms: int = 250,
+    padding_ms: int = 55,
     whisper_model: str = "base",
     ollama_model: str = "llama3",
     dialect_mode: str = "algerian_darija",
@@ -663,7 +710,7 @@ def apply_smart_director_all_in_one(
         input_path=input_path,
         output_path=output_path,
         silence_threshold=-42.0,
-        padding_ms=250,
+        padding_ms=55,
         whisper_model=whisper_model or "base",
         dialect_mode=dialect_mode,
         enable_stock_broll=True,
@@ -682,7 +729,7 @@ def apply_dynamic_edit(
     output_path: str,
     silence_threshold: float = -42.0,
     chunk_size: int = 20,
-    padding_ms: int = 250,
+    padding_ms: int = 55,
     zoom_factor: float = 1.15,
     whisper_model: str = "base",
     dialect_mode: str = "algerian_darija",

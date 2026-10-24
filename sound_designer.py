@@ -796,7 +796,8 @@ def build_frame_accurate_sfx_timeline(
     planned_scenes: List[Dict[str, Any]],
     total_duration: float,
     settings: Optional[Dict[str, Any]] = None,
-    visual_analysis: Optional[Dict[str, Any]] = None
+    visual_analysis: Optional[Dict[str, Any]] = None,
+    words_data: Optional[List[Dict[str, Any]]] = None
 ) -> List[Dict[str, Any]]:
     """
     يبني خريطة مؤثرات صوتية شاملة ودقيقة بنسبة 100% لكل حركة وأنيميشن في الفيديو:
@@ -899,17 +900,34 @@ def build_frame_accurate_sfx_timeline(
                 scene_idx=idx
             )
 
-        # 3. انبثاق المجسم الرئيسي / لوحة الستوري بورد (Main Centerpiece / Storyboard Pop-In @ +0.24s)
-        if want_pop and is_motion_stage and sc_dur >= 0.95:
-            pop1_t = sc_start + min(0.26, sc_dur * 0.21)
+        # 3. انبثاق الأيقونة البصرية / المجسم الرئيسي بصوت Pop خفيف وواضح (Spring Icon Pop-In @ +0.18s)
+        if want_pop and is_motion_stage and sc_dur >= 0.65:
+            pop1_t = sc_start + min(0.20, sc_dur * 0.18)
             _add_cue(
                 pop1_t,
                 "3_ui_style",
-                -6.0,
+                -7.8,
                 variant=idx % 4,
-                reason=f"انبثاق الرسم الرئيسي / لوحة الستوري بورد في المشهد #{idx + 1} (Warm Kalimba Pop)",
+                reason=f"صوت Pop خفيف عند ظهور الأيقونة البصرية في المشهد #{idx + 1} (Hormozi Icon Pop)",
                 scene_idx=idx
             )
+
+        # 3.5 قاعدة (Alex Hormozi Important Word Pop): صوت Pop خفيف جداً عند نطق الكلمات المفتاحية المهمة
+        sc_words = sc.get("words") or []
+        if not sc_words and words_data:
+            sc_words = [w for w in words_data if sc_start <= float(w.get("start", 0.0)) <= sc_end]
+        if want_pop and sc_words:
+            best_w = max(sc_words, key=lambda w: len(str(w.get("word", "")).strip()))
+            w_start_t = float(best_w.get("start", sc_start + 0.35))
+            if sc_start + 0.25 <= w_start_t <= sc_end - 0.15:
+                _add_cue(
+                    w_start_t,
+                    "3_ui_style",
+                    -9.2,
+                    variant=(idx + 1) % 4,
+                    reason=f"صوت Pop خفيف جداً عند ظهور الكلمة المهمة ({best_w.get('word', '')}) في المشهد #{idx + 1}",
+                    scene_idx=idx
+                )
 
         # 4. انبثاق الطبقة الثانية / العناصر الفرعية المتزامنة مع الكلام (@ 42% من مدة المشهد)
         if want_pop and is_motion_stage and sc_dur >= 1.35:
@@ -1043,7 +1061,8 @@ def apply_intelligent_sound_design_to_video(
     total_duration: float,
     output_path: Optional[str] = None,
     sfx_dir: str = DEFAULT_SFX_DIR,
-    custom_cues: Optional[List[Dict[str, Any]]] = None
+    custom_cues: Optional[List[Dict[str, Any]]] = None,
+    words_data: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[str, Dict[str, Any]]:
     if not video_path or not os.path.exists(video_path):
         return video_path, {"applied": False, "cues_count": 0}
@@ -1064,7 +1083,8 @@ def apply_intelligent_sound_design_to_video(
         planned_scenes=planned_scenes,
         total_duration=total_duration,
         settings=cfg,
-        visual_analysis=visual_report
+        visual_analysis=visual_report,
+        words_data=words_data
     )
     if not cues:
         return video_path, {"applied": False, "cues_count": 0}

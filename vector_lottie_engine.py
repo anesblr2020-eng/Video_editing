@@ -2230,3 +2230,42 @@ def load_matching_pack_svg_assets(queries: List[str], max_count: int = 3) -> Lis
         return results
     except Exception:
         return []
+
+
+# ==============================================================================
+# 5.4 محرك ارتداد الأيقونات البصرية بفيزياء الزنبرك (Alex Hormozi Spring Physics Icon Pop-In)
+# ==============================================================================
+def evaluate_icon_spring_physics_transform(
+    scene_elapsed_sec: float,
+    scene_duration_sec: float = 2.6,
+    entry_delay_sec: float = 0.06,
+    stiffness: float = 290.0,
+    damping: float = 12.2
+) -> Dict[str, float]:
+    """
+    يحسب التحويل الحركي للأيقونات والرسومات البصرية باستخدام فيزياء الزنبرك (Spring Physics)
+    بدلاً من الحركة الخطية (Linear Interpolation):
+    - تنبثق الأيقونة من `0.22x` إلى `1.00x` مع ارتداد حيوي سريع (`Overshoot ~1.14x`) ودوران خفيف يختفي عند الاستقرار.
+    """
+    from physics_easing import spring_damper, spring_overshoot_scale, ease_in_out_expo
+    t_local = max(0.0, scene_elapsed_sec - float(entry_delay_sec))
+    u_entry = min(1.0, t_local / 0.34)
+    scale_val = spring_overshoot_scale(
+        u_entry,
+        start_scale=0.22,
+        target_scale=1.00,
+        stiffness=stiffness,
+        damping=damping,
+        mass=0.78
+    )
+    sp = float(spring_damper(u_entry, stiffness=stiffness, damping=damping, mass=0.78, initial_velocity=3.0))
+    y_offset = round(34.0 * (1.0 - sp), 2)
+    rot_deg = round(-8.0 * (1.0 - sp) + 1.8 * math.sin(scene_elapsed_sec * 4.2), 2)
+    opacity = round(float(ease_in_out_expo(min(1.0, u_entry * 2.6))), 4)
+    return {
+        "scale": scale_val,
+        "y_offset": y_offset,
+        "rotation_deg": rot_deg,
+        "opacity": opacity,
+        "spring_progress": round(sp, 4)
+    }

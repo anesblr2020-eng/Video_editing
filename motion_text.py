@@ -1,22 +1,23 @@
+# -*- coding: utf-8 -*-
 """
-motion_text.py - محرك الموشن جرافيك التوليدي متعدد الرسومات والأنيميشن المستمر (12 Dynamic Kinetic Archetypes & Reference Cloner Engine)
+motion_text.py - محرك النصوص الحركية بأسلوب (Alex Hormozi High-Retention Kinetic Typography)
+ومحرك الموشن جرافيك التوليدي متعدد الرسومات والأنيميشن المستمر (30fps Spring Physics)
 ==============================================================================================================================================
-يعالج هذا المحرك جميع الملاحظات البصرية والحركية ليقدم تجربة موشن جرافيك بمستوى المصممين البشر المحترفين (100% Human Studio Feel):
-1. هوية بصرية موحدة لكل فيديو (`Single Cohesive Studio Style Per Video`):
-   - كل فيديو يُنتج بهوية لونية وخلفية موحدة ومتناغمة من أول مشهد لآخر مشهد (بدون خلط خلفيات متضاربة داخل الفيديو الواحد).
-   - عند تفعيل الاختيار العشوائي/التلقائي، يختار النظام ستايلاً احترافياً كاملاً لكل فيديو جديد.
-2. 12 رسماً وأنفوجرافيك تفاعلياً بـ أنيميشن مستمر 30fps طوال المشهد (`12 Dynamic Visual & Kinetic Archetypes`):
-   - لا يتجمد أي مشهد أبداً! كل عنصر يتحرك بفيزياء الزنبرك (`Spring Physics`) والتحريك المتتابع للكلمات (`Staggered Word Entrance`)
-     والرسم التدريجي للمنحنيات (`Progressive Bezier Tracing`) والعدادات الحية (`Live Counters`) وحركة الماوس والمكبّر والرادار والميزان.
-   - عزل هندسي صارم للنصوص والأيقونات (`Zero Text-Border Collision & Zero Coin-Number Overlap`).
-3. كابشن كاريوكي بنظام الصفحات الثابتة (`Non-Overlapping Paged Karaoke Captions`):
-   - يعرض الكلمات في صفحات نظيفة من 4 كلمات دون تكرار الكلمات بين نهاية جملة وبداية الجملة التالية.
-4. ربط مباشر مع كاشف أخطاء وإعادات التعليق الصوتي (`prune_retake_cuts_from_media`) ومعايرة الصمت الطبيعي (`3% - 4%`).
+التحديثات الجوهرية (Alex Hormozi High-Retention Engine - Phase 1):
+1. نظام Kinetic Typography متطور بأسلوب Alex Hormozi (`render_hormozi_kinetic_caption` & `_render_unified_karaoke_subtitle`):
+   - دعم كامل للغة العربية عبر `arabic_reshaper` و `bidi.algorithm.get_display` (مع توافق تلقائي مع `libraqm`).
+   - ظهور وتفاعل النص كلمة بكلمة متزامناً بدقة الملي ثانية مع التوقيت الصوتي (`Word-level Timestamps`).
+   - تكبير الكلمة المنطوقة حالياً بنسبة **+15% (`scale = 1.15x`)** بفيزياء النابض (`Spring Physics`) وتغيير لونها إلى
+     **الأصفر الفاقع (`#FFE600`) أو الأخضر النيون الفاقع (`#00FF66`)**، ثم إعادتها لحجمها الطبيعي (`1.0x`) واللون الأبيض الأساسي فور نطق الكلمة التالية!
+2. استجابة فورية بنسبة 100% لتعديلات المستخدم من واجهة المنصة (`sync_live_scene_edits_to_words`):
+   - عند تعديل أي كلمة (مثل تحويل "ينوضي" إلى "يمونتي") أو إضافة كلمات مفتاحية ("يمنتج مونتاج") أو تعديل العناصر الفرعية بعلامة `|`،
+     يتم تحديث `words` و `word_strings` و `archetype` فوراً وحفظ مصفوفة `words` كاملة داخل `last_storyboard_session.json` حتى لا تعود الكلمات القديمة أبداً.
 """
 
 import sys
 import os
 import gc
+import json
 import subprocess
 
 _CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -30,6 +31,7 @@ if not hasattr(PIL.Image, "ANTIALIAS"):
 import PIL.ImageDraw
 if not hasattr(PIL.ImageDraw.ImageDraw, "_true_orig_rounded_rect"):
     PIL.ImageDraw.ImageDraw._true_orig_rounded_rect = PIL.ImageDraw.ImageDraw.rounded_rectangle
+
 
 def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1, *, corners=None):
     try:
@@ -50,6 +52,7 @@ def _safe_rounded_rectangle(self, xy, radius=0, fill=None, outline=None, width=1
     except Exception:
         pass
 
+
 PIL.ImageDraw.ImageDraw.rounded_rectangle = _safe_rounded_rectangle
 
 import re
@@ -62,6 +65,15 @@ from typing import List, Dict, Any, Tuple, Optional, Callable
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, features
+
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display as bidi_get_display
+    _HAS_ARABIC_RESHAPER = True
+except Exception:
+    arabic_reshaper = None
+    bidi_get_display = None
+    _HAS_ARABIC_RESHAPER = False
 
 try:
     import cairo
@@ -88,8 +100,8 @@ from physics_easing import (
     apply_fast_directional_motion_blur
 )
 from vector_lottie_engine import (
-        search_and_fetch_web_vectors,
-        render_recolored_svg_motion_canvas,
+    search_and_fetch_web_vectors,
+    render_recolored_svg_motion_canvas,
     render_lottie_or_svg_badge,
     draw_animated_stroke_dash_rect,
     render_floating_particles_layer,
@@ -97,7 +109,8 @@ from vector_lottie_engine import (
     render_contextual_hero_illustration
 )
 from style_evolution_brain import (
-        detect_strict_speech_intent,
+    detect_strict_speech_intent,
+    match_speech_to_visual_archetype,
     evaluate_and_evolve_frame,
     get_best_params_for_scene_type,
     get_active_brand_theme,
@@ -109,7 +122,8 @@ from transcriber import (
     transcribe_audio,
     split_words_into_micro_scenes,
     get_last_detected_retake_cuts,
-    remap_words_after_retake_cuts
+    remap_words_after_retake_cuts,
+    sync_live_scene_edits_to_words
 )
 
 try:
@@ -123,30 +137,49 @@ logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
-# 1. إعداد الخطوط العربية وتشكيل الحروف
+# 1. إعداد الخطوط العربية وتشكيل الحروف عبر arabic_reshaper و bidi.algorithm
 # ==============================================================================
 _FONT_DOWNLOAD_ATTEMPTED = False
-_FONT_OBJECT_CACHE: Dict[Tuple[int, bool], ImageFont.FreeTypeFont] = {}
+_FONT_OBJECT_CACHE: Dict[Tuple[Any, ...], ImageFont.FreeTypeFont] = {}
 _HAS_RAQM = False
 try:
     _HAS_RAQM = bool(features.check("raqm"))
 except Exception:
     _HAS_RAQM = False
 
+# ألوان Alex Hormozi القياسية للكلمات المنطوقة النشطة (High-Retention Vivid Highlights)
+HORMOZI_VIVID_YELLOW: Tuple[int, int, int] = (255, 230, 0)   # #FFE600 أصفر فاقع
+HORMOZI_NEON_GREEN: Tuple[int, int, int] = (0, 255, 102)     # #00FF66 أخضر فاقع نيون
+HORMOZI_BASE_WHITE: Tuple[int, int, int] = (255, 255, 255)   # #FFFFFF أبيض ناصع للكلمات العادية
+HORMOZI_ACTIVE_SCALE_FACTOR: float = 1.15                    # تكبير الكلمة المنطوقة حالياً بنسبة +15% بالضبط
+
+
+def shape_arabic_text_with_reshaper_bidi(text: str) -> str:
+    """
+    تشكيل النصوص العربية صراحةً عبر مكتبتي `arabic_reshaper` و `bidi.algorithm.get_display`
+    لضمان اتصال الحروف العربية واتجاه القراءة الصحيح من اليمين لليسار (RTL) في كافة البيئات.
+    """
+    if not text:
+        return ""
+    cleaned = re.sub(r"[\U00010000-\U0010ffff\u2700-\u27bf\u2600-\u26ff\ufe0f]", "", str(text)).strip()
+    if not cleaned:
+        return ""
+    if _HAS_ARABIC_RESHAPER and arabic_reshaper is not None and bidi_get_display is not None:
+        try:
+            reshaped = arabic_reshaper.reshape(cleaned)
+            return str(bidi_get_display(reshaped))
+        except Exception:
+            return cleaned
+    return cleaned
+
 
 def shape_arabic_text(text: str) -> str:
     if not text:
         return ""
-    text = re.sub(r"[\U00010000-\U0010ffff\u2700-\u27bf\u2600-\u26ff\ufe0f]", "", str(text)).strip()
+    cleaned = re.sub(r"[\U00010000-\U0010ffff\u2700-\u27bf\u2600-\u26ff\ufe0f]", "", str(text)).strip()
     if _HAS_RAQM:
-        return text
-    try:
-        import arabic_reshaper
-        from bidi.algorithm import get_display
-        reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped)
-    except Exception:
-        return text
+        return cleaned
+    return shape_arabic_text_with_reshaper_bidi(cleaned)
 
 
 def _get_latin_safe_font(font: ImageFont.FreeTypeFont, text: str) -> ImageFont.FreeTypeFont:
@@ -181,24 +214,28 @@ def draw_arabic_text(
     if not text:
         return
     eff_font = _get_latin_safe_font(font, str(text))
-    prepared = shape_arabic_text(str(text))
-    kwargs = {"font": eff_font, "fill": fill, "anchor": anchor}
-    if stroke_width > 0 and stroke_fill is not None:
-        kwargs["stroke_width"] = stroke_width
-        kwargs["stroke_fill"] = stroke_fill
-
     if _HAS_RAQM:
+        prepared = shape_arabic_text(str(text))
+        kwargs = {"font": eff_font, "fill": fill, "anchor": anchor}
+        if stroke_width > 0 and stroke_fill is not None:
+            kwargs["stroke_width"] = stroke_width
+            kwargs["stroke_fill"] = stroke_fill
         try:
             draw.text(xy, prepared, direction="rtl", **kwargs)
             return
         except Exception:
             pass
 
+    prepared_bidi = shape_arabic_text_with_reshaper_bidi(str(text))
+    kwargs = {"font": eff_font, "fill": fill, "anchor": anchor}
+    if stroke_width > 0 and stroke_fill is not None:
+        kwargs["stroke_width"] = stroke_width
+        kwargs["stroke_fill"] = stroke_fill
     try:
-        draw.text(xy, prepared, **kwargs)
+        draw.text(xy, prepared_bidi, **kwargs)
     except Exception:
         kwargs.pop("anchor", None)
-        draw.text(xy, prepared, **kwargs)
+        draw.text(xy, prepared_bidi, **kwargs)
 
 
 def measure_arabic_text(
@@ -209,11 +246,12 @@ def measure_arabic_text(
     if not text:
         return 12, 24
     font = _get_latin_safe_font(font, str(text))
-    prepared = shape_arabic_text(str(text))
     try:
         if _HAS_RAQM:
+            prepared = shape_arabic_text(str(text))
             bbox = draw.textbbox((0, 0), prepared, font=font, direction="rtl")
         else:
+            prepared = shape_arabic_text_with_reshaper_bidi(str(text))
             bbox = draw.textbbox((0, 0), prepared, font=font)
         return max(12, int(bbox[2] - bbox[0])), max(12, int(bbox[3] - bbox[1]))
     except Exception:
@@ -549,7 +587,7 @@ def draw_visionos_glass_panel(
     for sy in range(min(28, ph // 4)):
         alpha_v = int(24 * (1.0 - sy / 28.0))
         if alpha_v > 0:
-            sh_draw.line([(radius // 2, sy + 2), (pw - radius // 2, sy + 2)], fill=(255, 255, 255, alpha_v), width=1)
+            sh_draw.line([(radius // 2, sy + 2), (pw - radius // 2, sy + 2)], fill=(255, 255, 255, 255 if alpha_v > 255 else alpha_v), width=1)
 
     if 0.0 <= light_sweep_prog <= 1.0:
         sweep_x = int(-pw * 0.4 + (pw * 1.8) * light_sweep_prog)
@@ -610,7 +648,6 @@ def render_cairo_vector_illustration(
     r = min(width, height) * 0.44
     p1 = _norm_rgb(theme.get("primary", (27, 174, 202)))
     p2 = _norm_rgb(theme.get("secondary", (250, 204, 21)))
-    acc = _norm_rgb(theme.get("accent", (16, 185, 129)))
 
     s_main = 0.82 + 0.18 * _staggered_spring(scene_progress, delay=0.0, duration=0.45)
     grow_prog = min(1.0, max(0.15, scene_progress * 1.45))
@@ -623,7 +660,6 @@ def render_cairo_vector_illustration(
     ctx.fill()
 
     if scene_type in ("growth_analytics", "ecommerce_showcase"):
-        # أبراج العملات ثلاثية الأبعاد ترتفع تدريجياً عملة تلو الأخرى مع تقدم المشهد!
         stack_xs = [cx - r * 0.54, cx, cx + r * 0.54]
         max_counts = [4, 6, 3]
         coin_rx = r * 0.22 * s_main
@@ -646,7 +682,6 @@ def render_cairo_vector_illustration(
                 ctx.set_line_width(2.0)
                 ctx.stroke()
 
-        # السهم الصاعد فوق الأبراج
         top_y = base_y - 6 * (coin_ry * 1.55) - r * 0.36 * grow_prog
         ctx.move_to(cx, base_y - 2 * coin_ry)
         ctx.line_to(cx, top_y)
@@ -727,17 +762,13 @@ def draw_animated_scene_illustration(
 
 
 # ==============================================================================
-# 7. بناء الخلفيات الشبكية والهندسية الموحدة والمتحركة بنعومة (Animated Parallax Grid)
+# 7. بناء الخلفيات السينمائية الموحدة والناعمة
 # ==============================================================================
 def create_studio_background(
     width: int,
     height: int,
     theme_name: str = "cyber_gold"
 ) -> np.ndarray:
-    """
-    خلفية أستوديو سينمائية ناعمة ومريحة للعين تماماً (بدون أي شبكة مربعات أو خطوط مزعجة!):
-    تدرج شعاعي وقطري ناعم مع إضاءة محيطية دافئة على طريقة الفيديو الاحترافي 15s (6944.mp4).
-    """
     theme = MOTION_THEMES.get(theme_name, MOTION_THEMES["cyber_gold"])
     top_c = np.array(theme["top_bg"], dtype=np.float32)
     bot_c = np.array(theme["bottom_bg"], dtype=np.float32)
@@ -765,11 +796,6 @@ def _render_pro_stage_background(
     global_t: float,
     force_dark_cinema: bool = False
 ) -> Image.Image:
-    """
-    يبني خلفية المسرح السينمائية الموحدة والناعمة (Smooth Radial Studio Stage - ZERO Grid Squares):
-    - تم إلغاء الشبكة المربعات (Grid) والمعينات المشتتة للعين نهائياً بناءً على طلب المستخدم.
-    - بدلاً منها: تدرج قطري/شعاعي ناعم جداً (كريمي دافئ فاخر أو مخملي سينمائي داكن) مع هالة ضوئية تتنفس بهدوء.
-    """
     pal = style_spec.get("palette", {})
     if force_dark_cinema:
         top_c = np.array((18, 16, 14), dtype=np.float32)
@@ -795,7 +821,6 @@ def _render_pro_stage_background(
     mask1 = np.exp(-dist1 * 1.75)[:, :, None] * glow_strength
     canvas_np = np.clip(canvas_np * (1.0 - mask1) + glow_c * mask1, 0, 255).astype(np.uint8)
 
-    # إضاءة ركنية ثانوية ناعمة (Soft Corner Vignette / Warm Rim Light)
     cx2 = width * 0.85
     cy2 = height * 0.82
     dist2 = ((xx - cx2) / (width * 0.55)) ** 2 + ((yy - cy2) / (height * 0.42)) ** 2
@@ -815,10 +840,6 @@ def _draw_soft_elevated_card(
     shadow_alpha: int = 44,
     border_rgba: Optional[Tuple[int, int, int, int]] = (255, 255, 255, 240)
 ) -> Image.Image:
-    """
-    يرسم بطاقة ثلاثية الأبعاد بظل ناعم مريح للعين (Soft 3D Drop Shadow - مثل بطاقات الفيديو 15s 6944.mp4)
-    بدون أي حدود سوداء كرتونية قاسية!
-    """
     w, h = canvas_rgba.size
     x1, y1, x2, y2 = int(bbox[0]), int(bbox[1]), int(bbox[2]), int(bbox[3])
     if x2 - x1 < 8 or y2 - y1 < 8:
@@ -854,7 +875,6 @@ def _draw_macos_blue_folder_icon(
     base_rgb: Tuple[int, int, int] = (56, 189, 248),
     tab_rgb: Tuple[int, int, int] = (2, 132, 199)
 ):
-    """يرسم أيقونة مجلد ثلاثية الأبعاد زرقاء أنيقة مطابقة لأيقونات المجلدات في الفيديو المرجعي 6944.mp4."""
     tab_w = max(10, int(w * 0.44))
     tab_h = max(4, int(h * 0.22))
     draw.rounded_rectangle([(x, y), (x + tab_w, y + tab_h + 4)], radius=3, fill=(*tab_rgb, 255))
@@ -878,11 +898,6 @@ def _draw_sticker_highlighted_headline(
     global_t: float = 0.0,
     style_mode_hint: str = "gold_accent_clean"
 ):
-    """
-    يرسم العنوان الاحترافي بتحريك متتابع كلمة بكلمة مع الصوت (`Audio-Synced Word Reveal`):
-    - يحجز عرض الكبسولة الكامل (`ww_text + 2 * pad_x + 12`) قبل حساب المواقع لضمان عدم تداخل
-      الكبسولة الملونة أو البيضاء مع حروف الكلمات المجاورة نهائياً.
-    """
     x1, y1, x2, y2 = bbox
     max_w = max(80, x2 - x1 - 24)
     cx = (x1 + x2) // 2
@@ -900,9 +915,9 @@ def _draw_sticker_highlighted_headline(
                 break
     if target_w_idx < 0:
         best_len = -1
-        for i, w in enumerate(words[:min(5, len(words))]):
+        for i, w in enumerate(words[:min(4, len(words))]):
             wc = re.sub(r"[،,.!؟?:•]", "", w)
-            if len(wc) > best_len and wc not in ("في", "من", "على", "مع", "أو", "كل", "هذا", "هذه", "إلى", "ما", "ولا"):
+            if len(wc) > best_len and wc not in ("في", "من", "على", "مع", "أو", "كل", "هذا", "هذه", "إلى"):
                 best_len = len(wc)
                 target_w_idx = i
         if target_w_idx < 0:
@@ -919,90 +934,89 @@ def _draw_sticker_highlighted_headline(
         lines = [(line1, hl1, 0), (line2, hl2, len(line1))]
 
     line_count = len(lines)
-    avail_h = max(48, y2 - y1)
-    line_step_h = min(int(initial_font_size * 1.48), avail_h // max(1, line_count))
+    avail_h = max(44, y2 - y1)
+    line_step_h = min(int(initial_font_size * 1.42), avail_h // max(1, line_count))
     start_cy = (y1 + y2) // 2 - ((line_count - 1) * line_step_h) // 2
 
     total_w_count = max(1, len(words))
     for l_idx, (l_words, hl_pos, word_offset_idx) in enumerate(lines):
         line_str = " ".join(l_words)
         f_obj, _, _ = get_fitted_arabic_font(
-            draw, line_str, max_width=int(max_w * 0.84),
+            draw, line_str, max_width=int(max_w * 0.88),
             initial_font_size=initial_font_size, min_font_size=16, bold=True
         )
         f_sz = getattr(f_obj, "size", 24)
-        space_w = max(11, int(f_sz * 0.40))
-        pad_x = max(11, int(f_sz * 0.34))
+        space_w = max(8, int(f_sz * 0.34))
 
         measured = []
         for wi, w_str in enumerate(l_words):
-            ww_txt, wh_txt = measure_arabic_text(draw, w_str, f_obj)
-            is_hl = (wi == hl_pos)
-            ww_slot = (ww_txt + 2 * pad_x + 10) if (is_hl and style_mode_hint != "gold_accent_clean") else ww_txt
-            measured.append((w_str, ww_txt, ww_slot, wh_txt, is_hl, word_offset_idx + wi))
+            ww, wh = measure_arabic_text(draw, w_str, f_obj)
+            if wi == hl_pos and style_mode_hint != "gold_accent_clean":
+                ww += int(f_sz * 0.50)
+            measured.append((w_str, ww, wh, wi == hl_pos, word_offset_idx + wi))
 
-        total_lw = sum(m[2] for m in measured) + max(0, len(measured) - 1) * space_w
+        total_lw = sum(m[1] for m in measured) + max(0, len(measured) - 1) * space_w
         if total_lw > max_w:
             scale_f = max_w / float(max(1, total_lw))
-            new_sz = max(15, int(f_sz * scale_f * 0.95))
+            new_sz = max(14, int(f_sz * scale_f))
             f_obj = get_arabic_font(new_sz, bold=True)
-            f_sz = new_sz
-            space_w = max(9, int(new_sz * 0.36))
-            pad_x = max(9, int(new_sz * 0.30))
+            space_w = max(6, int(new_sz * 0.30))
             measured = []
             for wi, w_str in enumerate(l_words):
-                ww_txt, wh_txt = measure_arabic_text(draw, w_str, f_obj)
-                is_hl = (wi == hl_pos)
-                ww_slot = (ww_txt + 2 * pad_x + 8) if (is_hl and style_mode_hint != "gold_accent_clean") else ww_txt
-                measured.append((w_str, ww_txt, ww_slot, wh_txt, is_hl, word_offset_idx + wi))
-            total_lw = sum(m[2] for m in measured) + max(0, len(measured) - 1) * space_w
+                ww, wh = measure_arabic_text(draw, w_str, f_obj)
+                if wi == hl_pos and style_mode_hint != "gold_accent_clean":
+                    ww += int(new_sz * 0.45)
+                measured.append((w_str, ww, wh, wi == hl_pos, word_offset_idx + wi))
+            total_lw = sum(m[1] for m in measured) + max(0, len(measured) - 1) * space_w
 
         cur_right = cx + total_lw // 2
         base_line_cy = start_cy + l_idx * line_step_h
 
-        for w_str, ww_txt, ww_slot, wh_txt, is_hl, global_wi in measured:
-            word_delay = (global_wi / float(total_w_count)) * 0.30
+        for w_str, ww, wh, is_hl, global_wi in measured:
+            word_delay = (global_wi / float(total_w_count)) * 0.32
             w_spring = _staggered_spring(scene_progress, delay=word_delay, duration=0.34, stiffness=190.0, damping=14.0)
             alpha_w = int(255 * min(1.0, max(0.0, (scene_progress - word_delay * 0.85) * 4.2)))
             if alpha_w <= 8:
-                cur_right -= (ww_slot + space_w)
+                cur_right -= (ww + space_w)
                 continue
 
-            dy_word = int(18.0 * (1.0 - w_spring))
+            dy_word = int(20.0 * (1.0 - w_spring))
             line_cy = base_line_cy + dy_word
-            w_cx = cur_right - ww_slot // 2
+            w_cx = cur_right - ww // 2
 
             if is_hl:
                 if style_mode_hint == "gold_accent_clean":
                     gold_col = sticker_bg_color if sum(sticker_bg_color) < 700 else (217, 155, 28)
                     draw_arabic_text(draw, (w_cx, line_cy), w_str, font=f_obj, fill=(*gold_col, alpha_w))
                 else:
-                    sticker_sweep = min(1.0, max(0.90, _staggered_spring(scene_progress, delay=word_delay + 0.02, duration=0.32)))
-                    pad_y = max(6, int(wh_txt * 0.24))
-                    half_w = int((ww_txt * 0.50 + pad_x) * sticker_sweep)
+                    sticker_sweep = min(1.0, max(0.88, _staggered_spring(scene_progress, delay=word_delay + 0.02, duration=0.32)))
+                    pad_x = max(14, int(f_sz * 0.42))
+                    pad_y = max(6, int(wh * 0.26))
+                    half_w = int((ww * 0.52 + pad_x) * sticker_sweep)
                     rx1 = int(w_cx - half_w)
                     rx2 = int(w_cx + half_w)
-                    ry1 = int(line_cy - wh_txt // 2 - pad_y)
-                    ry2 = int(line_cy + wh_txt // 2 + pad_y)
-                    draw.rounded_rectangle([(rx1, ry1 + 4), (rx2, ry2 + 4)], radius=13, fill=(0, 0, 0, int(52 * (alpha_w / 255.0))))
-                    draw.rounded_rectangle([(rx1, ry1), (rx2, ry2)], radius=13, fill=(*sticker_bg_color, alpha_w), outline=(255, 255, 255, int(115 * (alpha_w / 255.0))), width=1)
+                    ry1 = int(line_cy - wh // 2 - pad_y)
+                    ry2 = int(line_cy + wh // 2 + pad_y)
+                    draw.rounded_rectangle([(rx1, ry1 + 3), (rx2, ry2 + 3)], radius=14, fill=(0, 0, 0, int(45 * (alpha_w / 255.0))))
+                    draw.rounded_rectangle([(rx1, ry1), (rx2, ry2)], radius=14, fill=(*sticker_bg_color, alpha_w), outline=(255, 255, 255, int(90 * (alpha_w / 255.0))), width=1)
                     bg_luma = 0.299 * sticker_bg_color[0] + 0.587 * sticker_bg_color[1] + 0.114 * sticker_bg_color[2]
-                    safe_txt_col = (255, 255, 255) if bg_luma < 168 else (15, 23, 42)
+                    safe_txt_col = (255, 255, 255) if bg_luma < 168 else (24, 24, 27)
+                    stroke_col = (24, 24, 27, alpha_w) if safe_txt_col == (255, 255, 255) else (255, 255, 255, int(alpha_w * 0.7))
                     draw_arabic_text(
                         draw, (w_cx, line_cy), w_str, font=f_obj,
-                        fill=(*safe_txt_col, alpha_w)
+                        fill=(*safe_txt_col, alpha_w),
+                        stroke_width=1, stroke_fill=stroke_col
                     )
             else:
                 draw_arabic_text(
                     draw, (w_cx, line_cy), w_str, font=f_obj,
                     fill=(*headline_txt_color, alpha_w)
                 )
-            cur_right -= (ww_slot + space_w)
+            cur_right -= (ww + space_w)
 
 
 # ==============================================================================
-# 9. محرك الـ 12 مشهداً حركياً المتعلمة من الفيديو المرجعي 15s (6944.mp4)
-#    مع تزامن صوتي كامل (لا تظهر الأيقونات قبل الكلام ولا تبقى جامدة!)
+# 9. محرك المشاهد الحركية المتزامنة مع النطق
 # ==============================================================================
 def _draw_checkmark_badge(draw: ImageDraw.ImageDraw, cx: int, cy: int, radius: int, color_rgb: Tuple[int, int, int] = (16, 185, 129), scale: float = 1.0):
     r = max(8, int(radius * scale))
@@ -1019,14 +1033,9 @@ def _draw_cursor_with_ripple(
     prog: float,
     accent_rgb: Tuple[int, int, int] = (217, 155, 28)
 ):
-    """
-    يرسم مؤشر اليد التفاعلي الأنيق (Pointing Hand Cursor 👆 مثل الفيديو المرجعي 6944.mp4)
-    الذي يدخل بعد اكتمال ظهور العنصر وينقر عليه مع دوائر تموج ضوئية.
-    """
     if prog < 0.32:
         return
     move_p = _ease_out_cubic(max(0.0, min(1.0, (prog - 0.32) / 0.36)))
-    # مسار منحني طبيعي لحركة اليد
     arc_lift = -28.0 * math.sin(move_p * math.pi)
     cx = int(start_xy[0] + (target_xy[0] - start_xy[0]) * move_p)
     cy = int(start_xy[1] + (target_xy[1] - start_xy[1]) * move_p + arc_lift)
@@ -1043,16 +1052,13 @@ def _draw_cursor_with_ripple(
                 draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=(*accent_rgb, ra), width=2)
 
     s = max(13, int(17 * click_scale))
-    # رسم كف اليد والإصبع السبابة (Pointing Hand Silhouette with Shadow)
     palm_box = [(cx - int(s * 0.42), cy + int(s * 0.38)), (cx + int(s * 0.68), cy + int(s * 1.45))]
     finger_box = [(cx - int(s * 0.20), cy - int(s * 0.10)), (cx + int(s * 0.22), cy + int(s * 0.75))]
     thumb_box = [(cx - int(s * 0.72), cy + int(s * 0.55)), (cx - int(s * 0.15), cy + int(s * 1.05))]
 
-    # الظل الناعم لليد
     draw.rounded_rectangle([(palm_box[0][0] + 2, palm_box[0][1] + 4), (palm_box[1][0] + 2, palm_box[1][1] + 4)], radius=6, fill=(0, 0, 0, 75))
     draw.rounded_rectangle([(finger_box[0][0] + 2, finger_box[0][1] + 4), (finger_box[1][0] + 2, finger_box[1][1] + 4)], radius=5, fill=(0, 0, 0, 75))
 
-    # اليد البيضاء بحافة ناعمة
     draw.rounded_rectangle(thumb_box, radius=4, fill=(255, 255, 255, 255), outline=(30, 41, 59, 230), width=2)
     draw.rounded_rectangle(palm_box, radius=6, fill=(255, 255, 255, 255), outline=(30, 41, 59, 230), width=2)
     draw.rounded_rectangle(finger_box, radius=5, fill=(255, 255, 255, 255), outline=(30, 41, 59, 230), width=2)
@@ -1081,10 +1087,9 @@ def _render_unified_top_header(
     style_spec: Dict[str, Any],
     scene_progress: float
 ):
-    """
-    في ستايل الـ 15 ثانية السينمائي (none_clean)، نبقي أعلى الشاشة نظيفاً ومريحاً للعين بدون كبسولات مزدحمة!
-    """
-    return  # إبقاء أعلى الشاشة نظيفاً وسينمائياً بالكامل بدون كبسولة 01 ••••
+    header_style = str(style_spec.get("header_style", "none_clean"))
+    if header_style == "none_clean":
+        return
 
     cx = w // 2
     pal = style_spec.get("palette", {})
@@ -1118,7 +1123,6 @@ def _render_unified_top_header(
         dots_start_x += dw_dot + 6
 
 
-
 _STORYBOARD_PANEL_CACHE: Dict[str, Image.Image] = {}
 
 
@@ -1131,24 +1135,16 @@ def render_animated_storyboard_panel_scene(
     choreo_u: float,
     panel_info: Dict[str, Any]
 ) -> Image.Image:
-    """
-    يحرك لوحة الستوري بورد المرفوعة من المستخدم بـ 4 أنماط كاميرا 2.5D سينمائية متنوعة:
-    1. النمط 0: Ken Burns Deep Push + 2.5D Foreground Subject Pop-Out
-    2. النمط 1: 3D Floating Glass Showcase + PyCairo Light Sweep Sheen
-    3. النمط 2: Dynamic Pan-Across + Focal Spotlight Pulse
-    4. النمط 3: Split Depth Multi-Layer Parallax Card
-    """
     w, h = img.size
     cx = w // 2
     step_num = int(scene_meta.get("step_number") or 1)
     concept_title = str(scene_meta.get("concept_title") or scene_meta.get("short_title") or "")
     pal = panel_info.get("palette") or style_spec.get("palette", {})
     is_light_bg = bool(pal.get("is_light_bg", True))
-    primary_c = tuple(pal.get("primary", (56, 189, 248)))[:3]
-    secondary_c = tuple(pal.get("secondary", (250, 204, 21)))[:3]
-    accent_c = tuple(pal.get("accent", (16, 185, 129)))[:3]
+    primary_c = tuple(pal.get("primary", (217, 155, 28)))[:3]
     headline_txt_c = (24, 24, 27) if is_light_bg else (248, 250, 252)
     sticker_bg_c = primary_c
+    sticker_txt_c = (255, 255, 255) if (0.299 * primary_c[0] + 0.587 * primary_c[1] + 0.114 * primary_c[2]) < 168 else (24, 24, 27)
 
     panel_path = str(panel_info.get("panel_path", ""))
     fg_path = str(panel_info.get("fg_path", ""))
@@ -1170,17 +1166,12 @@ def render_animated_storyboard_panel_scene(
             _STORYBOARD_PANEL_CACHE[fg_path] = Image.open(fg_path).convert("RGBA")
         fg_panel_pil = _STORYBOARD_PANEL_CACHE[fg_path]
 
-    # 1. خلفية سينمائية غامرة مستخرجة من نفس اللوحة مع تحريك بطيء معكس (Counter-Parallax)
-    bg_zoom = int(w * 1.12), int(h * 1.12)
-    bg_fill = base_panel_pil.resize(bg_zoom, Image.Resampling.BILINEAR).filter(ImageFilter.GaussianBlur(radius=28))
-    bg_ox = int((bg_zoom[0] - w) * (0.5 - 0.35 * (choreo_u - 0.5)))
-    bg_oy = int((bg_zoom[1] - h) * (0.5 - 0.25 * math.sin(global_t * 1.5)))
-    bg_fill = bg_fill.crop((bg_ox, bg_oy, bg_ox + w, bg_oy + h))
-    tint_col = (*tuple(pal.get("top_bg", (15, 23, 42)))[:3], 160 if is_light_bg else 182)
-    img = Image.alpha_composite(bg_fill, Image.new("RGBA", (w, h), tint_col))
+    bg_fill = base_panel_pil.resize((w, h), Image.Resampling.BILINEAR).filter(ImageFilter.GaussianBlur(radius=26))
+    tint_col = (*tuple(pal.get("top_bg", (245, 242, 235)))[:3], 175 if is_light_bg else 195)
+    bg_overlay = Image.new("RGBA", (w, h), tint_col)
+    img = Image.alpha_composite(bg_fill, bg_overlay)
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # 2. العنوان الحركي المتزامن مع الكلمات المنطوقة
     kw_list = scene_meta.get("key_words") or []
     hl_word = kw_list[0] if kw_list else ""
     if concept_title:
@@ -1191,114 +1182,85 @@ def render_animated_storyboard_panel_scene(
             highlight_word=hl_word,
             headline_txt_color=headline_txt_c,
             sticker_bg_color=sticker_bg_c,
+            sticker_txt_color=sticker_txt_c,
             initial_font_size=max(24, int(h * 0.035)),
             scene_progress=choreo_u,
             global_t=global_t,
             style_mode_hint="sticker_pill"
         )
 
-    # 3. مسرح لوحة الستوري بورد بـ 4 أنماط كاميرا متنوعة بين المشاهد
     st_x1, st_y1 = int(w * 0.055), int(h * 0.22)
-    st_x2, st_y2 = int(w * 0.945), int(h * 0.80)
+    st_x2, st_y2 = int(w * 0.945), int(h * 0.79)
     st_w, st_h = st_x2 - st_x1, st_y2 - st_y1
 
-    cam_mode = (step_num - 1) % 4
-    sp_in = _staggered_spring(choreo_u, delay=0.01, duration=0.38, stiffness=200.0, damping=14.0)
-    float_y = int(6.0 * math.sin(global_t * 2.5 + step_num))
-    float_x = int(4.0 * math.cos(global_t * 1.9 + step_num))
+    sp_in = _staggered_spring(choreo_u, delay=0.02, duration=0.40, stiffness=195.0, damping=14.0)
+    float_y = int(5.0 * math.sin(global_t * 2.4 + step_num))
 
     pw0, ph0 = base_panel_pil.size
     p_aspect = pw0 / float(max(1, ph0))
-    target_w = int(st_w * max(0.86, min(1.0, sp_in)))
-    target_h = int(target_w / max(0.48, min(1.80, p_aspect)))
+    target_w = int(st_w * max(0.82, min(1.0, sp_in)))
+    target_h = int(target_w / max(0.45, min(1.85, p_aspect)))
     if target_h > st_h:
-        target_h = int(st_h * max(0.86, min(1.0, sp_in)))
+        target_h = int(st_h * max(0.82, min(1.0, sp_in)))
         target_w = int(target_h * p_aspect)
-    target_w = max(160, min(st_w, target_w))
-    target_h = max(160, min(st_h, target_h))
+    target_w = max(140, min(st_w, target_w))
+    target_h = max(140, min(st_h, target_h))
 
-    card_x1 = cx - target_w // 2 + float_x
-    card_y1 = (st_y1 + st_y2) // 2 - target_h // 2 + float_y + int(24 * (1.0 - min(1.0, sp_in)))
+    card_x1 = cx - target_w // 2
+    card_y1 = (st_y1 + st_y2) // 2 - target_h // 2 + float_y + int(28 * (1.0 - min(1.0, sp_in)))
     card_x2, card_y2 = card_x1 + target_w, card_y1 + target_h
 
-    # إطار زجاجي ثلاثي الأبعاد ناعم خلف اللوحة
     img = _draw_soft_elevated_card(
-        img, (card_x1 - 6, card_y1 - 6, card_x2 + 6, card_y2 + 6),
-        radius=26, fill_rgba=(255, 255, 255, 245) if is_light_bg else (15, 23, 42, 245),
-        shadow_offset_y=18, shadow_blur=22, shadow_alpha=78,
-        border_rgba=(*primary_c, 235)
+        img, (card_x1 - 4, card_y1 - 4, card_x2 + 4, card_y2 + 4),
+        radius=26, fill_rgba=(255, 255, 255, 255) if is_light_bg else (18, 24, 38, 255),
+        shadow_offset_y=16, shadow_blur=20, shadow_alpha=65,
+        border_rgba=(*primary_c, 225)
     )
 
-    # حساب حركة الكاميرا داخل اللوحة حسب النمط (Push-In / Pull-Out / Pan-Sweep / Dynamic Focus)
-    u_smooth = _ease_out_cubic(min(1.0, choreo_u * 1.12))
-    if cam_mode == 0:
-        cam_zoom = 1.02 + 0.16 * u_smooth
-        pan_x = (fx_norm - 0.5) * 0.52 * u_smooth
-        pan_y = (fy_norm - 0.5) * 0.52 * u_smooth
-    elif cam_mode == 1:
-        cam_zoom = 1.18 - 0.14 * u_smooth
-        pan_x = (fx_norm - 0.5) * 0.40 * (1.0 - u_smooth)
-        pan_y = (fy_norm - 0.5) * 0.40 * (1.0 - u_smooth)
-    elif cam_mode == 2:
-        cam_zoom = 1.12 + 0.06 * math.sin(u_smooth * math.pi)
-        pan_x = -0.18 + 0.36 * u_smooth
-        pan_y = (fy_norm - 0.5) * 0.35 * u_smooth
-    else:
-        cam_zoom = 1.05 + 0.14 * u_smooth
-        pan_x = 0.16 - 0.32 * u_smooth
-        pan_y = (fy_norm - 0.5) * 0.45 * u_smooth
-
+    cam_zoom = 1.0 + 0.14 * _ease_out_cubic(min(1.0, choreo_u * 1.15))
     zw, zh = int(round(target_w * cam_zoom)), int(round(target_h * cam_zoom))
     panel_resized = base_panel_pil.resize((zw, zh), Image.Resampling.BICUBIC)
-    crop_cx = int(zw * (0.5 + pan_x))
-    crop_cy = int(zh * (0.5 + pan_y))
+
+    pan_u = _ease_out_cubic(min(1.0, max(0.0, (choreo_u - 0.08) / 0.82)))
+    crop_cx = int(zw * (0.5 + (fx_norm - 0.5) * 0.45 * pan_u))
+    crop_cy = int(zh * (0.5 + (fy_norm - 0.5) * 0.45 * pan_u))
     cx0 = max(0, min(zw - target_w, crop_cx - target_w // 2))
     cy0 = max(0, min(zh - target_h, crop_cy - target_h // 2))
     panel_cropped = panel_resized.crop((cx0, cy0, cx0 + target_w, cy0 + target_h))
 
-    # 4. تحريك الطبقة الأمامية المفرغة (2.5D Foreground Subject Pop-Out) ببروز ثلاثي الأبعاد
-    if fg_panel_pil is not None and choreo_u >= 0.08:
-        fg_sp = _staggered_spring(choreo_u, delay=0.08, duration=0.40, stiffness=210.0, damping=13.0)
-        fg_zoom = cam_zoom * (1.0 + 0.085 * min(1.15, fg_sp))
+    if fg_panel_pil is not None and choreo_u >= 0.12:
+        fg_sp = _staggered_spring(choreo_u, delay=0.12, duration=0.42, stiffness=205.0, damping=13.0)
+        fg_zoom = cam_zoom * (1.0 + 0.065 * min(1.12, fg_sp))
         fzw, fzh = int(round(target_w * fg_zoom)), int(round(target_h * fg_zoom))
         fg_resized = fg_panel_pil.resize((fzw, fzh), Image.Resampling.BICUBIC)
-        fcx0 = max(0, min(fzw - target_w, int(fzw * (0.5 + pan_x * 1.15)) - target_w // 2))
-        fcy0 = max(0, min(fzh - target_h, int(fzh * (0.5 + pan_y * 1.15)) - target_h // 2))
+        fcx0 = max(0, min(fzw - target_w, int(fzw * (0.5 + (fx_norm - 0.5) * 0.45 * pan_u)) - target_w // 2))
+        fcy0 = max(0, min(fzh - target_h, int(fzh * (0.5 + (fy_norm - 0.5) * 0.45 * pan_u)) - target_h // 2))
         fg_cropped = fg_resized.crop((fcx0, fcy0, fcx0 + target_w, fcy0 + target_h))
         panel_cropped = Image.alpha_composite(panel_cropped, fg_cropped)
-
-    # 5. لمعان سينمائي متحرك (Diagonal Glass Light Sweep) فوق اللوحة
-    sweep_layer = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
-    sw_draw = ImageDraw.Draw(sweep_layer, "RGBA")
-    sweep_x = int(-target_w * 0.4 + (target_w * 1.8) * min(1.0, max(0.0, (choreo_u - 0.10) / 0.65)))
-    sw_poly = [
-        (sweep_x, 0),
-        (sweep_x + int(target_w * 0.22), 0),
-        (sweep_x - int(target_w * 0.08), target_h),
-        (sweep_x - int(target_w * 0.30), target_h),
-    ]
-    sw_draw.polygon(sw_poly, fill=(255, 255, 255, 36))
-    panel_cropped = Image.alpha_composite(panel_cropped, sweep_layer)
 
     mask_round = Image.new("L", (target_w, target_h), 0)
     ImageDraw.Draw(mask_round).rounded_rectangle([(0, 0), (target_w - 1, target_h - 1)], radius=22, fill=255)
     img.paste(panel_cropped, (card_x1, card_y1), mask_round)
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # 6. تسليط ضوء تفاعلي ناعم حول العنصر المركزي + حركة مؤشر اليد التفاعلي
-    focus_screen_x = card_x1 + int(target_w * max(0.2, min(0.8, fx_norm)))
-    focus_screen_y = card_y1 + int(target_h * max(0.2, min(0.8, fy_norm)))
-    if 0.20 <= choreo_u <= 0.90:
-        pulse_r = int(28 + 12 * math.sin(global_t * 5.0))
-        ring_alpha = int(165 * math.sin(min(1.0, (choreo_u - 0.20) / 0.70) * math.pi))
+    focus_screen_x = card_x1 + int(target_w * fx_norm)
+    focus_screen_y = card_y1 + int(target_h * fy_norm)
+    if 0.22 <= choreo_u <= 0.88:
+        pulse_r = int(26 + 14 * math.sin(global_t * 5.2))
+        ring_alpha = int(150 * math.sin(min(1.0, (choreo_u - 0.22) / 0.66) * math.pi))
         draw.ellipse(
             [(focus_screen_x - pulse_r, focus_screen_y - pulse_r), (focus_screen_x + pulse_r, focus_screen_y + pulse_r)],
-            outline=(*secondary_c, max(0, ring_alpha)), width=3
+            outline=(*primary_c, max(0, ring_alpha)), width=3
         )
+
+    badge_txt = f"Storyboard #{panel_info.get('panel_index', 0) + 1:02d}"
+    draw.rounded_rectangle([(card_x1 + 14, card_y1 + 14), (card_x1 + 152, card_y1 + 44)], radius=15, fill=(15, 23, 42, 210), outline=(*primary_c, 220), width=1)
+    bf = get_arabic_font(13, bold=True)
+    draw_arabic_text(draw, (card_x1 + 83, card_y1 + 29), badge_txt, font=bf, fill=(255, 255, 255, 245))
 
     _draw_cursor_with_ripple(
         draw,
-        (card_x2 - 22, card_y2 + 24),
+        (card_x2 - 24, card_y2 + 28),
         (focus_screen_x, focus_screen_y),
         choreo_u,
         accent_rgb=primary_c
@@ -1316,13 +1278,6 @@ def _render_dynamic_archetype_stage(
     word_local_progress: float = 0.5,
     scene_words: Optional[List[str]] = None
 ) -> Image.Image:
-    """
-    محرك الكوريغرافيا التوليدي المتعلم من الفيديو المرجعي 15s (6944.mp4):
-    - تزامن صوتي صارم (Audio-Synced Progressive Reveal):
-      لا تظهر الأيقونات أو البطاقات قبل نطق الكلام، ولا تبقى جامدة أبداً!
-      بل يبدأ المشهد بدخول الكلمات المنطوقة، ثم تتشكل عناصر الموشن جرافيك تدريجياً كلمة بكلمة،
-      ثم تتفاعل اليد المؤشرة (👆) بالنقر والتحريك قبل الانتقال السلس للمشهد التالي.
-    """
     w, h = img.size
     cx = w // 2
     draw = ImageDraw.Draw(img, "RGBA")
@@ -1333,39 +1288,26 @@ def _render_dynamic_archetype_stage(
     total_scenes = int(scene_meta.get("total_scenes_count") or 999)
     badge_label = str(scene_meta.get("badge_label") or "محور أساسي")
     concept_title = str(scene_meta.get("concept_title") or scene_meta.get("short_title") or "فكرة محورية ذكية")
-    kpi_val = str(scene_meta.get("kpi_value") or "").strip()
-    kpi_lbl = str(scene_meta.get("kpi_label") or "").strip()
+    kpi_val = str(scene_meta.get("kpi_value") or "+44")
+    kpi_lbl = str(scene_meta.get("kpi_label") or "أداء احترافي")
 
     raw_sub_items = [re.sub(r"^\d+[\.\-\s]+", "", str(s)).strip() for s in (scene_meta.get("sub_items") or []) if str(s).strip()]
     sub_items: List[str] = []
     for s_it in raw_sub_items:
         if s_it and s_it not in sub_items:
             sub_items.append(s_it)
-    # استخراج عبارات قصيرة متميزة من كلمات الجملة المنطوقة لمنع تكرار نفس العنوان داخل البطاقات
-    raw_txt_words = [w.strip() for w in str(scene_meta.get("text") or concept_title or "").split() if len(w.strip()) >= 2]
-    for wi in range(0, len(raw_txt_words), 2):
-        chunk_phrase = " ".join(raw_txt_words[wi:wi + 2]).strip()
-        if len(chunk_phrase) >= 4 and chunk_phrase not in sub_items and chunk_phrase != concept_title:
-            sub_items.append(chunk_phrase)
-    for fallback_s in [kpi_lbl, concept_title, kpi_val]:
+    for fallback_s in [concept_title, kpi_lbl, badge_label.split("•")[-1].strip(), kpi_val]:
         fb_clean = str(fallback_s or "").strip()
         if fb_clean and fb_clean not in sub_items:
             sub_items.append(fb_clean)
-    studio_default_tags = ["AI STUDIO", "4K 60FPS", "AUTO CUT", "PRO SFX", "3D MOTION", "SMART EDIT"]
-    for st_tag in studio_default_tags:
-        if len(sub_items) >= 6:
-            break
-        if st_tag not in sub_items:
-            sub_items.append(st_tag)
+    while len(sub_items) < 6:
+        sub_items.append(concept_title)
 
-    # حساب التقدم المتزامن مع الكلمات المنطوقة فعلياً (Audio-Synced Progression)
     sc_w_list = scene_words if scene_words else (scene_meta.get("word_strings") or concept_title.split())
     n_words = max(1, len(sc_w_list))
     word_sync_u = min(1.0, max(0.0, (float(active_word_idx) + float(word_local_progress)) / float(n_words)))
     choreo_u = min(1.0, max(0.0, 0.48 * float(scene_progress) + 0.52 * word_sync_u))
 
-    # فحص وضع الستوري بورد المرفوع من المستخدم (Single-Image Storyboard Mode):
-    # إذا رفع المستخدم صورة ستوري بورد، يحرك النظام لوحات الستوري بورد مباشرةً بعمق 2.5D دون اختراع أشكال عشوائية!
     try:
         from style_evolution_brain import get_active_storyboard_state
         sb_state = get_active_storyboard_state()
@@ -1416,9 +1358,8 @@ def _render_dynamic_archetype_stage(
     if archetype not in ALL_DYNAMIC_VISUAL_ARCHETYPES:
         archetype = ALL_DYNAMIC_VISUAL_ARCHETYPES[(step_num - 1) % len(ALL_DYNAMIC_VISUAL_ARCHETYPES)]
 
-    # بوابة المنطق الصارم: منع ظهور القوالب المرقمة (1-2-3-4) أو الميزان أو العدادات في مشاهد الكلام العام غير المرقمة!
     if not user_override_arch and callable(detect_strict_speech_intent):
-        raw_scene_txt = str(scene_meta.get("text") or concept_title or "")
+        raw_scene_txt = str(scene_meta.get("search_keywords_override") or scene_meta.get("text") or concept_title or "")
         intent_info = detect_strict_speech_intent(raw_scene_txt, step_num - 1, total_scenes)
         if archetype in intent_info.get("forbidden_archetypes", set()):
             matched_arch, _ = match_speech_to_visual_archetype(
@@ -1430,10 +1371,9 @@ def _render_dynamic_archetype_stage(
             )
             archetype = matched_arch if matched_arch not in intent_info.get("forbidden_archetypes", set()) else "web_dynamic_scene"
 
-    if not user_override_arch and step_num == total_scenes and total_scenes >= 3 and archetype not in ("interactive_profile_follow_card", "hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"):
+    if not user_override_arch and step_num == total_scenes and total_scenes >= 3 and archetype not in ("hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"):
         archetype = "hero_cta_magnet_finale" if (step_num % 2 == 0) else "kinetic_quote_dm_finale"
 
-    # إذا كان المشهد هو المسرح السينمائي الداكن (Shot 5 من 6944.mp4)، نحول الخلفية إلى الغرفة السينمائية الداكنة الدافئة!
     if archetype == "dark_cinema_fanned_cards":
         img = _render_pro_stage_background(w, h, style_spec, step_num=step_num, global_t=global_t, force_dark_cinema=True)
         draw = ImageDraw.Draw(img, "RGBA")
@@ -1442,9 +1382,8 @@ def _render_dynamic_archetype_stage(
 
     _render_unified_top_header(draw, w, h, step_num, total_scenes, badge_label, style_spec, choreo_u)
 
-    # للعناصر التي تحتوي عنواناً علوياً، نرسم العنوان بكلمات متتابعة متزامنة مع الصوت
     kw_list = scene_meta.get("key_words") or []
-    hl_word = kw_list[0] if kw_list else ""
+    hl_word = kw_list[0] if kw_list else (kpi_val.split()[0] if kpi_val else "")
     headline_style_hint = str(style_spec.get("headline_style", "gold_accent_clean"))
     if archetype not in ("chrono_ring_3d_counter", "kinetic_quote_dm_finale"):
         _draw_sticker_highlighted_headline(
@@ -1469,9 +1408,11 @@ def _render_dynamic_archetype_stage(
     st_x2, st_y2 = int(w * 0.93), int(h * 0.775) + float_y
     st_w, st_h = st_x2 - st_x1, st_y2 - st_y1
 
-    # =========================================================================
-    # Archetypes 1..16 (Bespoke Speech-Matched Open-Canvas Hero Illustrations)
-    # =========================================================================
+    # إذا كتب المستخدم عناصر فرعية مخصصة بعلامة | (مثل "ما عنده وقت | عشان يمنتج") نمرر علامة تسمح برسم الكبسولات السفلية!
+    if raw_sub_items and len(raw_sub_items) >= 2:
+        scene_meta = dict(scene_meta)
+        scene_meta["is_explicit_enumeration"] = True
+
     if archetype.startswith("hero_") or archetype == "web_dynamic_scene":
         return render_contextual_hero_illustration(
             img=img,
@@ -1491,19 +1432,13 @@ def _render_dynamic_archetype_stage(
             draw_cursor_fn=_draw_cursor_with_ripple
         )
 
-    # =========================================================================
-    # Archetype 17 [6944 Shot 1]: chrono_ring_3d_counter (الحلقة ثلاثية الأبعاد والعداد الدائري السريع 10->14->20)
-    # =========================================================================
     if archetype == "chrono_ring_3d_counter":
         ring_cy = int(h * 0.46) + float_y
-        # تبدأ الحلقة كبيرة (Zoom-Out من الكاميرا 1.55x -> 1.0x) كما في أول لقطة من 6944.mp4
         zoom_out_p = _staggered_spring(choreo_u, delay=0.0, duration=0.45, stiffness=180.0, damping=14.0)
         scale_ring = 1.48 - 0.48 * zoom_out_p
         outer_r = int(min(w, h) * 0.27 * scale_ring)
         ring_thick = max(20, int(outer_r * 0.21))
 
-        # ظل ثلاثي الأبعاد ناعم خلف الحلقة
-        sh_r = outer_r + 12
         sh_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         sh_d = ImageDraw.Draw(sh_layer, "RGBA")
         sh_d.ellipse(
@@ -1514,15 +1449,12 @@ def _render_dynamic_archetype_stage(
         img.alpha_composite(sh_layer)
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # مسار الحلقة الرمادي الفضي الثلاثي الأبعاد
         track_col = (212, 212, 216, 245) if is_light_bg else (51, 65, 85, 235)
         draw.ellipse(
             [(cx - outer_r, ring_cy - outer_r), (cx + outer_r, ring_cy + outer_r)],
             outline=track_col, width=ring_thick
         )
 
-        # المرحلة 1 (0.0 -> 0.28): ظهور الكلمات التمهيدية داخل الحلقة بالتزامن مع بداية الجملة
-        # المرحلة 2 (0.20 -> 0.95): دوران القوس الذهبي وتصاعد الرقم الحي في قلب الحلقة!
         arc_u = max(0.0, min(1.0, (choreo_u - 0.12) / 0.78))
         sweep_deg = int(325.0 * _ease_out_cubic(arc_u))
         if sweep_deg > 4:
@@ -1531,7 +1463,6 @@ def _render_dynamic_archetype_stage(
                 start=-90, end=-90 + sweep_deg,
                 fill=(*primary_c, 255), width=ring_thick
             )
-            # كبسولة الرأس الذهبي الثلاثي الأبعاد في مقدمة القوس
             head_rad = math.radians(-90 + sweep_deg)
             mid_r = outer_r - ring_thick // 2
             hx = cx + int(mid_r * math.cos(head_rad))
@@ -1539,7 +1470,6 @@ def _render_dynamic_archetype_stage(
             cap_r = ring_thick // 2 + 2
             draw.ellipse([(hx - cap_r, hy - cap_r), (hx + cap_r, hy + cap_r)], fill=(*sticker_bg_c, 255))
 
-        # المحتوى داخل الحلقة: كلمات البداية ثم العداد الرقمي الحي (مثل "في أقل من" -> "10 -> 14 -> 20")
         raw_num_m = re.search(r"(\d+)", f"{kpi_val} {concept_title}")
         target_num = int(raw_num_m.group(1)) if raw_num_m else int(scene_meta.get("target_number") or 20)
         if target_num <= 1:
@@ -1558,7 +1488,6 @@ def _render_dynamic_archetype_stage(
             num_font = get_arabic_font(max(44, int(outer_r * 0.62)), bold=True)
             draw_arabic_text(draw, (cx, ring_cy - 6), f"{cur_num}", font=num_font, fill=(*headline_txt_c, 255))
 
-        # عنوان الفكرة يظهر بنعومة أسفل الحلقة بعد بدء العد
         if choreo_u >= 0.28:
             lbl_sp = _staggered_spring(choreo_u, delay=0.28, duration=0.36)
             ly = ring_cy + outer_r + 36 + int(24 * (1.0 - lbl_sp))
@@ -1568,38 +1497,28 @@ def _render_dynamic_archetype_stage(
             )
         return img
 
-    # =========================================================================
-    # Archetype 2 [6944 Shot 2]: pack_3d_extruding_pillars (صندوق الأصول ثلاثي الأبعاد والأعمدة الملونة المنبثقة بالتتابع)
-    # =========================================================================
     if archetype == "pack_3d_extruding_pillars":
-        # صندوق الأصول لا يظهر قبل الكلام، بل ينبثق بفيزياء الزنبرك بعد أولى الكلمات (choreo_u >= 0.14)
         dock_sp = _staggered_spring(choreo_u, delay=0.12, duration=0.40, stiffness=stiffness, damping=damping)
         if dock_sp <= 0.04:
             return img
 
-        box_sz = int(min(st_w, st_h) * 0.46 * max(0.35, dock_sp))
         box_cx = cx
         box_cy = st_y1 + int(st_h * 0.50) + int(32 * (1.0 - dock_sp))
-
-        # نرسم الصندوق والأعمدة الثلاثة الملونة التي ترتفع واحداً تلو الآخر على طبقة مستقلة ثم نميلها (-8 درجات) كما في 6944.mp4!
         layer_sz = int(min(st_w, st_h) * 0.82)
         pack_layer = Image.new("RGBA", (layer_sz, layer_sz), (0, 0, 0, 0))
         pdraw = ImageDraw.Draw(pack_layer, "RGBA")
         lcx, lcy = layer_sz // 2, int(layer_sz * 0.58)
         bsz = int(layer_sz * 0.48 * max(0.4, dock_sp))
 
-        # الظل الخلفي للصندوق الذهبي
         pdraw.rounded_rectangle(
             [(lcx - bsz // 2 + 6, lcy - bsz // 2 + 12), (lcx + bsz // 2 + 6, lcy + bsz // 2 + 12)],
             radius=28, fill=(24, 20, 16, 55)
         )
-        # جسم الصندوق الذهبي/الكهرماني الخلفي
         pdraw.rounded_rectangle(
             [(lcx - bsz // 2, lcy - bsz // 2), (lcx + bsz // 2, lcy + bsz // 2)],
             radius=28, fill=(238, 196, 92, 255), outline=(255, 255, 255, 220), width=3
         )
 
-        # الأعمدة الثلاثة الملونة (بنفسجي، سيان، أخضر ليموني) ترتفع بالتتابع واحداً تلو الآخر مع الكلمات المنطوقة!
         pillar_specs = [
             (-int(bsz * 0.27), -12.0, (124, 58, 237), (167, 139, 250), 0.22),
             (0, -2.0, (6, 182, 212), (103, 232, 249), 0.36),
@@ -1618,11 +1537,9 @@ def _render_dynamic_archetype_stage(
             py1 = py2 - cur_ph
             pdraw.rounded_rectangle([(px1 + 3, py1 + 5), (px1 + pw_pil + 3, py2 + 5)], radius=10, fill=(0, 0, 0, 48))
             pdraw.rounded_rectangle([(px1, py1), (px1 + pw_pil, py2)], radius=10, fill=(*col_dark, 255), outline=(*col_light, 240), width=2)
-            # خطوط الملمس الأفقية على كل عمود (كما في أيقونة Sounds Pack في 6944.mp4)
             for ry in range(py1 + 10, py2 - 8, 9):
                 pdraw.line([(px1 + 5, ry), (px1 + pw_pil - 5, ry)], fill=(*col_light, 195), width=2)
 
-        # الجيب الأمامي نصف الشفاف للصندوق مع النص
         pocket_y1 = lcy + int(bsz * 0.02)
         pocket_y2 = lcy + bsz // 2
         pdraw.rounded_rectangle(
@@ -1630,28 +1547,22 @@ def _render_dynamic_archetype_stage(
             radius=24, fill=(245, 208, 108, 228), outline=(255, 255, 255, 190), width=2
         )
         mid_pocket_y = (pocket_y1 + pocket_y2) // 2
-        pill_pw = int(bsz * 0.78)
-        pill_ph = max(28, int((pocket_y2 - pocket_y1) * 0.54))
-        ppx1, ppy1 = lcx - pill_pw // 2, mid_pocket_y - pill_ph // 2
-        ppx2, ppy2 = ppx1 + pill_pw, ppy1 + pill_ph
-        pdraw.rounded_rectangle([(ppx1, ppy1), (ppx2, ppy2)], radius=pill_ph // 2, fill=(15, 23, 42, 238), outline=(255, 255, 255, 210), width=1)
-        pocket_txt = kpi_lbl if kpi_lbl else (sub_items[0] if sub_items else "PRO PACK")
         draw_contained_arabic_text(
-            pdraw, (ppx1 + 10, ppy1 + 2, ppx2 - 10, ppy2 - 2),
-            pocket_txt, initial_font_size=14, min_font_size=10, fill=(255, 255, 255, 255)
+            pdraw, (lcx - bsz // 2 + 10, pocket_y1 + 4, lcx + bsz // 2 - 10, mid_pocket_y),
+            kpi_lbl, initial_font_size=15, min_font_size=10, fill=(255, 255, 255, 255), stroke_width=1, stroke_fill=(24, 24, 27, 150)
+        )
+        draw_contained_arabic_text(
+            pdraw, (lcx - bsz // 2 + 10, mid_pocket_y + 2, lcx + bsz // 2 - 10, pocket_y2 - 4),
+            kpi_val, initial_font_size=14, min_font_size=10, fill=(*dark_navy, 255)
         )
 
         tilted_pack = pack_layer.rotate(4.5 * math.sin(min(1.0, choreo_u * 1.4) * math.pi * 0.5), resample=Image.Resampling.BICUBIC, expand=False)
         img.alpha_composite(tilted_pack, (box_cx - layer_sz // 2, box_cy - int(layer_sz * 0.55)))
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # مؤشر اليد ينزلق وينقر على الصندوق بعد اكتمال خروج الأعمدة الثلاثة!
         _draw_cursor_with_ripple(draw, (box_cx + 90, box_cy + 130), (box_cx + 12, box_cy + 28), choreo_u, accent_rgb=primary_c)
         return img
 
-    # =========================================================================
-    # Archetype 3 [6944 Shot 3]: macos_folder_counter_list (قائمة المجلدات الزرقاء مع العداد الخلفي المتصاعد +44)
-    # =========================================================================
     if archetype == "macos_folder_counter_list":
         card_sp = _staggered_spring(choreo_u, delay=0.06, duration=0.38, stiffness=stiffness, damping=damping)
         cw = int(st_w * 0.76 * max(0.75, card_sp))
@@ -1660,7 +1571,6 @@ def _render_dynamic_archetype_stage(
         by1 = st_y1 + int(st_h * 0.16) + int(28 * (1.0 - card_sp))
         bx2, by2 = bx1 + cw, by1 + ch
 
-        # العداد الخلفي يظهر فقط إذا ذكر المتحدث رقماً حقيقياً في الجملة (بدون أي أرقام +28 أو +44 عشوائية!)
         num_m = re.search(r"(\d+)", f"{kpi_val} {concept_title}")
         if num_m:
             target_c = max(1, int(num_m.group(1)))
@@ -1669,15 +1579,13 @@ def _render_dynamic_archetype_stage(
             cnt_col = (161, 161, 170, 175) if is_light_bg else (148, 163, 184, 175)
             draw_arabic_text(draw, (cx, by1 - int(h * 0.026)), f"+{cur_c}", font=cnt_font, fill=cnt_col)
 
-        # البطاقة البيضاء الناعمة بدون أي حدود سوداء كرتونية (Soft 3D Drop Shadow)
         img = _draw_soft_elevated_card(
             img, (bx1, by1, bx2, by2), radius=24,
             fill_rgba=(255, 255, 255, 253), shadow_offset_y=14, shadow_blur=16, shadow_alpha=46
         )
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # صفوف المجلدات الزرقاء تظهر واحداً تلو الآخر بالتزامن مع تقدم الكلام!
-        num_rows = 5
+        num_rows = min(5, max(2, len(raw_sub_items) if raw_sub_items else 4))
         row_h = (ch - 28) // num_rows
         for ri in range(num_rows):
             row_delay = 0.12 + ri * 0.11
@@ -1687,7 +1595,6 @@ def _render_dynamic_archetype_stage(
             ry_top = by1 + 14 + ri * row_h + int(14 * (1.0 - r_sp))
             ry_mid = ry_top + row_h // 2
 
-            # أيقونة المجلد الأزرق ثلاثي الأبعاد + النص
             folder_x = bx2 - 42
             _draw_macos_blue_folder_icon(draw, folder_x, ry_mid - 11, w=28, h=22)
 
@@ -1697,13 +1604,9 @@ def _render_dynamic_archetype_stage(
                 item_txt, initial_font_size=16, fill=(39, 39, 42, int(255 * min(1.0, r_sp)))
             )
 
-        # مؤشر اليد ينزلق لأسفل البطاقة وينقر على المجلد الأخير
         _draw_cursor_with_ripple(draw, (bx2 - 20, by1 + 30), (bx2 - 28, by2 - 14), choreo_u, accent_rgb=secondary_c)
         return img
 
-    # =========================================================================
-    # Archetype 4 [6944 Shot 4]: reels_6card_showcase_grid (معرض الفيديوهات والبطاقات الستة المتحركة 2×3)
-    # =========================================================================
     if archetype == "reels_6card_showcase_grid":
         cols_n, rows_n = 3, 2
         gap_x, gap_y = 12, 14
@@ -1723,7 +1626,6 @@ def _render_dynamic_archetype_stage(
         for idx_c in range(6):
             r_i = idx_c // cols_n
             c_i = idx_c % cols_n
-            # توزيع البطاقات الستة بالتتابع كأوراق اللعب مع نطق الكلمات (Staggered Card Deal)
             c_delay = 0.08 + idx_c * 0.09
             c_sp = _staggered_spring(choreo_u, delay=c_delay, duration=0.38, stiffness=200.0, damping=13.5)
             if c_sp <= 0.04:
@@ -1740,7 +1642,6 @@ def _render_dynamic_archetype_stage(
             )
             draw = ImageDraw.Draw(img, "RGBA")
 
-            # إذا توفر فريم فيديو حي للمتحدث/المنتج، نعرضه داخل البطاقات المصغرة مع تدرجات لونية سينمائية!
             bg_dark, acc_glow = card_palettes[idx_c % len(card_palettes)]
             inner_pad = 3
             ix1, iy1, ix2, iy2 = gx1 + inner_pad, gy1 + inner_pad, gx2 - inner_pad, gy2 - inner_pad
@@ -1756,14 +1657,12 @@ def _render_dynamic_archetype_stage(
                 draw = ImageDraw.Draw(img, "RGBA")
             else:
                 draw.rounded_rectangle([(ix1, iy1), (ix2, iy2)], radius=15, fill=(*bg_dark, 255))
-                # هالة ضوئية وصورة رمزية أنيقة داخل بطاقة الريلز
                 av_r = max(14, int(min(iw, ih) * 0.22))
                 av_cx, av_cy = (ix1 + ix2) // 2, iy1 + int(ih * 0.38)
                 draw.ellipse([(av_cx - av_r - 4, av_cy - av_r - 4), (av_cx + av_r + 4, av_cy + av_r + 4)], fill=(*acc_glow, 55))
                 draw.ellipse([(av_cx - av_r, av_cy - av_r), (av_cx + av_r, av_cy + av_r)], fill=(*acc_glow, 240))
                 draw.polygon([(av_cx - 4, av_cy - 6), (av_cx - 4, av_cy + 6), (av_cx + 7, av_cy)], fill=(255, 255, 255, 255))
 
-            # شريط العنوان المصغر أسفل كل بطاقة ريلز
             lbl_y1 = iy2 - max(28, int(ih * 0.26))
             draw.rounded_rectangle([(ix1 + 4, lbl_y1), (ix2 - 4, iy2 - 4)], radius=8, fill=(0, 0, 0, 155))
             draw_contained_arabic_text(
@@ -1771,151 +1670,101 @@ def _render_dynamic_archetype_stage(
                 sub_items[idx_c % len(sub_items)], initial_font_size=12, min_font_size=9, fill=(255, 255, 255, 255)
             )
 
-            # شارة المنصة المضيئة في زاوية البطاقة (كما في 6944.mp4)
             b_col = (225, 48, 108) if idx_c % 2 == 0 else (16, 185, 129)
             _draw_checkmark_badge(draw, ix2 - 12, iy1 + 12, 8, color_rgb=b_col)
 
         return img
 
-    # =========================================================================
     if archetype == "dark_cinema_fanned_cards":
+        ba_info = scene_meta.get("before_after") or (sub_items[0], "SOUND", sub_items[1], "PRO")
         card_w = int(st_w * 0.46)
         card_h = int(st_h * 0.54)
-        top_tags = [
-            kpi_lbl if kpi_lbl else (sub_items[0] if sub_items else "AI AUDIO"),
-            kpi_val if kpi_val else (sub_items[1] if len(sub_items) > 1 else "PRO STUDIO")
-        ]
-        bot_labels = [
-            sub_items[0] if sub_items else "تنقية الصوت",
-            sub_items[min(1, len(sub_items) - 1)] if sub_items else "موشن غرافيك"
-        ]
 
         for ci in range(2):
-            c_delay = 0.08 + ci * 0.16
-            c_sp = _staggered_spring(choreo_u, delay=c_delay, duration=0.40, stiffness=195.0, damping=14.0)
+            c_delay = 0.10 + ci * 0.18
+            c_sp = _staggered_spring(choreo_u, delay=c_delay, duration=0.42, stiffness=190.0, damping=13.5)
             if c_sp <= 0.05:
                 continue
 
-            # رندرة بدقة مضاعفة 2x قبل التدوير لمنع أي تكسر في حواف البطاقات المروحية!
-            ss = 2
-            cw_s, ch_s = (card_w + 28) * ss, (card_h + 28) * ss
-            c_layer = Image.new("RGBA", (cw_s, ch_s), (0, 0, 0, 0))
+            c_layer = Image.new("RGBA", (card_w + 24, card_h + 24), (0, 0, 0, 0))
             cdraw = ImageDraw.Draw(c_layer, "RGBA")
-            accent_card_c = (16, 185, 129) if ci == 0 else (56, 189, 248)
-            pad_s = 14 * ss
-            w_s, h_s = card_w * ss, card_h * ss
+            accent_card_c = (16, 185, 129) if ci == 0 else (239, 68, 68)
+            cdraw.rounded_rectangle([(12, 14), (card_w + 12, card_h + 14)], radius=22, fill=(0, 0, 0, 120))
+            cdraw.rounded_rectangle([(10, 10), (card_w + 10, card_h + 10)], radius=22, fill=(24, 28, 38, 252), outline=(*accent_card_c, 220), width=2)
 
-            cdraw.rounded_rectangle([(pad_s + 4, pad_s + 10), (pad_s + w_s + 4, pad_s + h_s + 10)], radius=24 * ss, fill=(0, 0, 0, 135))
-            cdraw.rounded_rectangle([(pad_s, pad_s), (pad_s + w_s, pad_s + h_s)], radius=24 * ss, fill=(20, 25, 38, 252), outline=(*accent_card_c, 235), width=2 * ss)
+            cdraw.rounded_rectangle([(22, 22), (card_w - 2, 54)], radius=10, fill=(*accent_card_c, 240))
+            tag_txt = kpi_val if ci == 0 else kpi_lbl
+            draw_contained_arabic_text(cdraw, (26, 22, card_w - 6, 54), tag_txt, initial_font_size=15, fill=(255, 255, 255, 255))
 
-            # شريط علوي مضيء
-            cdraw.rounded_rectangle([(pad_s + 12 * ss, pad_s + 12 * ss), (pad_s + w_s - 12 * ss, pad_s + 46 * ss)], radius=12 * ss, fill=(*accent_card_c, 240))
-            draw_contained_arabic_text(cdraw, (pad_s + 18 * ss, pad_s + 14 * ss, pad_s + w_s - 18 * ss, pad_s + 44 * ss), top_tags[ci], initial_font_size=15 * ss, fill=(255, 255, 255, 255))
-
-            # موجة صوتية متوهجة
-            wf_cy = pad_s + 46 * ss + int((h_s - 46 * ss) * 0.42)
+            wf_cy = 54 + int((card_h - 54) * 0.42)
             num_bars = 14
-            bar_step = (w_s - 36 * ss) // num_bars
+            bar_step = (card_w - 36) // num_bars
             for bi in range(num_bars):
-                bx_w = pad_s + 22 * ss + bi * bar_step
-                bh_w = int((8 + 22 * abs(math.sin(global_t * 6.0 + bi * 0.55 + ci))) * ss)
-                cdraw.rounded_rectangle([(bx_w - 2 * ss, wf_cy - bh_w), (bx_w + 2 * ss, wf_cy + bh_w)], radius=2 * ss, fill=(*accent_card_c, 245))
+                bx_w = 28 + bi * bar_step
+                bh_w = int(8 + 24 * abs(math.sin(global_t * 6.5 + bi * 0.55 + ci)))
+                cdraw.line([(bx_w, wf_cy - bh_w), (bx_w, wf_cy + bh_w)], fill=(74, 222, 128, 240), width=3)
 
+            body_txt = str(ba_info[2] if ci == 0 else ba_info[0])
             draw_contained_arabic_text(
-                cdraw, (pad_s + 14 * ss, wf_cy + 28 * ss, pad_s + w_s - 14 * ss, pad_s + h_s - 10 * ss),
-                bot_labels[ci], initial_font_size=15 * ss, fill=(248, 250, 252, 255)
+                cdraw, (20, wf_cy + 28, card_w, card_h - 4),
+                body_txt, initial_font_size=16, fill=(248, 250, 252, 255)
             )
 
-            c_layer_1x = c_layer.resize((card_w + 28, card_h + 28), Image.Resampling.LANCZOS)
-            tilt = (-5.0 if ci == 0 else 5.0) * c_sp
-            rot_c = c_layer_1x.rotate(tilt, resample=Image.Resampling.BICUBIC, expand=True)
-            dest_x = (st_x1 - 6 if ci == 0 else st_x2 - card_w - 18) + int((0 if ci == 0 else 1) * 18 * (1.0 - c_sp))
-            dest_y = st_y1 + int(st_h * 0.14) + int(28 * (1.0 - c_sp))
+            tilt = (-5.5 if ci == 0 else 5.5) * c_sp
+            rot_c = c_layer.rotate(tilt, resample=Image.Resampling.BICUBIC, expand=True)
+            dest_x = (st_x1 - 4 if ci == 0 else st_x2 - card_w - 16) + int((0 if ci == 0 else 1) * 20 * (1.0 - c_sp))
+            dest_y = st_y1 + int(st_h * 0.14) + int(30 * (1.0 - c_sp))
             img.alpha_composite(rot_c, (dest_x, dest_y))
 
         return img
 
-    # =========================================================================
-    # Archetype 6 [6944 Shot 6]: interactive_profile_follow_card (بطاقة المنصة/الحساب التفاعلية الثلاثية الأبعاد)
-    # =========================================================================
     if archetype == "interactive_profile_follow_card":
-        card_sp = _staggered_spring(choreo_u, delay=0.06, duration=0.38, stiffness=stiffness, damping=damping)
-        cw = int(st_w * 0.90 * max(0.80, card_sp))
-        ch = int(st_h * 0.64 * max(0.80, card_sp))
+        card_sp = _staggered_spring(choreo_u, delay=0.10, duration=0.40, stiffness=stiffness, damping=damping)
+        cw = int(st_w * 0.90 * max(0.78, card_sp))
+        ch = int(st_h * 0.62 * max(0.78, card_sp))
         bx1 = cx - cw // 2
-        by1 = st_y1 + int(st_h * 0.10) + int(28 * (1.0 - card_sp))
+        by1 = st_y1 + int(st_h * 0.12) + int(32 * (1.0 - card_sp))
         bx2, by2 = bx1 + cw, by1 + ch
 
         img = _draw_soft_elevated_card(
-            img, (bx1, by1, bx2, by2), radius=26,
-            fill_rgba=(255, 255, 255, 254), shadow_offset_y=16, shadow_blur=18, shadow_alpha=58,
-            border_rgba=(*primary_c, 210)
+            img, (bx1, by1, bx2, by2), radius=24,
+            fill_rgba=(255, 255, 255, 254), shadow_offset_y=14, shadow_blur=16, shadow_alpha=48
         )
         draw = ImageDraw.Draw(img, "RGBA")
 
-        # ترويسة البطاقة: أفاتار ثلاثي الأبعاد بداخله أيقونة ماسية/تاج مضيء + شارة توثيق
-        av_r = max(26, int(ch * 0.14))
-        av_cx, av_cy = bx1 + 26 + av_r, by1 + 24 + av_r
+        av_r = max(24, int(ch * 0.14))
+        av_cx, av_cy = bx1 + 26 + av_r, by1 + 26 + av_r
         draw.ellipse([(av_cx - av_r - 3, av_cy - av_r - 3), (av_cx + av_r + 3, av_cy + av_r + 3)], outline=(*primary_c, 255), width=2)
-        draw.ellipse([(av_cx - av_r, av_cy - av_r), (av_cx + av_r, av_cy + av_r)], fill=(15, 23, 42, 255))
-        # رسم أيقونة نجمة رباعية ذكية داخل الدائرة حتى لا تبدو دائرة سوداء فارغة!
-        star_r = int(av_r * 0.52)
-        star_poly = [
-            (av_cx, av_cy - star_r),
-            (av_cx + int(star_r * 0.35), av_cy - int(star_r * 0.35)),
-            (av_cx + star_r, av_cy),
-            (av_cx + int(star_r * 0.35), av_cy + int(star_r * 0.35)),
-            (av_cx, av_cy + star_r),
-            (av_cx - int(star_r * 0.35), av_cy + int(star_r * 0.35)),
-            (av_cx - star_r, av_cy),
-            (av_cx - int(star_r * 0.35), av_cy - int(star_r * 0.35)),
-        ]
-        draw.polygon(star_poly, fill=(*primary_c, 255), outline=(255, 255, 255, 230))
+        draw.ellipse([(av_cx - av_r, av_cy - av_r), (av_cx + av_r, av_cy + av_r)], fill=(*dark_navy, 255))
         _draw_checkmark_badge(draw, av_cx + av_r - 4, av_cy + av_r - 4, 8, color_rgb=(37, 99, 235))
 
         info_x1 = av_cx + av_r + 14
         info_x2 = bx2 - 18
-        top_title = concept_title if concept_title else "منصة الذكاء الاصطناعي"
-        sub_tag = kpi_lbl if (kpi_lbl and kpi_lbl != top_title) else "100% مجاناً • جودة استوديو"
-        draw_contained_arabic_text(draw, (info_x1, by1 + 18, info_x2, by1 + 48), top_title, initial_font_size=17, fill=(15, 23, 42, 255))
-        draw_contained_arabic_text(draw, (info_x1, by1 + 48, info_x2, by1 + 74), sub_tag, initial_font_size=14, fill=(37, 99, 235, 255))
+        draw_contained_arabic_text(draw, (info_x1, by1 + 18, info_x2, by1 + 48), kpi_val, initial_font_size=18, fill=(*dark_navy, 255))
+        draw_contained_arabic_text(draw, (info_x1, by1 + 48, info_x2, by1 + 76), kpi_lbl, initial_font_size=14, fill=(100, 116, 139, 255))
 
-        # خط فاصل ناعم
-        div_y = av_cy + av_r + 10
-        draw.line([(bx1 + 22, div_y), (bx2 - 22, div_y)], fill=(226, 232, 240, 255), width=2)
-
-        # سطرا المزايا بدون تكرار
-        mid_y1 = div_y + 10
-        feat_items = [s for s in sub_items if s != top_title and s != sub_tag]
-        if len(feat_items) < 2:
-            feat_items = [sub_tag, "توليد تلقائي بالكامل"]
+        mid_y1 = av_cy + av_r + 14
         for li in range(2):
-            l_sp = _staggered_spring(choreo_u, delay=0.18 + li * 0.10, duration=0.34)
+            l_sp = _staggered_spring(choreo_u, delay=0.20 + li * 0.10, duration=0.34)
             if l_sp > 0.05:
-                ly_r = mid_y1 + li * 34
-                draw.rounded_rectangle([(bx1 + 20, ly_r), (bx2 - 20, ly_r + 28)], radius=8, fill=(248, 250, 252, 255))
-                _draw_checkmark_badge(draw, bx2 - 34, ly_r + 14, 8, color_rgb=accent_c)
-                draw_contained_arabic_text(draw, (bx1 + 28, ly_r + 2, bx2 - 50, ly_r + 26), feat_items[li % len(feat_items)], initial_font_size=14, fill=(30, 41, 59, 255))
+                ly_r = mid_y1 + li * 32
+                _draw_checkmark_badge(draw, bx2 - 26, ly_r + 12, 8, color_rgb=accent_c)
+                draw_contained_arabic_text(draw, (bx1 + 20, ly_r, bx2 - 42, ly_r + 26), sub_items[li], initial_font_size=15, fill=(39, 39, 42, 255))
 
-        # زر الإجراء التفاعلي الأزرق
-        is_clicked = (choreo_u >= 0.66)
-        btn_h = max(44, int(ch * 0.17))
-        btn_y1 = by2 - btn_h - 14
-        btn_y2 = by2 - 14
+        is_clicked = (choreo_u >= 0.68)
+        btn_h = max(42, int(ch * 0.17))
+        btn_y1 = by2 - btn_h - 16
+        btn_y2 = by2 - 16
         btn_x1, btn_x2 = bx1 + 20, bx2 - 20
-        btn_col = (16, 185, 129, 255) if is_clicked else (37, 99, 235, 255)
-        btn_label = f"✔ {sub_tag}" if is_clicked else f"✨ {sub_tag}"
+        btn_col = (100, 116, 139, 255) if is_clicked else (37, 99, 235, 255)
+        btn_label = f"✔ {sub_items[2]}" if is_clicked else sub_items[0]
 
-        draw.rounded_rectangle([(btn_x1, btn_y1 + 3), (btn_x2, btn_y2 + 3)], radius=14, fill=(15, 23, 42, 45))
-        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=14, fill=btn_col)
+        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=12, fill=btn_col)
         draw_contained_arabic_text(draw, (btn_x1 + 14, btn_y1, btn_x2 - 14, btn_y2), btn_label, initial_font_size=16, fill=(255, 255, 255, 255))
 
-        _draw_cursor_with_ripple(draw, (bx2 - 20, by2 + 35), (cx, (btn_y1 + btn_y2) // 2), choreo_u, accent_rgb=primary_c)
+        _draw_cursor_with_ripple(draw, (cx + 70, by2 + 45), (cx, (btn_y1 + btn_y2) // 2), choreo_u, accent_rgb=(37, 99, 235))
         return img
 
-    # =========================================================================
-    # Archetype 7: bezier_growth_nodes (مخطط المنحنى الصاعد المرسوم تدريجياً مع العقد)
-    # =========================================================================
     if archetype == "bezier_growth_nodes":
         s_card = 0.82 + 0.18 * _staggered_spring(choreo_u, delay=0.06, duration=0.40)
         cw, ch = int(st_w * 0.92 * s_card), int(st_h * 0.64 * s_card)
@@ -1987,9 +1836,6 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (px1 + 10, py1, px1 + pill_w - 10, py1 + 48), sub_items[pi], initial_font_size=15, fill=(*dark_navy, 255))
         return img
 
-    # =========================================================================
-    # Archetype 8: live_magnifier_scanner (المكبّر الفاحص المتحرك حياً فوق البطاقات)
-    # =========================================================================
     if archetype == "live_magnifier_scanner":
         s_card = 0.82 + 0.18 * _staggered_spring(choreo_u, delay=0.06, duration=0.40)
         cw, ch = int(st_w * 0.92 * s_card), int(st_h * 0.70 * s_card)
@@ -2049,9 +1895,6 @@ def _render_dynamic_archetype_stage(
             draw.ellipse([(mag_cx - mag_r + 4, mag_cy - mag_r + 4), (mag_cx + mag_r - 4, mag_cy + mag_r - 4)], outline=(*primary_c, 255), width=2)
         return img
 
-    # =========================================================================
-    # Archetype 9: damped_balance_scale (الميزان الفيزيائي المتأرجح للمقارنة بين المشكلة والحل)
-    # =========================================================================
     if archetype == "damped_balance_scale":
         left_pan_info = scene_meta.get("balance_left") or ("الطريقة التقليدية", "وقت ومجهود")
         right_pan_info = scene_meta.get("balance_right") or (kpi_lbl, kpi_val)
@@ -2092,9 +1935,6 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (r_box[0] + 8, r_box[1] + int(pan_h * 0.50), r_box[2] - 8, r_box[3] - 8), str(right_pan_info[1]), initial_font_size=17, fill=(*accent_c, 255))
         return img
 
-    # =========================================================================
-    # Archetype 10: nle_timeline_matrix (جدول ومخطط التايملاين التفاعلي مع مؤشر القراءة Playhead)
-    # =========================================================================
     if archetype == "nle_timeline_matrix":
         s_card = 0.84 + 0.16 * _staggered_spring(choreo_u, delay=0.06, duration=0.38)
         cw, ch = int(st_w * 0.94 * s_card), int(st_h * 0.78 * s_card)
@@ -2106,8 +1946,7 @@ def _render_dynamic_archetype_stage(
 
         hdr_h = 44
         draw.rounded_rectangle([(bx1 + 14, by1 + 14), (bx2 - 14, by1 + 14 + hdr_h)], radius=14, fill=(*dark_navy, 255))
-        hdr_str = f"{kpi_val} • {kpi_lbl}".strip(" •") or concept_title
-        draw_contained_arabic_text(draw, (bx1 + 20, by1 + 14, bx2 - 20, by1 + 14 + hdr_h), hdr_str, initial_font_size=16, fill=(255, 255, 255, 255))
+        draw_contained_arabic_text(draw, (bx1 + 20, by1 + 14, bx2 - 20, by1 + 14 + hdr_h), f"{kpi_val} • {kpi_lbl}", initial_font_size=16, fill=(255, 255, 255, 255))
 
         track_colors = [primary_c, (139, 92, 246), accent_c, (59, 130, 246)]
         rows_top = by1 + 14 + hdr_h + 14
@@ -2125,16 +1964,13 @@ def _render_dynamic_archetype_stage(
             c_w = int((tl_x2 - tl_x1) * clip_prog)
             t_col = track_colors[ri % len(track_colors)]
             draw.rounded_rectangle([(tl_x1, ry1 + 8), (tl_x1 + c_w, ry2 - 8)], radius=8, fill=(*t_col, 245))
-            draw_contained_arabic_text(draw, (tl_x2 + 10, ry1 + 4, bx2 - 18, ry2 - 4), sub_items[ri], initial_font_size=15, fill=(*dark_navy, 255))
+            draw_contained_arabic_text(draw, (tl_x2 + 10, ry1 + 4, bx2 - 18, ry2 - 4), sub_items[ri % len(sub_items)], initial_font_size=15, fill=(*dark_navy, 255))
 
         ph_x = int(tl_x1 + (tl_x2 - tl_x1) * (0.12 + 0.82 * choreo_u))
         draw.line([(ph_x, rows_top - 4), (ph_x, by2 - 14)], fill=(239, 68, 68, 255), width=3)
         draw.polygon([(ph_x - 6, rows_top - 6), (ph_x + 6, rows_top - 6), (ph_x, rows_top + 2)], fill=(239, 68, 68, 255))
         return img
 
-    # =========================================================================
-    # Archetype 11: radar_target_sweep (رادار الاستهداف الدوار بشعاع مسح ضوئي حي 360°)
-    # =========================================================================
     if archetype == "radar_target_sweep":
         rad_cy = st_y1 + int(st_h * 0.42)
         s_card = 0.80 + 0.20 * _staggered_spring(choreo_u, delay=0.06, duration=0.40)
@@ -2182,9 +2018,6 @@ def _render_dynamic_archetype_stage(
             )
         return img
 
-    # =========================================================================
-    # Archetype 12: floating_3d_stat_Compare (بطاقتا مقارنة ثلاثيتا الأبعاد مع مؤشر تحول مركزي حي)
-    # =========================================================================
     if archetype == "floating_3d_stat_Compare":
         ba_info = scene_meta.get("before_after") or ("الطريقة التقليدية", "3.8", kpi_lbl, "9.8")
         card_w = int(st_w * 0.44)
@@ -2223,11 +2056,8 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (bx1 + 10, by2 - 54, bx2 - 10, by2 - 12), lbl_t, initial_font_size=15, fill=(*dark_navy, 255))
         return img
 
-    # =========================================================================
-    # Archetype 13: step_cascade_ribbon_cards (شرائط الخطوات المتدرجة ثلاثية الأبعاد بعلامات التحقق)
-    # =========================================================================
     if archetype == "step_cascade_ribbon_cards":
-        num_steps = 4
+        num_steps = min(4, max(2, len(raw_sub_items) if raw_sub_items else 4))
         rib_h = int((st_h - 44) // num_steps)
         for si in range(num_steps):
             s_sp = _staggered_spring(choreo_u, delay=0.06 + si * 0.12, duration=0.36, stiffness=205.0, damping=14.0)
@@ -2252,9 +2082,6 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (rx1 + 48, ry1 + 8, rx2 - tag_w - 20, ry2 - 8), sub_items[si % len(sub_items)], initial_font_size=17, fill=(*dark_navy, 255))
         return img
 
-    # =========================================================================
-    # Archetype 14: neural_hub_spoke_network (شبكة العقد الذكية المركزية المتصلة بنبضات ضوئية)
-    # =========================================================================
     if archetype == "neural_hub_spoke_network":
         hub_cy = st_y1 + int(st_h * 0.45)
         hub_sp = _staggered_spring(choreo_u, delay=0.05, duration=0.38)
@@ -2291,9 +2118,6 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (bx1 + 10, by1 + 4, bx1 + pw_node - 10, by1 + ph_node - 4), sub_items[ai % len(sub_items)], initial_font_size=14, fill=(*dark_navy, 255))
         return img
 
-    # =========================================================================
-    # Archetype 15: dual_metric_gauge_pods (عدادا الأداء المزدوجان مع قائمة الفوائد السفلية)
-    # =========================================================================
     if archetype == "dual_metric_gauge_pods":
         pod_w = (st_w - 16) // 2
         pod_h = int(st_h * 0.46)
@@ -2325,13 +2149,9 @@ def _render_dynamic_archetype_stage(
             draw_contained_arabic_text(draw, (st_x1 + 18, bot_y1 + 8, st_x2 - 18, bot_y1 + bot_h - 8), f"✔ {sub_items[1]}   •   ✔ {sub_items[2]}", initial_font_size=16, fill=(*dark_navy, 255))
         return img
 
-    # =========================================================================
-    # Archetype 16 [6944 Shot 7]: kinetic_quote_dm_finale (الخاتمة الحركية السريعة بالكلمة المفتاحية وعلامات التنصيص)
-    # =========================================================================
     center_y = int(h * 0.46) + float_y
     q_sp = _staggered_spring(choreo_u, delay=0.04, duration=0.40, stiffness=210.0, damping=13.5)
 
-    # علامات التنصيص الذهبية العملاقة (“ Keyword ” كما في اللقطة الختامية من 6944.mp4)
     card_w = int(st_w * 0.84 * max(0.75, q_sp))
     card_h = int(st_h * 0.34 * max(0.75, q_sp))
     qx1, qy1 = cx - card_w // 2, center_y - card_h // 2 - int(h * 0.05)
@@ -2495,7 +2315,7 @@ def _compose_hero_centerpiece_icon(
 
 
 # ==============================================================================
-# 10. تصيير مشهد موشن جرافيك كامل الشاشة بدون شبكة مربعات وبتزامن صوتي كامل
+# 10. تصيير مشهد موشن جرافيك كامل الشاشة بتزامن صوتي كامل
 # ==============================================================================
 def render_single_scene_canvas(
     scene_meta: Dict[str, Any],
@@ -2537,13 +2357,9 @@ def render_single_scene_canvas(
     pal = style_spec.get("palette", {})
     is_light_stage = bool(pal.get("is_light_bg", is_light))
 
-    # 1. رندرة الخلفية السينمائية الموحدة والناعمة بدون أي شبكة مربعات
     img = _render_pro_stage_background(width, height, style_spec, step_num=step_num, global_t=global_t)
-
-    # 2. رسم اللوقو المرفوع إن وجد
     img, _ = _render_brand_logo_watermark(img, logo_path, logo_pos, theme, is_light=is_light_stage)
 
-    # 3. رسم المسرح التفاعلي المتحرك بالتزامن مع الكلمات المنطوقة (Audio-Synced Progressive Choreography)
     img = _render_dynamic_archetype_stage(
         img=img,
         scene_meta=scene_meta,
@@ -2555,7 +2371,6 @@ def render_single_scene_canvas(
         scene_words=scene_words
     )
 
-    # 4. كابشن الكاريوكي السفلي بنظام الصفحات الثابتة غير المتكررة
     caption_theme = {
         "primary": tuple(pal.get("primary", (217, 155, 28))),
         "secondary": tuple(pal.get("sticker_bg", (234, 179, 8)))
@@ -2574,7 +2389,7 @@ def render_single_scene_canvas(
 
 
 # ==============================================================================
-# 11. محرك الانتقالات السينمائية السلسة المريحة للعين (15s Reference Smooth Transitions)
+# 11. محرك الانتقالات السينمائية السلسة + نظام الكابشن الحركي بأسلوب Alex Hormozi
 # ==============================================================================
 def get_archetype_portal_and_survivor_bboxes(
     width: int,
@@ -2602,17 +2417,10 @@ def render_one_take_camera_handoff(
     curr_meta: Optional[Dict[str, Any]] = None,
     stage_bbox: Optional[Tuple[int, int, int, int]] = None
 ) -> Image.Image:
-    """
-    ينفذ الانتقالات السلسة والمريحة للعين المستوحاة من الفيديو المرجعي 15s (6944.mp4):
-    1. `whip_pan_blur_left` / `whip_left`: سحب أفقي سريع مع ضبابية حركة اتجاهية حقيقية (Directional Motion Blur).
-    2. `whip_pan_blur_up` / `whip_up`: سحب عمودي انسيابي مع ضبابية حركة عمودية.
-    3. `portal_zoom_morph` / `zoom_portal`: زوم داخلي ناعم مع تلاشي ضبابي مريح للعين (Cross-Zoom Morph).
-    4. `cinema_cross_zoom`: انتقال سينمائي فائق النعومة بين فيديو المتحدث ومشاهد الموشن جرافيك الكاملة!
-    """
     w, h = curr_img.size
     u = max(0.0, min(1.0, float(trans_progress)))
     p = _camera_curve(u)
-    vel_bell = math.sin(u * math.pi)  # يبلغ ذروته في منتصف الانتقال (u=0.5) ويهبط للصفر عند الأطراف
+    vel_bell = math.sin(u * math.pi)
 
     prev_rgba = prev_img.convert("RGBA")
     curr_rgba = curr_img.convert("RGBA")
@@ -2643,7 +2451,6 @@ def render_one_take_camera_handoff(
             )
         return out_canvas
 
-    # Default / portal_zoom_morph / cinema_cross_zoom (تلاشي وزوم سينمائي ناعم جداً ومريح للعين)
     prev_scale = 1.0 + 0.14 * p
     pw, ph = int(round(w * prev_scale)), int(round(h * prev_scale))
     prev_zoomed = prev_rgba.resize((pw, ph), Image.Resampling.BILINEAR).crop(((pw - w) // 2, (ph - h) // 2, (pw - w) // 2 + w, (ph - h) // 2 + h))
@@ -2680,18 +2487,23 @@ def apply_scene_transition(
     )
 
 
-def _render_unified_karaoke_subtitle(
+def render_hormozi_kinetic_caption(
     img: Image.Image,
     sc_words: List[str],
     act_word: str,
     w_prog: float,
     cap_y: int,
     theme: Dict[str, Any],
-    active_word_idx: Optional[int] = None
-):
+    active_word_idx: Optional[int] = None,
+    progressive_word_reveal: bool = False
+) -> None:
     """
-    كابشن كاريوكي بنظام الصفحات الثابتة غير المتداخلة (`Non-Overlapping 4-Word Pages`)
-    مع كبسولة زجاجية أنيقة.
+    محرك الكابشن الحركي بأسلوب (Alex Hormozi High-Retention Kinetic Typography):
+    - يدعم اللغة العربية بالكامل عبر `arabic_reshaper` و `bidi.algorithm`.
+    - يزامن الكلمات بدقة مع التوقيت الصوتي (`Word-level Timestamps`).
+    - الكلمة المنطوقة حالياً تكبر بنسبة **+15% (`scale = 1.15x`)** بفيزياء النابض (`Spring Physics`)،
+      ويتغير لونها إلى **الأصفر الفاقع (`#FFE600`) أو الأخضر الفاقع (`#00FF66`)**،
+      ثم تعود فوراً لحجمها الطبيعي (`1.0x`) ولونها الأبيض الأساسي (`#FFFFFF`) فور نطق الكلمة التالية!
     """
     w, h = img.size
     cx = w // 2
@@ -2701,10 +2513,14 @@ def _render_unified_karaoke_subtitle(
     if not clean_sc_words and not clean_act_word:
         return
 
-    font_size = max(24, int(min(w, h) * 0.038))
-    cap_font = get_arabic_font(font_size, bold=True)
-    pop_scale = _spring_physics(min(1.0, w_prog * 2.5), stiffness=230.0, damping=14.0)
-    active_font = get_arabic_font(int(font_size * (1.0 + 0.07 * pop_scale)), bold=True)
+    base_font_size = max(25, int(min(w, h) * 0.040))
+    cap_font = get_arabic_font(base_font_size, bold=True)
+
+    # فيزياء النابض السريعة لتكبير الكلمة المنطوقة حالياً بنسبة +15% بالضبط (1.15x)
+    spring_pop = _spring_physics(min(1.0, max(0.08, w_prog * 2.8)), stiffness=265.0, damping=13.0)
+    active_scale = 1.0 + (HORMOZI_ACTIVE_SCALE_FACTOR - 1.0) * min(1.08, max(0.75, spring_pop))
+    active_font_size = max(base_font_size + 3, int(round(base_font_size * active_scale)))
+    active_font = get_arabic_font(active_font_size, bold=True)
 
     if active_word_idx is not None and 0 <= int(active_word_idx) < len(clean_sc_words):
         target_idx = int(active_word_idx)
@@ -2731,22 +2547,23 @@ def _render_unified_karaoke_subtitle(
         disp_active_idx = 0
 
     draw = ImageDraw.Draw(img, "RGBA")
-    word_widths = []
-    word_spaces = int(font_size * 0.42)
+    word_widths: List[Tuple[int, int]] = []
+    word_spaces = int(base_font_size * 0.44)
     for wi, dw in enumerate(display_words):
         f_use = active_font if wi == disp_active_idx else cap_font
         ww, wh = measure_arabic_text(draw, dw, f_use)
         if wi == disp_active_idx:
-            ww += 14
+            ww += 16
         word_widths.append((ww, wh))
 
     total_line_w = sum(ww for ww, _ in word_widths) + (len(display_words) - 1) * word_spaces
-    if total_line_w > int(w * 0.82):
-        scale_down = (w * 0.80) / float(total_line_w)
-        font_size = max(18, int(font_size * scale_down))
-        cap_font = get_arabic_font(font_size, bold=True)
-        active_font = get_arabic_font(int(font_size * (1.0 + 0.07 * pop_scale)), bold=True)
-        word_spaces = int(font_size * 0.38)
+    if total_line_w > int(w * 0.84):
+        scale_down = (w * 0.82) / float(total_line_w)
+        base_font_size = max(18, int(base_font_size * scale_down))
+        active_font_size = max(base_font_size + 2, int(round(base_font_size * active_scale)))
+        cap_font = get_arabic_font(base_font_size, bold=True)
+        active_font = get_arabic_font(active_font_size, bold=True)
+        word_spaces = int(base_font_size * 0.38)
         word_widths = []
         for wi, dw in enumerate(display_words):
             f_use = active_font if wi == disp_active_idx else cap_font
@@ -2756,22 +2573,25 @@ def _render_unified_karaoke_subtitle(
             word_widths.append((ww, wh))
         total_line_w = sum(ww for ww, _ in word_widths) + (len(display_words) - 1) * word_spaces
 
-    max_line_h = max(wh for _, wh in word_widths) if word_widths else font_size
+    max_line_h = max(wh for _, wh in word_widths) if word_widths else active_font_size
 
-    box_pad_x = int(font_size * 0.60)
-    box_pad_y = int(font_size * 0.32)
+    box_pad_x = int(base_font_size * 0.62)
+    box_pad_y = int(base_font_size * 0.36)
     bar_x1 = max(int(w * 0.04), cx - total_line_w // 2 - box_pad_x)
     bar_x2 = min(int(w * 0.96), cx + total_line_w // 2 + box_pad_x)
     bar_y1 = cap_y - max_line_h // 2 - box_pad_y
     bar_y2 = cap_y + max_line_h // 2 + box_pad_y
 
-    p_col = tuple(theme.get("primary", (217, 155, 28)))
+    # تبديل ديناميكي للون الكلمة النشطة بأسلوب Alex Hormozi بين الأصفر الفاقع (#FFE600) والأخضر الفاقع (#00FF66)
+    is_green_highlight = ((target_idx % 3) == 1)
+    hormozi_active_rgb = HORMOZI_NEON_GREEN if is_green_highlight else HORMOZI_VIVID_YELLOW
+
     draw_visionos_glass_panel(
         canvas_rgba=img,
         bbox=(bar_x1, bar_y1, bar_x2, bar_y2),
-        radius=18,
-        tint_color=(16, 18, 26, 232),
-        border_color=p_col,
+        radius=20,
+        tint_color=(12, 15, 24, 236),
+        border_color=hormozi_active_rgb,
         blur_radius=12,
         shadow_offset=8,
         shadow_blur=14
@@ -2782,41 +2602,76 @@ def _render_unified_karaoke_subtitle(
     for wi, dw in enumerate(display_words):
         ww, wh = word_widths[wi]
         is_active = (wi == disp_active_idx)
+        is_spoken_already = (wi < disp_active_idx)
         word_cx = cur_right_x - ww // 2
 
+        if progressive_word_reveal and wi > disp_active_idx:
+            cur_right_x -= (ww + word_spaces)
+            continue
+
         if is_active:
-            hl_pad_x, hl_pad_y = 8, 6
+            # قفزة عمودية طفيفة بفيزياء النابض للكلمة المنطوقة حالياً مع هالة خلفية ناعمة
+            dy_pop = -int(4.0 * math.sin(min(1.0, w_prog * 2.0) * math.pi))
+            hl_pad_x, hl_pad_y = 10, 6
             draw.rounded_rectangle(
-                [(word_cx - ww // 2 - hl_pad_x, cap_y - wh // 2 - hl_pad_y),
-                 (word_cx + ww // 2 + hl_pad_x, cap_y + wh // 2 + hl_pad_y)],
-                radius=10,
-                fill=(*p_col, 255)
+                [
+                    (word_cx - ww // 2 - hl_pad_x, cap_y + dy_pop - wh // 2 - hl_pad_y),
+                    (word_cx + ww // 2 + hl_pad_x, cap_y + dy_pop + wh // 2 + hl_pad_y)
+                ],
+                radius=12,
+                fill=(hormozi_active_rgb[0], hormozi_active_rgb[1], hormozi_active_rgb[2], 38),
+                outline=(*hormozi_active_rgb, 185),
+                width=1
             )
-            txt_fill = (24, 24, 27, 255) if sum(p_col) > 480 else (255, 255, 255, 255)
+            # الكلمة النشطة مكبرة +15% باللون الأصفر الفاقع أو الأخضر الفاقع وحدود سوداء حادة (Hormozi Pop Style)
             draw_arabic_text(
                 draw,
-                (word_cx, cap_y),
+                (word_cx, cap_y + dy_pop),
                 dw,
                 font=active_font,
-                fill=txt_fill
+                fill=(*hormozi_active_rgb, 255),
+                stroke_width=3,
+                stroke_fill=(0, 0, 0, 245)
             )
         else:
+            # فور نطق الكلمة التالية، تعود الكلمة لحجمها الطبيعي (cap_font = 1.0x) ولونها الأبيض الصافي
+            alpha_norm = 255 if is_spoken_already else 225
             draw_arabic_text(
                 draw,
                 (word_cx, cap_y),
                 dw,
                 font=cap_font,
-                fill=(248, 250, 252, 245),
+                fill=(*HORMOZI_BASE_WHITE, alpha_norm),
                 stroke_width=2,
-                stroke_fill=(0, 0, 0, 225)
+                stroke_fill=(0, 0, 0, 230)
             )
 
         cur_right_x -= (ww + word_spaces)
 
 
+def _render_unified_karaoke_subtitle(
+    img: Image.Image,
+    sc_words: List[str],
+    act_word: str,
+    w_prog: float,
+    cap_y: int,
+    theme: Dict[str, Any],
+    active_word_idx: Optional[int] = None
+):
+    render_hormozi_kinetic_caption(
+        img=img,
+        sc_words=sc_words,
+        act_word=act_word,
+        w_prog=w_prog,
+        cap_y=cap_y,
+        theme=theme,
+        active_word_idx=active_word_idx,
+        progressive_word_reveal=False
+    )
+
+
 # ==============================================================================
-# 12. تصيير إطار الفيديو الشامل مع شاشات موشن جرافيك كاملة (Full-Screen Motion Cutaways)
-#     وانتقالات سلسة بين الفيديو الحقيقي وشاشة الموشن جرافيك الكاملة!
+# 12. تصيير إطار الفيديو الشامل مع شاشات موشن جرافيك كاملة وانتقالات سلسة
 # ==============================================================================
 def render_master_directed_video_frame(
     base_frame_rgb: np.ndarray,
@@ -2865,7 +2720,6 @@ def render_master_directed_video_frame(
     trans_modes = ["whip_pan_blur_left", "portal_zoom_morph", "whip_pan_blur_up", "cinema_cross_zoom"]
     active_trans_mode = sc.get("transition_type") or trans_modes[active_idx % len(trans_modes)]
 
-    # 1. إذا كان المشهد الحالي هو شاشة موشن جرافيك كاملة (Full-Screen Motion Cutaway) تشرح فكرة/معلومة مهمة:
     if layout_mode == "full_screen":
         curr_img = render_single_scene_canvas(
             scene_meta=sc,
@@ -2908,7 +2762,6 @@ def render_master_directed_video_frame(
                     curr_meta=sc
                 )
             else:
-                # انتقال سلس ومريح للعين من فيديو المتحدث إلى شاشة الموشن جرافيك الكاملة!
                 spk_pil = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
                 blended = render_one_take_camera_handoff(
                     prev_img=spk_pil,
@@ -2921,12 +2774,10 @@ def render_master_directed_video_frame(
             return np.array(blended.convert("RGB"))
         return np.array(curr_img.convert("RGB"))
 
-    # 2. إذا كان المشهد الحالي هو فيديو المتحدث (مع انتقال سلس عند العودة من شاشة الموشن جرافيك الكاملة!)
     img = Image.fromarray(base_frame_rgb, mode="RGB").convert("RGBA")
     img, logo_bbox = _render_brand_logo_watermark(img, logo_path, logo_pos, theme, is_light=False)
     draw = ImageDraw.Draw(img, "RGBA")
     cx = w // 2
-    step_num = int(sc.get("step_number") or (active_idx + 1))
 
     if layout_mode == "top_overlay":
         spring_in = _spring_physics(min(1.0, (t - sc["start"]) / 0.32), stiffness=210.0, damping=15.0)
@@ -3018,7 +2869,6 @@ def render_master_directed_video_frame(
                 active_word_idx=act_word_idx
             )
 
-    # إذا كان المشهد السابق عبارة عن شاشة موشن جرافيك كاملة (full_screen)، ننفذ انتقالاً سينمائياً سلساً بالعودة إلى فيديو المتحدث!
     if active_idx > 0 and 0.0 <= time_into_scene < handoff_dur:
         prev_sc = master_plan[active_idx - 1]
         if prev_sc.get("layout_mode") == "full_screen":
@@ -3083,7 +2933,7 @@ def create_kinetic_typography_video(
 
     try:
         gc.collect()
-        update_progress(0.10, "1/4: تنظيف الصوت وضبط الصمت الطبيعي (3% - 4%) بدون استهلاك ذاكرة...")
+        update_progress(0.10, "1/4: تنظيف الصوت وقص فترات الصمت (> 0.25s) بدون استهلاك ذاكرة...")
         _, total_dur = extract_jumpcut_audio_and_intervals(
             input_path=input_path,
             clean_audio_output_path=clean_media,
@@ -3092,34 +2942,35 @@ def create_kinetic_typography_video(
         )
         vw, vh = get_safe_working_resolution(video_resolution[0], video_resolution[1], max_dim=960)
 
-        update_progress(0.30, "2/4: تفريغ الكلام وبناء مشاهد الموشن جرافيك السريعة (2.2s - 3.2s للمشهد)...")
-        words = transcribe_audio(
-            audio_path=clean_media,
-            model_size=whisper_model,
-            language="ar",
-            dialect_mode=dialect_mode,
-            groq_api_key=groq_api_key,
-            gemini_api_key=gemini_api_key,
-            openai_api_key=openai_api_key
-        )
-
-        retake_cuts = get_last_detected_retake_cuts()
-        if retake_cuts:
-            clean_media, total_dur = prune_retake_cuts_from_media(clean_media, retake_cuts, total_dur)
-            words = remap_words_after_retake_cuts(words, retake_cuts)
-
-        semantic_clauses = split_words_into_micro_scenes(
-            words,
-            max_words_per_scene=6,
-            max_duration_per_scene=3.1,
-            min_words_per_scene=3
-        )
-        full_transcript = " ".join(w.get("word", "") for w in words)
-
         custom_planned_scenes = kwargs.get("custom_planned_scenes")
         if isinstance(custom_planned_scenes, list) and len(custom_planned_scenes) > 0:
-            planned_scenes = custom_planned_scenes
+            update_progress(0.30, "2/4: تطبيق تعديلات المشاهد والكلمات المخصصة من المنصة فوراً (Zero Re-Transcription)...")
+            planned_scenes, words = sync_live_scene_edits_to_words(custom_planned_scenes)
         else:
+            update_progress(0.30, "2/4: تفريغ الكلام وبناء مشاهد الموشن جرافيك السريعة بأسلوب Alex Hormozi...")
+            words = transcribe_audio(
+                audio_path=clean_media,
+                model_size=whisper_model,
+                language="ar",
+                dialect_mode=dialect_mode,
+                groq_api_key=groq_api_key,
+                gemini_api_key=gemini_api_key,
+                openai_api_key=openai_api_key
+            )
+
+            retake_cuts = get_last_detected_retake_cuts()
+            if retake_cuts:
+                clean_media, total_dur = prune_retake_cuts_from_media(clean_media, retake_cuts, total_dur)
+                words = remap_words_after_retake_cuts(words, retake_cuts)
+
+            semantic_clauses = split_words_into_micro_scenes(
+                words,
+                max_words_per_scene=6,
+                max_duration_per_scene=2.8,
+                min_words_per_scene=3
+            )
+            full_transcript = " ".join(w.get("word", "") for w in words)
+
             planned_scenes = analyze_contextual_storyboard(
                 scenes=semantic_clauses,
                 full_transcript=full_transcript,
@@ -3132,7 +2983,7 @@ def create_kinetic_typography_video(
         bg_cache: Dict[str, np.ndarray] = {}
         gc.collect()
 
-        update_progress(0.55, "3/4: تصيير مشاهد الموشن جرافيك ثلاثية الأبعاد بانتقالات 15s السلسة...")
+        update_progress(0.55, "3/4: تصيير مشاهد الموشن جرافيك والـ Kinetic Typography (+15% Active Word Pop)...")
         trans_cycle = ["whip_pan_blur_left", "portal_zoom_morph", "whip_pan_blur_up", "cinema_cross_zoom"]
 
         def make_frame(t: float) -> np.ndarray:
@@ -3244,11 +3095,10 @@ def create_kinetic_typography_video(
         enc_proc.wait(timeout=120)
         enc_proc = None
 
-        # المرحلة 5 (بعد انتهاء الموشن جرافيك بالكامل): دور مصمم الساوند ديزاين الآلي (sound_designer.py)
         sfx_cues_list = []
         try:
             from sound_designer import apply_intelligent_sound_design_to_video, LAST_SESSION_PATH
-            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Whoosh, Riser, UI Pop, Click, Button) في الثانية المناسبة...")
+            update_progress(0.96, "🔊 جاري تصميم ومزج المؤثرات الصوتية (Pop + Whoosh + Click) في الثانية المناسبة...")
             output_path, sfx_rep = apply_intelligent_sound_design_to_video(
                 video_path=output_path,
                 planned_scenes=planned_scenes,
@@ -3261,7 +3111,8 @@ def create_kinetic_typography_video(
             try:
                 serializable_scenes = []
                 for idx_s, sc_item in enumerate(planned_scenes):
-                    sc_clean = {k: v for k, v in sc_item.items() if not str(k).startswith("_") and k != "words"}
+                    # الاحتفاظ بكامل مصفوفة words داخل الجلسة حتى لا تفقد الكلمات المعدلة توقيتها أبداً!
+                    sc_clean = {k: v for k, v in sc_item.items() if not str(k).startswith("_")}
                     sc_clean["scene_index"] = idx_s
                     serializable_scenes.append(sc_clean)
                 session_payload = {

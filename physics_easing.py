@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-physics_easing.py - محرك الفيزياء الحقيقية، منحنيات الحركة، التحريك المتتابع، وضبابية الحركة الاتجاهية
-=========================================================================================================
+physics_easing.py - محرك الفيزياء الحقيقية (Spring Physics)، الارتداد الفوري (Alex Hormozi Pop)، وضبابية الحركة الاتجاهية
+=============================================================================================================================
 Principal Video DSP & Motion Graphics Physics Engine (Zero-OOM Vectorized NumPy Architecture):
-1. دوال المنحنيات الحركية وفيزياء الزنبرك (Analytical Damped Harmonic Oscillator & Bezier/Elastic Curves):
-   - `spring_damper(t, stiffness=180.0, damping=12.0, mass=1.0)`
-   - `spring_velocity(t, stiffness=180.0, damping=12.0, mass=1.0)`
-   - `ease_out_back(t, overshoot=1.70158)`
-   - `ease_in_out_expo(t)`
-   - `ease_out_elastic(t, amplitude=1.0, period=0.3)`
-   - `cubic_bezier(t, p1x, p1y, p2x, p2y)`
-2. محرك التحريك المتتابع (Staggered Keyframe Sequencer):
-   - يحسب الموقع `(x, y)`، الحجم `(scale)`، الدوران `(rotation)`، الشفافية `(opacity)`، والسرعة اللحظية `(vx, vy)`
-     لكل عنصر فرعي (إطار البطاقة، الأيقونة، العنوان، العناصر الفرعية، الكلمات) بتأخير متدرج `stagger_delay = 0.04s`.
-3. ضبابية الحركة الاتجاهية السريعة (Fast Directional Motion Blur):
-   - تلتف عبر مصفوفات `NumPy` أحادية البعد الموجهة بالسرعة اللحظية باستهلاك ذاكرة صفري، وتتوقف فور استقرار العنصر.
+1. إلغاء الحركة الخطية (Zero Linear Interpolation):
+   - جميع دوال الظهور والتحجيم والانتقال تعتمد حصرياً على معادلات التفاضل الفيزيائية للزنبرك المخمّد
+     (`Hooke's Law Damped Harmonic Oscillator: m*x'' + c*x' + k*x = k`).
+2. خوارزميات مخصصة لأسلوب (Alex Hormozi High-Retention Spring Physics):
+   - `hormozi_spring_pop(elapsed_sec, duration_sec=0.18, peak_scale=1.15, rest_scale=1.0)`:
+     تكبير الكلمة المنطوقة حالياً بنسبة +15% (`1.15x`) مع ارتداد زنبركي فوري (`Spring Overshoot`) ثم استقرارها أو إعادتها لحجمها الطبيعي (`1.0x`) فور نطق الكلمة التالية.
+   - `spring_overshoot_scale(t, start_scale=0.0, target_scale=1.0, stiffness=280.0, damping=14.0)`:
+     لظهور الأيقونات والرسومات البصرية بحيوية وسرعة فائقة (Rapid Bounce Pop-In).
+3. محرك التحريك المتتابع (Staggered Keyframe Sequencer) + ضبابية الحركة الاتجاهية السريعة (Fast Directional Motion Blur).
 """
 
 import math
@@ -35,20 +32,20 @@ def force_free_ram() -> None:
 
 
 # ==============================================================================
-# 1. دوال المنحنيات الحركية والفيزياء الرياضية (Spring Damper & Easing Functions)
+# 1. دوال المنحنيات الحركية وفيزياء الزنبرك (Spring Physics & Non-Linear Easing)
 # ==============================================================================
 def spring_damper(
     t: Union[float, np.ndarray],
-    stiffness: float = 180.0,
-    damping: float = 12.0,
-    mass: float = 1.0,
-    initial_velocity: float = 0.0
+    stiffness: float = 240.0,
+    damping: float = 13.5,
+    mass: float = 0.85,
+    initial_velocity: float = 2.5
 ) -> Union[float, np.ndarray]:
     """
     محاكاة فيزيائية دقيقة لحركة الزنبرك المخمّد (Hooke's Law Damped Harmonic Oscillator):
         m * x''(t) + c * x'(t) + k * x(t) = k
-    تدعم القيم المفردة (`float`) والمصفوفات المتجهية (`np.ndarray`) وتنتج ارتداداً طبيعياً
-    مشابهاً لمحرك After Effects / Apple visionOS قبل الاستقرار عند 1.0.
+    تلغي الحركة الخطية تماماً وتنتج ارتداداً حيوياً سريعاً (Overshoot & Settle)
+    مشابهاً لأسلوب Alex Hormozi ومحركات After Effects الاحترافية.
     """
     is_scalar = np.isscalar(t)
     t_arr = np.asarray(t, dtype=np.float64)
@@ -61,8 +58,8 @@ def spring_damper(
     omega_n = math.sqrt(k / m)
     zeta = c / (2.0 * math.sqrt(k * m))
 
-    # معايرة الزمن الفيزيائي بحيث يستقر النابض تماماً عند نهاية الفترة [0, 1]
-    t_phys = t_clamped * (6.2 / max(4.0, zeta * omega_n))
+    # معايرة الزمن الفيزيائي بحيث يرتد النابض بحيوية ثم يستقر عند نهاية الفترة [0, 1]
+    t_phys = t_clamped * (6.4 / max(3.8, zeta * omega_n))
 
     if zeta < 1.0 - 1e-5:
         omega_d = omega_n * math.sqrt(1.0 - zeta * zeta)
@@ -87,11 +84,51 @@ def spring_damper(
     return float(out) if is_scalar else out
 
 
+def hormozi_spring_pop(
+    word_elapsed_sec: float,
+    word_duration_sec: float = 0.25,
+    peak_scale: float = 1.15,
+    base_scale: float = 1.00,
+    stiffness: float = 340.0,
+    damping: float = 14.0
+) -> float:
+    """
+    دالة فيزياء الزنبرك المخصصة للكلمة المنطوقة حالياً بأسلوب (Alex Hormozi Kinetic Typography):
+    - تقفز بالكلمة فوراً من `1.00x` إلى `1.15x` (+15%) مع نبضة ارتداد سريعة (`Spring Bounce` يصل لحظياً إلى ~1.18x ثم يستقر عند `1.15x`)
+      طوال فترة نطق الكلمة، وبمجرد انتهاء الكلمة تعود فوراً إلى `1.00x`.
+    """
+    if word_elapsed_sec < 0.0 or word_elapsed_sec > max(0.05, word_duration_sec):
+        return float(base_scale)
+
+    attack_window = min(0.14, max(0.06, word_duration_sec * 0.55))
+    u = min(1.0, max(0.0, word_elapsed_sec / attack_window))
+    sp = float(spring_damper(u, stiffness=stiffness, damping=damping, mass=0.75, initial_velocity=3.2))
+    scale_now = float(base_scale) + (float(peak_scale) - float(base_scale)) * sp
+    return round(max(0.5, min(1.32, scale_now)), 4)
+
+
+def spring_overshoot_scale(
+    t: float,
+    start_scale: float = 0.25,
+    target_scale: float = 1.00,
+    stiffness: float = 285.0,
+    damping: float = 12.5,
+    mass: float = 0.80
+) -> float:
+    """
+    خوارزمية ظهور الأيقونات والرسومات البصرية بتأثير الارتداد الحيوي السريع (Spring Physics Pop-In)
+    بدلاً من الحركة الخطية المملة.
+    """
+    u = max(0.0, min(1.0, float(t)))
+    sp = float(spring_damper(u, stiffness=stiffness, damping=damping, mass=mass, initial_velocity=2.8))
+    return round(float(start_scale) + (float(target_scale) - float(start_scale)) * sp, 4)
+
+
 def spring_velocity(
     t: Union[float, np.ndarray],
-    stiffness: float = 180.0,
-    damping: float = 12.0,
-    mass: float = 1.0
+    stiffness: float = 240.0,
+    damping: float = 13.5,
+    mass: float = 0.85
 ) -> Union[float, np.ndarray]:
     """
     حساب السرعة اللحظية المشتقة `dx/dt` للزنبرك لتغذية محرك ضبابية الحركة الاتجاهية (`Motion Blur`).
@@ -106,8 +143,8 @@ def spring_velocity(
     return float(vel) if np.isscalar(t) else vel
 
 
-def ease_out_back(t: Union[float, np.ndarray], overshoot: float = 1.70158) -> Union[float, np.ndarray]:
-    """منحنى دخول بارتداد خلفي ناعم (`Ease-Out Back`) مثالي للأيقونات والشارات."""
+def ease_out_back(t: Union[float, np.ndarray], overshoot: float = 1.85) -> Union[float, np.ndarray]:
+    """منحنى دخول بارتداد خلفي حيوي (`Ease-Out Back`) للأيقونات والشارات."""
     is_scalar = np.isscalar(t)
     x = np.clip(np.asarray(t, dtype=np.float64), 0.0, 1.0)
     c1 = float(overshoot)
@@ -139,8 +176,8 @@ def ease_in_out_expo(t: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
 
 def ease_out_elastic(
     t: Union[float, np.ndarray],
-    amplitude: float = 1.0,
-    period: float = 0.32
+    amplitude: float = 1.08,
+    period: float = 0.28
 ) -> Union[float, np.ndarray]:
     """منحنى مرن عالي الحيوية (`Ease-Out Elastic`) للعناصر التفاعلية البارزة."""
     is_scalar = np.isscalar(t)
@@ -162,12 +199,12 @@ def ease_out_elastic(
 
 def cubic_bezier(
     t: Union[float, np.ndarray],
-    p1x: float = 0.22,
+    p1x: float = 0.16,
     p1y: float = 1.0,
-    p2x: float = 0.36,
+    p2x: float = 0.30,
     p2y: float = 1.0
 ) -> Union[float, np.ndarray]:
-    """محلل منحنيات بيزيير التكعيبية (`Cubic Bezier Solver` بطريقة نيوتن-رافسون)."""
+    """محلل منحنيات بيزيير التكعيبية (`Cubic Bezier Solver` بطريقة نيوتن-رافسون - غير خطي بالكامل)."""
     is_scalar = np.isscalar(t)
     x_target = np.clip(np.asarray(t, dtype=np.float64), 0.0, 1.0)
 
@@ -190,25 +227,25 @@ def cubic_bezier(
 
 
 # ==============================================================================
-# 2. محرك التحريك المتتابع (Staggered Keyframe Sequencer)
+# 2. محرك التحريك المتتابع بفيزياء الزنبرك (Staggered Spring Keyframe Sequencer)
 # ==============================================================================
 class StaggeredKeyframeSequencer:
     """
     يدير التحريك المتتابع لعناصر المشهد الواحد (الإطار الزجاجي -> الأيقونة -> العنوان -> العناصر الفرعية -> الكلمات)
-    بتأخير زمني قياسي `stagger_delay = 0.04s` مع حساب الموقع، الحجم، الدوران، الشفافية، والسرعة اللحظية.
+    بفيزياء الزنبرك السريعة (`stiffness=250, damping=13`) بتأخير زمني قياسي `stagger_delay = 0.035s`.
     """
 
     def __init__(
         self,
-        stagger_delay: float = 0.04,
-        entry_duration: float = 0.42,
-        exit_duration: float = 0.24,
-        stiffness: float = 185.0,
+        stagger_delay: float = 0.035,
+        entry_duration: float = 0.36,
+        exit_duration: float = 0.22,
+        stiffness: float = 250.0,
         damping: float = 13.0,
-        mass: float = 1.0
+        mass: float = 0.82
     ):
         self.stagger_delay = max(0.01, float(stagger_delay))
-        self.entry_duration = max(0.12, float(entry_duration))
+        self.entry_duration = max(0.10, float(entry_duration))
         self.exit_duration = max(0.08, float(exit_duration))
         self.stiffness = float(stiffness)
         self.damping = float(damping)
@@ -219,42 +256,31 @@ class StaggeredKeyframeSequencer:
         scene_elapsed_sec: float,
         scene_total_sec: float,
         element_index: int = 0,
-        entry_offset_xy: Tuple[float, float] = (0.0, 38.0),
-        start_scale: float = 0.76,
-        start_rotation_deg: float = -4.5,
+        entry_offset_xy: Tuple[float, float] = (0.0, 42.0),
+        start_scale: float = 0.68,
+        start_rotation_deg: float = -5.5,
         easing_mode: str = "spring",
         enable_exit_animation: bool = False
     ) -> Dict[str, float]:
-        """
-        حساب الحالة الحركية الكاملة لعنصر فرعي رقم `element_index` في اللحظة `scene_elapsed_sec`:
-        ترجع:
-          - `x_offset`, `y_offset`: الإزاحة بالبكسل عن الموقع النهائي.
-          - `scale`: معامل التكبير اللحظي.
-          - `rotation`: زاوية الدوران بالدرجات.
-          - `opacity`: الشفافية `[0.0 .. 1.0]`.
-          - `progress`: تقدم الدخول الفيزيائي.
-          - `velocity_x`, `velocity_y`, `speed`: السرعة اللحظية بالبكسل/ثانية لتشغيل `Motion Blur`.
-        """
         delay_sec = element_index * self.stagger_delay
         local_entry_t = (scene_elapsed_sec - delay_sec) / self.entry_duration
         clamped_t = max(0.0, min(1.0, local_entry_t))
 
         if easing_mode == "back":
-            prog = float(ease_out_back(clamped_t, overshoot=1.65))
-            vel_norm = float(spring_velocity(clamped_t, stiffness=self.stiffness, damping=self.damping))
+            prog = float(ease_out_back(clamped_t, overshoot=1.85))
+            vel_norm = float(spring_velocity(clamped_t, stiffness=self.stiffness, damping=self.damping, mass=self.mass))
         elif easing_mode == "elastic":
             prog = float(ease_out_elastic(clamped_t))
-            vel_norm = float(spring_velocity(clamped_t, stiffness=self.stiffness, damping=self.damping))
+            vel_norm = float(spring_velocity(clamped_t, stiffness=self.stiffness, damping=self.damping, mass=self.mass))
         elif easing_mode == "expo":
             prog = float(ease_in_out_expo(clamped_t))
-            vel_norm = float(math.sin(clamped_t * math.pi) * 2.2) if 0.0 < clamped_t < 1.0 else 0.0
+            vel_norm = float(math.sin(clamped_t * math.pi) * 2.4) if 0.0 < clamped_t < 1.0 else 0.0
         else:
             prog = float(spring_damper(clamped_t, stiffness=self.stiffness, damping=self.damping, mass=self.mass))
             vel_norm = float(spring_velocity(clamped_t, stiffness=self.stiffness, damping=self.damping, mass=self.mass))
 
-        # حساب الخروج الاختياري في نهاية المشهد
         exit_mult = 1.0
-        if enable_exit_animation and scene_total_sec > (self.entry_duration + self.exit_duration + 0.4):
+        if enable_exit_animation and scene_total_sec > (self.entry_duration + self.exit_duration + 0.35):
             rem_sec = scene_total_sec - scene_elapsed_sec - (element_index * self.stagger_delay * 0.5)
             if rem_sec < self.exit_duration:
                 exit_t = max(0.0, min(1.0, rem_sec / self.exit_duration))
@@ -266,7 +292,9 @@ class StaggeredKeyframeSequencer:
 
         scale = (float(start_scale) + (1.0 - float(start_scale)) * prog) * (0.88 + 0.12 * exit_mult)
         rotation = float(start_rotation_deg) * inv_p
-        opacity = max(0.0, min(1.0, min(1.0, clamped_t * 2.6) * exit_mult))
+        # دخول غير خطي فوري للشفافية عبر منحنى الزنبرك
+        opacity_in = float(ease_in_out_expo(min(1.0, clamped_t * 2.8)))
+        opacity = max(0.0, min(1.0, opacity_in * exit_mult))
 
         vx = -float(entry_offset_xy[0]) * vel_norm / max(0.1, self.entry_duration)
         vy = -float(entry_offset_xy[1]) * vel_norm / max(0.1, self.entry_duration)
@@ -289,11 +317,10 @@ class StaggeredKeyframeSequencer:
         count: int,
         scene_elapsed_sec: float,
         scene_total_sec: float,
-        entry_offset_xy: Tuple[float, float] = (0.0, 36.0),
-        start_scale: float = 0.78,
+        entry_offset_xy: Tuple[float, float] = (0.0, 38.0),
+        start_scale: float = 0.70,
         easing_mode: str = "spring"
     ) -> List[Dict[str, float]]:
-        """توليد مصفوفة الحالات الحركية لمجموعة عناصر متتابعة (مثل كلمات العنوان أو عناصر القائمة)."""
         return [
             self.evaluate_element(
                 scene_elapsed_sec=scene_elapsed_sec,
@@ -316,10 +343,6 @@ def apply_fast_directional_motion_blur(
     max_kernel_size: int = 13,
     velocity_scale: float = 0.035
 ) -> Union[Image.Image, np.ndarray]:
-    """
-    تطبيق تمويه حركي اتجاهي سريع جداً وخفيف على الذاكرة عبر `NumPy` عندما تكون سرعة العنصر عالية،
-    ويتوقف تلقائياً (No-Op) فور استقرار العنصر (`speed < 18 px/s`).
-    """
     vx, vy = float(velocity_xy[0]), float(velocity_xy[1])
     speed = math.hypot(vx, vy)
     blur_px = int(round(min(float(max_kernel_size), speed * velocity_scale)))
@@ -332,7 +355,6 @@ def apply_fast_directional_motion_blur(
     if arr.ndim < 2 or min(arr.shape[0], arr.shape[1]) < 8:
         return image_or_array
 
-    h, w = arr.shape[0], arr.shape[1]
     num_samples = min(7, max(3, (blur_px // 2) + 2))
     dx_total = (vx / max(1e-5, speed)) * blur_px
     dy_total = (vy / max(1e-5, speed)) * blur_px
@@ -340,7 +362,6 @@ def apply_fast_directional_motion_blur(
     acc = np.zeros_like(arr, dtype=np.float32)
     weights_sum = 0.0
 
-    # أخذ عينات خطية على طول متجه السرعة اللحظية (180° Shutter Directional Integration)
     for si in range(num_samples):
         u = (si / float(num_samples - 1)) - 0.5
         sx = int(round(u * dx_total))

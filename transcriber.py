@@ -1,12 +1,15 @@
+# -*- coding: utf-8 -*-
 """
-transcriber.py - محرك التفريغ الصوتي الثلاثي الهجين والتقسيم الدلالي السياقي للجمل (Contextual Semantic Segmentation)
+transcriber.py - محرك التفريغ الصوتي الهجين، إعادة جدولة التوقيت بعد القص (Word-Level Timestamp Remapping)،
+ومزامنة التعديلات الحية ثنائية الاتجاه (Live Scene & Caption Override Sync)
 =======================================================================================================================
-يعالج هذا الملف فهم الدارجة الجزائرية والعربية وتقسيم الكلام حسب السياق والمعنى الكامل للجملة (وليس كلمة بكلمة):
-1. محرك التعرف الجزائري المباشر (Google Speech-to-Text `ar-DZ` + دعم Gemini Audio و Groq Whisper-Large-v3).
-2. محرك `faster-whisper` بمعايرة خاصة للدارجة السريعة.
-3. خوارزمية التجميع الدلالي السياقي (`split_words_into_micro_scenes` / `group_words_into_semantic_clauses`):
-   - تجمع الكلمات في وحدات معنوية وجمل متكاملة السياق (5 إلى 9 كلمات، بمدة 2.8 إلى 4.5 ثانية للمشهد)
-     وتمنع تقطيع الجمل إلى شظايا صغيرة من كلمة أو كلمتين (مثل "أهلاً أنا" أو "وقاعد أحاول" أو "المنصة").
+التحديثات الجوهرية (Alex Hormozi High-Retention Engine - Phase 1):
+1. استخراج وتنقية التوقيت الدقيق كلمة بكلمة (`Word-level Timestamps`: `word`, `start`, `end`, `probability`).
+2. دالة `recalculate_word_timestamps_after_cuts`: إعادة حساب كافة الـ Timestamps للكلمات والجمل تلقائياً بعد قص فترات الصمت (`> 0.25s`)
+   أو قص الإعادات الخاطئة، لضمان تزامن الكابشن والرسومات مع الصوت الجديد بنسبة 100%.
+3. دالة `sync_live_scene_edits_to_words`: الجسر التفاعلي الذي يمنع عودة الكلمات القديمة (مثل "ينوضي") بعد تعديلها من واجهة الموقع (`app.py`)
+   إلى ("يمونتي")، ويعيد بناء مصفوفة `words` و `word_strings` وتوزيع التوقيت الزمني وإعادة توجيه الرسمة البصرية بناءً على الكلمات المفتاحية الجديدة.
+4. قاموس موسع للدارجة الجزائرية والعربية يشمل تصحيح أخطاء شائعة مثل (`تنوضي / ينوضي -> يمونتي / تمنتج`، `لي فيديو -> الفيديوهات`).
 """
 
 import sys
@@ -23,6 +26,7 @@ import re
 import json
 import math
 import base64
+import difflib
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 
@@ -31,12 +35,14 @@ import requests
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+
 def _force_free_ram():
     try:
         gc.collect()
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except Exception:
         pass
+
 
 try:
     from smart_analyzer import query_hybrid_llm
@@ -46,15 +52,24 @@ except ImportError:
 
 
 # ==============================================================================
-# 1. إعدادات وموجهات الدارجة الجزائرية ومصطلحات التجارة الإلكترونية والتقنية
+# 1. إعدادات وموجهات الدارجة الجزائرية ومصطلحات المونتاج والتقنية والتجارة
 # ==============================================================================
 ALGERIAN_DARIJA_INITIAL_PROMPT = (
     "تسجيل بالدارجة الجزائرية والعربية: واش راكم، كاين بزاف ناس، درك، دوكا، علاش، كيفاش، بزاف، ماكانش، "
-    "حاجة شابة، مليح، خاوتي، صحيتو، نقدروا نديرو، معنتها، باسكو، ديجا، نورمالمون، قاع، والو، مرحبا بكم، "
-    "شفت، سمعت، هكذا، هاد، هادي، هذا، هاد الشي، كاين، كاينين، شكراً، يعطيكم الصحة."
+    "يمونتي، تمنتج، مونتاج، ريلز، شورتس، فيديوهات، ذكاء اصطناعي، منصة، سيبور، تشارجي، اكموندي، "
+    "حاجة شابة، مليح، خاوتي، صحيتو، نقدروا نديرو، معنتها، باسكو، ديجا، نورمالمون، قاع، والو، مرحبا بكم."
 )
 
 ALGERIAN_DARIJA_LEXICON_FIXES = {
+    # تصحيحات خاصة بمصطلحات المونتاج وصناعة المحتوى بالدارجة الجزائرية
+    "تنوضي": "يمونتي",
+    "ينوضي": "يمونتي",
+    "نوضي": "يمونتي",
+    "يمونطي": "يمونتي",
+    "تمونطي": "تمنتج",
+    "نمونطي": "نمنتج",
+    "مونطي": "مونتاج",
+    "مونتاجي": "مونتاج",
     "أصبر": "اصبر",
     "أصبر،": "اصبر،",
     "استكش": "ما حبستكش",
@@ -103,7 +118,7 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "اغلب": "أغلب",
     "لان": "لأن",
     "هنده": "عندها",
-    "عنده": "عندها",
+    "عنده": "عنده",
     "ريز": "ريلز",
     "ريز،": "ريلز،",
     "الريز": "الريلز",
@@ -170,19 +185,10 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
 }
 
 PHRASE_LEVEL_FIXES = [
-    (r"عليكم\s+بالي\s+راك", "عليكم على بالي راك"),
-    (r"(?<!على\s)بالي\s+راك\s+تعاني", "على بالي راك تعاني"),
-    (r"وكم\s+خلي\s+الحساب", "ومخلي الحساب"),
-    (r"وكم\s+خلي", "ومخلي"),
-    (r"السوشيال\s+ميديا\s+عم(?!و)", "السوشيال ميديا عموماً"),
-    (r"ميديا\s+عم(?!و)", "ميديا عموماً"),
-    (r"منصة\s+اسمها\s+فيديو\s+تاع", "منصة للمونتاج بالذكاء الاصطناعي"),
-    (r"تع\s+الصمت\s+من\s+الفيديو", "تنحي الصمت من الفيديو"),
-    (r"تع\s+الصمت", "تنحي الصمت"),
-    (r"مجاني\s+وبالاي", "مجاني وبالذكاء الاصطناعي"),
-    (r"وبالاي(?!\w)", "وبالذكاء الاصطناعي"),
-    (r"وبالمونتاج\s+العادي\s+وبقا\s+الصوت", "وبالمونتاج العادي وتنقي الصوت"),
-    (r"وبقا\s+الصوت", "وتنقي الصوت"),
+    (r"باش\s+تنوضي\s+لي\s+فيديو", "باش يمونتي الفيديوهات"),
+    (r"باش\s+ينوضي\s+لي\s+فيديو", "باش يمونتي الفيديوهات"),
+    (r"تنوضي\s+لي\s+فيديو", "يمونتي الفيديوهات"),
+    (r"ينوضي\s+لي\s+فيديو", "يمونتي الفيديوهات"),
     (r"سيرفر\s+تيليفون", "سيبور تيليفون"),
     (r"قطع[،,]?\s+يتقطع", "قاع يتقطع"),
     (r"المتوفرس\s+على", "راه متوفر"),
@@ -206,17 +212,13 @@ PHRASE_LEVEL_FIXES = [
     (r"ترفع\s+أن\s+ترفع", "ترفع"),
     (r"لاحظت\s+ان\s+في", "لاحظت أن في"),
     (r"عندها\s+مش\s+في", "عندها مشكل في"),
-    (r"عنده\s+مش\s+في", "عندها مشكل في"),
+    (r"عنده\s+مش\s+في", "عنده مشكل في"),
     (r"ما\s+عندها\s+مش\s+في", "ما عندها مشكل في"),
     (r"في\s+المونتاج\s+للرز", "في المونتاج للريلز"),
     (r"في\s+المونتاج\s+للريز", "في المونتاج للريلز"),
     (r"تصور\s+لي\s+الفيديوهات", "تصور الفيديوهات"),
 ]
 
-
-# ==============================================================================
-# 1.5 محرك إصلاح الكلمات المبتورة صوتياً والسياقية ومنع التكرار (Universal Fluency & Dedup Engine)
-# ==============================================================================
 CONTEXTUAL_BROKEN_WORD_REPAIRS = [
     (r"(?<!\w)في\s+المونت(?!\w)", "في المونتاج"),
     (r"(?<!\w)المونت\s+الان(?!\w)", "المونتاج لأن"),
@@ -238,12 +240,14 @@ CONTEXTUAL_BROKEN_WORD_REPAIRS = [
     (r"(?<!\w)ومونتاج\s+احت\s+ولا(?!\w)", "ومونتاج احترافي"),
     (r"(?<!\w)ومونتاج\s+احت(?!\w)", "ومونتاج احترافي"),
     (r"(?<!\w)مونتاج\s+احت(?!\w)", "مونتاج احترافي"),
-    # Idempotent negative lookbehind so "أقل من دقيقة" never becomes "أقل أقل من دقيقة"!
     (r"(?<!أقل\s)(?<!اقل\s)(?<!\w)من\s+دقيقه(?!\w)", "أقل من دقيقة"),
     (r"(?<!\w)قص\s+تعديل\s+الفيديو(?!\w)", "قص وتعديل الفيديو"),
 ]
 
 SINGLE_TRUNCATED_TOKEN_MAP = {
+    "تنوضي": "يمونتي",
+    "ينوضي": "يمونتي",
+    "نوضي": "يمونتي",
     "المونت": "المونتاج",
     "الاج": "الاجتماعي",
     "منت": "تمنتج",
@@ -278,10 +282,10 @@ def _orthographic_skeleton(word: str) -> str:
     return w
 
 
-def repair_truncated_words_and_sentences(words_list):
+def repair_truncated_words_and_sentences(words_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     محرك عام لإصلاح الكلمات المبتورة، توحيد الإملاء العربي، إزالة الحشو الناتج عن أخطاء التعرف الصوتي،
-    ومنع تكرار الكلمات المتجاورة أو العبارات المكسورة في أي فيديو مستقبلي.
+    ومنع تكرار الكلمات المتجاورة أو العبارات المكسورة.
     """
     if not words_list:
         return []
@@ -290,27 +294,12 @@ def repair_truncated_words_and_sentences(words_list):
     for i, w_obj in enumerate(repaired):
         raw_w = str(w_obj.get("word", "")).strip()
         clean_w = raw_w.strip("،,.!؟?")
-        # إصلاحات مباشرة لتسلسلات الدارجة الجزائرية الشائعة في صناعة المحتوى والمونتاج
-        if clean_w == "بالي" and i > 0 and i + 1 < n:
-            prev_c = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
-            next_c = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
-            if prev_c != "على" and next_c in {"راك", "راكم", "انك", "بلي"}:
-                repaired[i]["word"] = "على بالي"
-        if clean_w == "وكم" and i + 1 < n and str(repaired[i + 1].get("word", "")).strip("،,.!؟?") == "خلي":
-            repaired[i]["word"] = "ومخلي"
-            repaired[i + 1]["word"] = ""
-        if clean_w == "عم" and i > 0 and "ميديا" in str(repaired[i - 1].get("word", "")):
-            repaired[i]["word"] = "عموماً"
-        if clean_w in {"وبالاي", "بالاي"}:
-            repaired[i]["word"] = "وبالذكاء الاصطناعي"
-        if clean_w == "تع" and i + 1 < n and "صمت" in _orthographic_skeleton(repaired[i + 1].get("word", "")):
-            repaired[i]["word"] = "تنحي"
-        if clean_w == "وبقا" and i + 1 < n and "صوت" in _orthographic_skeleton(repaired[i + 1].get("word", "")):
-            repaired[i]["word"] = "وتنقي"
-
         if clean_w in {"للرز", "للريز", "لريز"}:
             repaired[i]["word"] = "للريلز"
             clean_w = "للريلز"
+        if clean_w in {"تنوضي", "ينوضي", "نوضي"}:
+            repaired[i]["word"] = "يمونتي"
+            clean_w = "يمونتي"
         if clean_w == "مش" and i + 1 < n:
             nxt_w_check = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
             prev_w_check = str(repaired[i - 1].get("word", "")).strip("،,.!؟?") if i > 0 else ""
@@ -320,7 +309,7 @@ def repair_truncated_words_and_sentences(words_list):
         if clean_w == "لي" and i > 0 and i + 1 < n:
             prev_w_check = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
             nxt_w_check = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
-            if prev_w_check in {"تصور", "يصور"} and "فيديو" in nxt_w_check:
+            if prev_w_check in {"تصور", "يصور", "يمونتي", "تمنتج", "تنوضي", "ينوضي"} and "فيديو" in nxt_w_check:
                 repaired[i]["word"] = ""
                 clean_w = ""
         if clean_w in SINGLE_TRUNCATED_TOKEN_MAP:
@@ -339,26 +328,22 @@ def repair_truncated_words_and_sentences(words_list):
             prev_w = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
             if prev_w == "احترافي":
                 repaired[i]["word"] = ""
-        # إزالة "وتم" المقحمة صوتياً قبل "والخاصية"
         if clean_w == "وتم" and i + 1 < n:
             nxt_w = _orthographic_skeleton(repaired[i + 1].get("word", ""))
             if "خاصي" in nxt_w or "ثاني" in nxt_w or "ثالث" in nxt_w:
                 repaired[i]["word"] = ""
-        # إصلاح "ترفع ان ترفع" -> حذف "ان ترفع" المكررة
         if clean_w in {"ان", "أن"} and 0 < i < n - 1:
             prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
             next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
             if prev_s == next_s and prev_s:
                 repaired[i]["word"] = ""
                 repaired[i + 1]["word"] = ""
-        # إصلاح "ما انت" بعد "والأقوى" -> "من هذا"
         if clean_w in {"ما"} and i > 0 and i + 1 < n:
             prev_s = _orthographic_skeleton(repaired[i - 1].get("word", ""))
             next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
             if "اقوي" in prev_s and next_s in {"انت", "انك"}:
                 repaired[i]["word"] = "من"
                 repaired[i + 1]["word"] = "هذا"
-        # إصلاح "حتى تديهم بالبري مهب" -> "تديهم باطل"
         if clean_w == "بالبري" and i + 1 < n:
             next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
             if next_s in {"مهب", "باطل"}:
@@ -366,13 +351,11 @@ def repair_truncated_words_and_sentences(words_list):
                 repaired[i + 1]["word"] = ""
                 if i >= 2 and _orthographic_skeleton(repaired[i - 2].get("word", "")) == "حتي":
                     repaired[i - 2]["word"] = ""
-        # إضافة حرف الجر "في" إذا سقط صوتياً بين "الإنتاجية" و"التواصل الاجتماعي"
         if _orthographic_skeleton(clean_w) in {"الانتاجيه", "انتاجيه"} and i + 1 < n:
             next_s = _orthographic_skeleton(repaired[i + 1].get("word", ""))
             if next_s == "التواصل":
                 repaired[i]["word"] = "الإنتاجية في"
 
-    # فلترة الفراغات ودمج الكلمات المتجاورة المكررة إملائياً (مثل "اقل أقل" -> "أقل")
     non_empty = [w for w in repaired if str(w.get("word", "")).strip()]
     deduped = []
     for w in non_empty:
@@ -380,7 +363,6 @@ def repair_truncated_words_and_sentences(words_list):
         if deduped:
             prev_skel = _orthographic_skeleton(deduped[-1]["word"])
             if w_skel and w_skel == prev_skel and w_skel not in {"اصبر", "شوف", "لا", "نعم", "صح"}:
-                # نحتفظ بالنسخة الأصح إملائياً (التي تحتوي همزة أو تاء مربوطة) ونوسع وقت النهاية
                 if any(ch in w["word"] for ch in "أإآة") and not any(ch in deduped[-1]["word"] for ch in "أإآة"):
                     deduped[-1]["word"] = w["word"]
                 deduped[-1]["end"] = max(float(deduped[-1]["end"]), float(w["end"]))
@@ -389,21 +371,18 @@ def repair_truncated_words_and_sentences(words_list):
 
     return deduped
 
-# ==============================================================================
-# 1.8 محرك كشف وإزالة أخطاء وإعادات التعليق الصوتي (Voiceover Retake & Stutter Eliminator)
-# ==============================================================================
-import difflib
 
+# ==============================================================================
+# 1.8 كشف وإزالة أخطاء وإعادات التعليق الصوتي + إعادة حساب التوقيت بعد القص
+# ==============================================================================
 _LAST_DETECTED_RETAKE_CUTS: List[Dict[str, Any]] = []
 
 
 def get_last_detected_retake_cuts() -> List[Dict[str, Any]]:
-    """إرجاع قائمة الفترات الزمنية التي أخطأ فيها المتحدث أو أعاد الجملة/الكلمة مرتين ليتم قصها من الصوت والفيديو."""
     return [dict(c) for c in _LAST_DETECTED_RETAKE_CUTS]
 
 
 def _stem_skeleton(word: str) -> str:
-    """جذر إملائي مبسط للمقارنة الصوتية والسياقية بين المحاولة الخاطئة والإعادة الصحيحة."""
     s = _orthographic_skeleton(word)
     for pref in ("وال", "بال", "فل", "كال", "لل", "ال", "و", "ب", "ف", "ل"):
         if s.startswith(pref) and len(s) - len(pref) >= 3:
@@ -440,14 +419,6 @@ def detect_and_remove_voiceover_retakes(
     words_list: List[Dict[str, Any]],
     remap_timestamps: bool = False
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """
-    يكتشف أخطاء التعليق الصوتي عندما يعيد المتحدث الكلمة أو العبارة أو الجملة مرتين (بسبب تلعثم أو خطأ في النطق):
-    1. تكرار الكلمة الواحدة المتتالية (`W[i] == W[i+1]`).
-    2. إعادة العبارة أو الكلمات المتتالية (`N-gram Phrase Retake` من كلمتين إلى 8 كلمات).
-    3. البداية الخاطئة للجملة (`False-Start Clause Retake`): عندما يبدأ المتحدث جملة من 2-8 كلمات، يتوقف أو يخطئ في آخرها،
-       ثم يعيد نفس بداية الجملة (أول كلمتين أو أكثر متطابقتين) بصياغة صحيحة وكاملة!
-    يحذف المحاولة الأولى الخاطئة تماماً ويسجل توقيتها الزمني `[start, end]` في `_LAST_DETECTED_RETAKE_CUTS` ليتم قصها من الصوت والفيديو.
-    """
     global _LAST_DETECTED_RETAKE_CUTS
     _LAST_DETECTED_RETAKE_CUTS = []
 
@@ -466,9 +437,6 @@ def detect_and_remove_voiceover_retakes(
             continue
 
         cut_made = False
-
-        # أولاً: فحص إعادة جملة أو عبارة (من 7 كلمات نزولاً إلى كلمتين) أو بداية جملة خاطئة (False-Start Retake)
-        max_span = min(8, n - i - 1)
         for j in range(i + 1, min(n, i + 10)):
             if not keep_mask[j]:
                 continue
@@ -477,7 +445,6 @@ def detect_and_remove_voiceover_retakes(
             if time_span > 7.5:
                 break
 
-            # أ) تطابق عبارة كاملة مكررة (Contiguous or Near-Contiguous Phrase Repeat)
             check_len = min(span_len, n - j)
             if check_len >= 2 and _words_are_equivalent(items[i]["word"], items[j]["word"]):
                 seq_a = [items[k]["word"] for k in range(i, i + check_len)]
@@ -499,21 +466,13 @@ def detect_and_remove_voiceover_retakes(
                     cut_made = True
                     break
 
-            # ب) البداية الخاطئة للجملة (False-Start Sentence Retake):
-            # المتحدث قال 2 إلى 8 كلمات، ثم أعاد نفس أول كلمتين (أو 3 كلمات) ليكمل الجملة الصحيحة!
             if 2 <= span_len <= 8 and (j + 2) <= n:
                 prefix_match_2 = (
                     _words_are_equivalent(items[i]["word"], items[j]["word"])
                     and _words_are_equivalent(items[i + 1]["word"], items[j + 1]["word"])
                 )
-                # أو إذا بدأ بكلمة مثل "أنا جيت لكم..." ثم قال "جيت لكم..." (حذف ضمير البداية في الإعادة)
-                prefix_match_shifted = (
-                    span_len >= 3
-                    and _words_are_equivalent(items[i + 1]["word"], items[j]["word"])
-                    and _words_are_equivalent(items[i + 2]["word"], items[j + 1]["word"])
-                )
                 if prefix_match_2:
-                    cut_idx_start = i if prefix_match_2 else (i + 1)
+                    cut_idx_start = i
                     cut_s = float(items[cut_idx_start]["start"])
                     cut_e = float(items[j]["start"])
                     removed_str = " ".join(items[k]["word"] for k in range(cut_idx_start, j))
@@ -532,7 +491,6 @@ def detect_and_remove_voiceover_retakes(
         if cut_made:
             continue
 
-        # ثانياً: فحص تكرار الكلمة الواحدة المتتالية (Single-Word Stutter: W[i] == W[i+1])
         nxt_i = i + 1
         while nxt_i < n and not keep_mask[nxt_i]:
             nxt_i += 1
@@ -567,39 +525,87 @@ def detect_and_remove_voiceover_retakes(
     return cleaned_words, detected_cuts
 
 
+def recalculate_word_timestamps_after_cuts(
+    words_list: List[Dict[str, Any]],
+    kept_speech_intervals: Optional[List[Tuple[float, float]]] = None,
+    removed_silence_or_retake_cuts: Optional[List[Dict[str, Any]]] = None
+) -> List[Dict[str, Any]]:
+    """
+    إعادة حساب كافة الـ Timestamps للكلمات (`start`, `end`) بدقة الملي ثانية بعد عملية قص الصمت (`> 0.25s`)
+    أو قص الإعادات الخاطئة، بحيث تبقى الكلمات والرسومات متزامنة 100% مع الصوت الجديد المقصوص.
+    - إذا تم تمرير `kept_speech_intervals` (فترات الكلام المحتفظ بها بعد قص الصمت > 0.25s)، يتم إسقاط كل كلمة
+      من الزمن الأصلي إلى الزمن الجديد المتراكم.
+    - إذا تم تمرير `removed_silence_or_retake_cuts` (الفترات المحذوفة)، يتم طرح مدة كل فترة محذوفة سابقة.
+    """
+    if not words_list:
+        return []
+
+    out_words = [dict(w) for w in words_list]
+
+    # 1. الإسقاط عبر فترات الكلام المحتفظ بها (Jump-Cut Interval Remapping)
+    if kept_speech_intervals:
+        valid_intervals = [(float(s), float(e)) for s, e in kept_speech_intervals if float(e) > float(s)]
+        if valid_intervals:
+            cum_starts: List[float] = []
+            acc = 0.0
+            for s, e in valid_intervals:
+                cum_starts.append(acc)
+                acc += (e - s)
+
+            def _map_orig_to_cut_time(t_orig: float) -> float:
+                for idx_iv, (iv_s, iv_e) in enumerate(valid_intervals):
+                    if t_orig < iv_s:
+                        return cum_starts[idx_iv]
+                    if iv_s <= t_orig <= iv_e:
+                        return cum_starts[idx_iv] + (t_orig - iv_s)
+                return acc
+
+            for w in out_words:
+                orig_s = float(w.get("start", 0.0))
+                orig_e = float(w.get("end", orig_s + 0.22))
+                orig_dur = max(0.08, orig_e - orig_s)
+                new_s = _map_orig_to_cut_time(orig_s)
+                new_e = _map_orig_to_cut_time(orig_e)
+                if new_e <= new_s + 0.06:
+                    new_e = new_s + min(0.28, orig_dur)
+                w["start"] = round(max(0.0, new_s), 3)
+                w["end"] = round(max(w["start"] + 0.08, new_e), 3)
+
+    # 2. طرح أي فترات محذوفة إضافية (Retake / Silence Cuts Subtraction)
+    if removed_silence_or_retake_cuts:
+        cuts = sorted(
+            [
+                (float(c["start"]), float(c["end"]))
+                for c in removed_silence_or_retake_cuts
+                if float(c.get("end", 0.0)) > float(c.get("start", 0.0))
+            ],
+            key=lambda x: x[0]
+        )
+        for w in out_words:
+            ws = float(w.get("start", 0.0))
+            we = float(w.get("end", ws + 0.22))
+            shift = 0.0
+            for cs, ce in cuts:
+                if ce <= ws + 0.02:
+                    shift += (ce - cs)
+                elif cs < ws < ce:
+                    shift += (ws - cs)
+            new_s = max(0.0, round(ws - shift, 3))
+            new_e = max(new_s + 0.08, round(we - shift, 3))
+            w["start"] = new_s
+            w["end"] = new_e
+
+    return ensure_word_timestamp_continuity(out_words)
+
+
 def remap_words_after_retake_cuts(
     words_list: List[Dict[str, Any]],
     retake_cuts: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """
-    إعادة حساب التوقيت الزمني (`start`, `end`) لجميع الكلمات بعد قص فترات الغلطات والإعادات الصوتية
-    من ملف الميديا الفعلي، لضمان بقاء التزامن الصوتي والبصري 100%.
-    """
-    if not words_list or not retake_cuts:
-        return list(words_list)
-
-    cuts = sorted(
-        [(float(c["start"]), float(c["end"])) for c in retake_cuts if float(c["end"]) > float(c["start"])],
-        key=lambda x: x[0]
+    return recalculate_word_timestamps_after_cuts(
+        words_list=words_list,
+        removed_silence_or_retake_cuts=retake_cuts
     )
-    remapped: List[Dict[str, Any]] = []
-    for w in words_list:
-        w_copy = dict(w)
-        ws = float(w_copy.get("start", 0.0))
-        we = float(w_copy.get("end", ws + 0.25))
-        shift = 0.0
-        for cs, ce in cuts:
-            if ce <= ws + 0.02:
-                shift += (ce - cs)
-            elif cs < ws < ce:
-                shift += (ws - cs)
-        new_s = max(0.0, round(ws - shift, 3))
-        new_e = max(new_s + 0.10, round(we - shift, 3))
-        w_copy["start"] = new_s
-        w_copy["end"] = new_e
-        remapped.append(w_copy)
-
-    return ensure_word_timestamp_continuity(remapped)
 
 
 _TRANSCRIPTION_CACHE: Dict[str, Dict[str, Any]] = {}
@@ -617,32 +623,32 @@ _LAST_EXTRACTED_TRANSCRIPT: Dict[str, List[Dict[str, Any]]] = {
 
 
 # ==============================================================================
-# 2. تقسيم الكلمات إلى مشاهد دلالية سياقية متكاملة (Complete Semantic Clauses)
+# 2. تقسيم الكلمات إلى مشاهد دلالية سياقية سريعة (Alex Hormozi Fast-Paced Scenes)
 # ==============================================================================
 def ensure_word_timestamp_continuity(
     words_list: List[Dict[str, Any]],
     total_duration: Optional[float] = None
 ) -> List[Dict[str, Any]]:
-    """ضمان اتصال التوقيت الزمني بين الكلمات لمنع اختفاء الكابشن المفاجئ."""
+    """ضمان اتصال التوقيت الزمني بين الكلمات بدقة الملي ثانية لمنع اختفاء الكابشن أو القفز الخاطئ."""
     if not words_list:
         return []
 
     smoothed: List[Dict[str, Any]] = [dict(w) for w in words_list]
     for i in range(len(smoothed)):
         w_s = float(smoothed[i].get("start", 0.0))
-        w_e = float(smoothed[i].get("end", w_s + 0.25))
-        if w_e <= w_s + 0.08:
-            w_e = w_s + 0.22
+        w_e = float(smoothed[i].get("end", w_s + 0.24))
+        if w_e <= w_s + 0.07:
+            w_e = w_s + 0.20
 
         if i + 1 < len(smoothed):
             next_s = float(smoothed[i + 1].get("start", w_e))
             gap = next_s - w_e
-            if 0.0 <= gap <= 0.45:
+            if 0.0 <= gap <= 0.35:
                 w_e = next_s
             elif gap < 0.0:
-                w_e = max(w_s + 0.08, next_s)
+                w_e = max(w_s + 0.07, next_s)
         elif total_duration is not None:
-            if 0.0 < total_duration - w_e <= 0.45:
+            if 0.0 < total_duration - w_e <= 0.40:
                 w_e = total_duration
 
         smoothed[i]["start"] = round(w_s, 3)
@@ -651,41 +657,220 @@ def ensure_word_timestamp_continuity(
     return smoothed
 
 
+def distribute_text_into_word_timestamps(
+    text: str,
+    start_sec: float,
+    end_sec: float,
+    existing_words: Optional[List[Dict[str, Any]]] = None
+) -> List[Dict[str, Any]]:
+    """
+    تحويل أي جملة نصية معدلة يدوياً (مثل تحويل "ينوضي" إلى "يمونتي") إلى قائمة كلمات `words`
+    تحتوي على `word`, `start`, `end`, `probability` موزعة بدقة داخل `[start_sec, end_sec]`.
+    """
+    tokens = [t.strip() for t in str(text or "").split() if t.strip()]
+    s_t = round(float(start_sec), 3)
+    e_t = round(max(s_t + 0.25, float(end_sec)), 3)
+    if not tokens:
+        return []
+
+    if existing_words and len(existing_words) == len(tokens):
+        out = []
+        for tok, old_w in zip(tokens, existing_words):
+            ws = round(float(old_w.get("start", s_t)), 3)
+            we = round(max(ws + 0.08, float(old_w.get("end", e_t))), 3)
+            out.append({"word": tok, "start": ws, "end": we, "probability": 1.0})
+        return ensure_word_timestamp_continuity(out, total_duration=e_t)
+
+    weights = [max(2.0, float(len(tok)) ** 0.85) for tok in tokens]
+    total_w = sum(weights)
+    dur = max(0.20, e_t - s_t)
+    cursor = s_t
+    out = []
+    for idx, (tok, w_val) in enumerate(zip(tokens, weights)):
+        w_dur = dur * (w_val / total_w)
+        w_end = e_t if idx == len(tokens) - 1 else round(cursor + w_dur, 3)
+        out.append({
+            "word": tok,
+            "start": round(cursor, 3),
+            "end": max(round(cursor + 0.07, 3), w_end),
+            "probability": 1.0
+        })
+        cursor = w_end
+    return ensure_word_timestamp_continuity(out, total_duration=e_t)
+
+
+def sync_live_scene_edits_to_words(
+    planned_scenes: List[Dict[str, Any]],
+    base_words: Optional[List[Dict[str, Any]]] = None
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """
+    الجسر التفاعلي ثنائي الاتجاه (Two-Way Live Scene & Caption Override Bus):
+    عندما يعدل المستخدم في أسفل الموقع (`app.py`):
+    1. عنوان المشهد `concept_title` أو النص المنطوق `text` (مثلاً تعديل "ينوضي" إلى "يمونتي"):
+       - يتم تحديث نص المشهد ومصفوفة الكلمات `sc["words"]` و `sc["word_strings"]` فوراً بتوقيت دقيق.
+    2. الكلمات المفتاحية `kpi_value` (مثلاً كتابة "يمنتج مونتاج") أو العناصر الفرعية `sub_items` (مثلاً "ما عنده وقت | عشان يمنتج"):
+       - يعيد المحرك مطابقة الرسمة التعبيرية (`match_speech_to_visual_archetype`) بناءً على الكلمات المفتاحية الجديدة
+         والعناصر الفرعية الجديدة حتى تتغير الرسمة فعلياً لتطابق ما كتبه المستخدم!
+    3. يحفظ الكلمات المحدثة في `_CUSTOM_CAPTION_OVERRIDE` و `_LAST_EXTRACTED_TRANSCRIPT` لمنع عودة الكلمات القديمة أبداً.
+    """
+    if not planned_scenes:
+        return [], []
+
+    try:
+        from style_evolution_brain import match_speech_to_visual_archetype, ALL_DYNAMIC_VISUAL_ARCHETYPES
+    except Exception:
+        match_speech_to_visual_archetype = None
+        ALL_DYNAMIC_VISUAL_ARCHETYPES = []
+
+    synced_scenes: List[Dict[str, Any]] = []
+    all_synced_words: List[Dict[str, Any]] = []
+    used_archs: List[str] = []
+    total_sc = len(planned_scenes)
+
+    for idx, sc in enumerate(planned_scenes):
+        sc_copy = dict(sc)
+        s_start = float(sc_copy.get("start", idx * 2.5))
+        s_end = float(sc_copy.get("end", s_start + 2.5))
+
+        orig_text = str(sc_copy.get("text", "")).strip()
+        edited_title = str(sc_copy.get("concept_title") or sc_copy.get("short_title") or "").strip()
+        edited_kpi = str(sc_copy.get("kpi_value", "")).strip()
+        edited_badge = str(sc_copy.get("badge_label", "")).strip()
+        sub_items = [str(x).strip() for x in (sc_copy.get("sub_items") or []) if str(x).strip()]
+
+        # إذا عدل المستخدم الكلمة الخاطئة في العنوان البارز أو في النص (مثلاً غير "تنوضي/ينوضي" إلى "يمونتي")
+        # نقوم بتطبيق التعديل على النص المنطوق والكلمات أيضاً!
+        effective_speech_text = orig_text
+        if edited_title and orig_text:
+            orig_tokens = orig_text.split()
+            title_tokens = edited_title.split()
+            # إذا كان العنوان المعدل يغطي معظم جملة المشهد أو صحح كلمة فيها (مثل باش تنوضي لي فيديو -> باش يمونتي لي فيديو)
+            if len(title_tokens) >= max(2, len(orig_tokens) - 2):
+                if len(orig_tokens) > len(title_tokens):
+                    # نحتفظ ببقية كلمات الجملة الأصلية التي لم تكن ضمن العنوان المختصر مع استبدال الجزء المعدل
+                    tail_tokens = orig_tokens[len(title_tokens):]
+                    effective_speech_text = " ".join(title_tokens + tail_tokens)
+                else:
+                    effective_speech_text = edited_title
+            else:
+                # استبدال ذكي لأي كلمة متشابهة إملائياً (مثل تنوضي/ينوضي -> يمونتي)
+                updated_orig = list(orig_tokens)
+                for t_tok in title_tokens:
+                    for oi, o_tok in enumerate(updated_orig):
+                        sim = difflib.SequenceMatcher(None, _orthographic_skeleton(t_tok), _orthographic_skeleton(o_tok)).ratio()
+                        if 0.45 <= sim < 1.0 or (o_tok in {"تنوضي", "ينوضي", "نوضي"} and t_tok in {"يمونتي", "تمنتج", "يمونطي"}):
+                            updated_orig[oi] = t_tok
+                effective_speech_text = " ".join(updated_orig)
+        elif edited_title and not orig_text:
+            effective_speech_text = edited_title
+
+        sc_copy["text"] = effective_speech_text
+        if edited_title:
+            sc_copy["concept_title"] = edited_title
+            sc_copy["short_title"] = edited_title
+
+        # إعادة بناء مصفوفة الكلمات والتوقيت الزمني للمشهد بحيث تظهر الكلمات المعدلة في الكابشن والموشن جرافيك
+        rebuilt_words = distribute_text_into_word_timestamps(
+            text=effective_speech_text,
+            start_sec=s_start,
+            end_sec=s_end,
+            existing_words=sc_copy.get("words") if isinstance(sc_copy.get("words"), list) else None
+        )
+        sc_copy["words"] = rebuilt_words
+        sc_copy["word_strings"] = [w["word"] for w in rebuilt_words]
+        all_synced_words.extend(rebuilt_words)
+
+        # إذا أدخل المستخدم كلمات مفتاحية جديدة في `kpi_value` (مثل "يمنتج مونتاج") أو عدل `sub_items` ("ما عنده وقت | عشان يمنتج")
+        # ندمج هذه الكلمات المفتاحية في استعلام مطابقة الرسمة البصرية حتى تتغير الرسمة لتوافق تعديله 100%!
+        combined_semantic_signal = " ".join(
+            part for part in [
+                edited_kpi,
+                " ".join(sub_items),
+                edited_title,
+                effective_speech_text,
+                edited_badge
+            ] if part
+        ).strip()
+        sc_copy["search_keywords_override"] = combined_semantic_signal
+
+        if callable(match_speech_to_visual_archetype) and combined_semantic_signal:
+            # إذا كتب المستخدم كلمات مفتاحية صريحة (مثل "يمنتج مونتاج" أو "ما عنده وقت | عشان يمنتج")،
+            # نتحقق مما إذا كانت الكلمات الجديدة تستدعي رسمة أدق من الرسمة القديمة المعلقة
+            matched_arch, matched_subj = match_speech_to_visual_archetype(
+                scene_text=combined_semantic_signal,
+                scene_index=idx,
+                total_scenes=total_sc,
+                used_archetypes=used_archs,
+                variation_seed=idx * 19
+            )
+            cur_arch = str(sc_copy.get("user_override_archetype") or sc_copy.get("archetype") or "")
+            # إذا كان المستخدم قد كتب كلمات مفتاحية جديدة في kpi_value أو sub_items ولم يغير القائمة المنسدلة يدوياً عن قيمتها القديمة
+            if edited_kpi or sub_items:
+                if not sc_copy.get("_manual_arch_locked", False):
+                    # إذا كانت الكلمات المفتاحية تشير بوضوح إلى مونتاج/قص/وقت/ذكاء، نعتمد الرسمة المطابقة للكلمات المفتاحية الجديدة
+                    kw_low = f"{edited_kpi} {' '.join(sub_items)} {edited_title}".lower()
+                    if any(k in kw_low for k in ["يمنتج", "مونتاج", "يمونتي", "قص", "تقطيع"]):
+                        matched_arch = "hero_waveform_scissors" if "وقت" not in kw_low else "hero_chrono_speedometer"
+                    elif any(k in kw_low for k in ["وقت", "ساعات", "دقيقة", "سريع"]):
+                        matched_arch = "hero_chrono_speedometer"
+                    sc_copy["archetype"] = matched_arch
+                    sc_copy["user_override_archetype"] = matched_arch
+                    sc_copy["visual_subject"] = matched_subj
+                    if isinstance(sc_copy.get("scene_style_spec"), dict):
+                        sc_copy["scene_style_spec"]["visual_archetype"] = matched_arch
+
+        final_arch = str(sc_copy.get("archetype") or "web_dynamic_scene")
+        used_archs.append(final_arch)
+        synced_scenes.append(sc_copy)
+
+    all_synced_words = ensure_word_timestamp_continuity(all_synced_words)
+    _CUSTOM_CAPTION_OVERRIDE["enabled"] = True
+    _CUSTOM_CAPTION_OVERRIDE["words"] = all_synced_words
+    _CUSTOM_CAPTION_OVERRIDE["sentences"] = [
+        {
+            "text": s["text"],
+            "start": s["start"],
+            "end": s["end"],
+            "words": s["words"]
+        }
+        for s in synced_scenes
+    ]
+    _LAST_EXTRACTED_TRANSCRIPT["words"] = all_synced_words
+    _LAST_EXTRACTED_TRANSCRIPT["sentences"] = _CUSTOM_CAPTION_OVERRIDE["sentences"]
+
+    return synced_scenes, all_synced_words
+
+
 def split_words_into_micro_scenes(
     words_list: List[Dict[str, Any]],
     max_words_per_scene: int = 6,
-    max_duration_per_scene: float = 3.1,
+    max_duration_per_scene: float = 2.8,
     min_words_per_scene: int = 3
 ) -> List[Dict[str, Any]]:
     """
-    تقسيم الكلمات حسب السياق والمعنى الكامل للجملة (Semantic Clause Grouping):
-    - يجمع الكلمات في جمل وأفكار مترابطة (من 4 إلى 8 كلمات، بمدة 2.5 إلى 4.2 ثانية)
-      بحيث يعبر كل مشهد موشن جرافيك عن فكرة كاملة ومفهومة (وليس كلمة بكلمة!).
-    - يدمج تلقائياً أي شظايا قصيرة (أقل من 4 كلمات) مع الجملة المرتبطة بها سياقياً.
+    تقسيم الكلمات إلى مشاهد ديناميكية سريعة الإيقاع بأسلوب Alex Hormozi (2.5 إلى 3.0 ثانية للمشهد)
+    للحفاظ على انتباه المشاهد (High Retention) وكسر الملل البصري.
     """
     if not words_list:
         return []
 
-    # ترقية الحدود الدنيا تلقائياً حتى لو تم استدعاء الدالة بمعاملات قديمة صغيرة (مثل 4 كلمات و 2.0 ثانية)
-    eff_max_words = max(5, min(7, int(max_words_per_scene)))
-    eff_max_dur = max(2.4, min(3.4, float(max_duration_per_scene)))
-    eff_min_words = max(3, min(4, int(min_words_per_scene)))
+    eff_max_words = max(4, min(7, int(max_words_per_scene)))
+    eff_max_dur = max(2.2, min(3.0, float(max_duration_per_scene)))
+    eff_min_words = max(2, min(4, int(min_words_per_scene)))
 
     words_list = ensure_word_timestamp_continuity(words_list)
     raw_scenes: List[Dict[str, Any]] = []
     current_group: List[Dict[str, Any]] = []
 
-    # الروابط السياقية الكبرى التي تبدأ جملة/فكرة جديدة فقط عندما تكتمل الفكرة السابقة
     major_clause_starters = {
         "لأن", "لان", "علاش", "كيفاش", "واسم", "لكن", "باش",
         "التوصيل", "اكموندي", "اطلب", "المشكل", "الحل", "ومغلف", "معنتها"
     }
 
-    # كلمات لا يجوز أبداً فصلها عن الكلمة التي تليها (تمنع قطع المضاف والمضاف إليه أو الفعل وفاعله)
     non_breaking_end_words = {
         "أنا", "انا", "عمري", "وقاعد", "أحاول", "احاول", "أبني", "ابني",
         "تعمل", "بشكل", "لأن", "لان", "أغلب", "اغلب", "ما", "عندها",
-        "تمنتج", "تبدل", "وترفع", "كل", "واسم", "اسم", "منصة", "المنصة",
+        "تمنتج", "يمونتي", "تبدل", "وترفع", "كل", "واسم", "اسم", "منصة", "المنصة",
         "فيديو", "بالذكاء", "بذكاء", "على", "جال", "كابل", "سيبور", "في", "نفس"
     }
 
@@ -707,7 +892,7 @@ def split_words_into_micro_scenes(
             prev_is_non_breaking = (prev_clean in non_breaking_end_words)
 
             should_split = False
-            if gap >= 0.55 and len(current_group) >= 3:
+            if gap >= 0.35 and len(current_group) >= 2:
                 should_split = True
             elif ends_with_strong_punct and len(current_group) >= eff_min_words:
                 should_split = True
@@ -737,51 +922,25 @@ def split_words_into_micro_scenes(
             "words": list(current_group)
         })
 
-    # المرحلة الثانية: دمج أي شظايا قصيرة (أقل من 4 كلمات أو أقل من 1.8 ثانية) مع الجملة المناسبة سياقياً
     merged_scenes: List[Dict[str, Any]] = []
     for sc in raw_scenes:
         sc_words = sc.get("words", [])
         sc_dur = float(sc["end"]) - float(sc["start"])
-        if merged_scenes and (len(sc_words) < 3 or sc_dur < 1.5):
-            # ادمج الشظية القصيرة مع المشهد السابق إذا كان المشهد السابق لا يتجاوز 9 كلمات
+        if merged_scenes and (len(sc_words) < 2 or sc_dur < 1.2):
             prev_sc = merged_scenes[-1]
-            if len(prev_sc["words"]) + len(sc_words) <= 10:
+            if len(prev_sc["words"]) + len(sc_words) <= 8 and (float(sc["end"]) - float(prev_sc["start"])) <= 3.2:
                 prev_sc["words"].extend(sc_words)
                 prev_sc["end"] = sc["end"]
                 prev_sc["text"] = " ".join(x["word"] for x in prev_sc["words"])
                 continue
         merged_scenes.append(sc)
 
-    # فحص عكسي: إذا كان المشهد الأول قصيراً جداً (مثل "أهلاً أنا أنس" 3 كلمات ويليه "عمري 17 سنة" 3 كلمات) ندمجهما في جملة تعريفية متكاملة!
-    final_scenes: List[Dict[str, Any]] = []
-    i = 0
-    while i < len(merged_scenes):
-        curr = merged_scenes[i]
-        if i + 1 < len(merged_scenes):
-            nxt = merged_scenes[i + 1]
-            curr_w_count = len(curr["words"])
-            nxt_w_count = len(nxt["words"])
-            combined_dur = float(nxt["end"]) - float(curr["start"])
-            # دمج الجمل القصيرة المتجاورة لتكوين فكرة سياقية كاملة
-            if (curr_w_count <= 3 and nxt_w_count <= 5 and combined_dur <= 5.0) or (nxt_w_count <= 2 and combined_dur <= 5.5):
-                combined_words = curr["words"] + nxt["words"]
-                final_scenes.append({
-                    "text": " ".join(x["word"] for x in combined_words),
-                    "start": curr["start"],
-                    "end": nxt["end"],
-                    "words": combined_words
-                })
-                i += 2
-                continue
-        final_scenes.append(curr)
-        i += 1
-
-    # تقسيم أي مشهد طويل (> 3.6 ثانية) إلى لقطتين بصريتين متجددتين لمنع بقاء نفس الرسمة ثابتة على الشاشة لفترة طويلة!
+    # ضمان إيقاع B-Roll ومشاهد سريع (2.5 - 3.0 ثانية كحد أقصى للمشهد لكسر الملل البصري)
     paced_scenes: List[Dict[str, Any]] = []
-    for sc in final_scenes:
+    for sc in merged_scenes:
         sc_w = sc.get("words", [])
         sc_dur = float(sc["end"]) - float(sc["start"])
-        if sc_dur > 3.6 and len(sc_w) >= 6:
+        if sc_dur > 3.1 and len(sc_w) >= 4:
             mid_idx = len(sc_w) // 2
             w1, w2 = sc_w[:mid_idx], sc_w[mid_idx:]
             paced_scenes.append({
@@ -799,16 +958,14 @@ def split_words_into_micro_scenes(
         else:
             paced_scenes.append(sc)
 
-    # سد أي فجوة بين نهاية مشهد وبداية المشهد التالي مع إعادة توزيع أوقات الكلمات إذا وُجدت فجوة طويلة
     for idx in range(len(paced_scenes) - 1):
         gap = paced_scenes[idx + 1]["start"] - paced_scenes[idx]["end"]
-        if 0.0 < gap <= 1.20:
+        if 0.0 < gap <= 1.0:
             paced_scenes[idx]["end"] = paced_scenes[idx + 1]["start"]
             if paced_scenes[idx]["words"]:
                 paced_scenes[idx]["words"][-1]["end"] = paced_scenes[idx + 1]["start"]
-        elif gap > 1.20:
-            # إذا كانت هناك فجوة كبيرة، نقسمها إلى مشهد بصري انتقالي حتى لا تتجمد الشاشة
-            paced_scenes[idx]["end"] = round(paced_scenes[idx]["end"] + min(0.8, gap * 0.4), 3)
+        elif gap > 1.0:
+            paced_scenes[idx]["end"] = round(paced_scenes[idx]["end"] + min(0.6, gap * 0.4), 3)
 
     return paced_scenes
 
@@ -838,7 +995,7 @@ def set_custom_caption_override(
     custom_words: Optional[List[Dict[str, Any]]] = None,
     custom_sentences: Optional[List[Dict[str, Any]]] = None
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """حفظ تعديلات المستخدم على الكابشن ومزامنتها تلقائياً."""
+    """حفظ تعديلات المستخدم على الكابشن ومزامنتها تلقائياً مع ملف الجلسة (`last_storyboard_session.json`)."""
     base_words, base_sentences = get_last_extracted_transcript()
 
     if custom_sentences is not None and custom_words is None:
@@ -850,31 +1007,13 @@ def set_custom_caption_override(
             if not s_text:
                 continue
 
-            new_tokens = [t.strip() for t in s_text.split() if t.strip()]
-            orig_words = sent.get("words", [])
-
-            if len(new_tokens) == len(orig_words) and orig_words:
-                for tok, ow in zip(new_tokens, orig_words):
-                    synced_words.append({
-                        "word": tok,
-                        "start": round(float(ow.get("start", s_start)), 3),
-                        "end": round(float(ow.get("end", s_end)), 3),
-                        "probability": 1.0
-                    })
-            elif new_tokens:
-                total_chars = max(1, sum(len(t) for t in new_tokens))
-                dur = max(0.15, s_end - s_start)
-                cursor = s_start
-                for idx, tok in enumerate(new_tokens):
-                    w_dur = dur * (len(tok) / total_chars)
-                    w_end_t = s_end if idx == len(new_tokens) - 1 else round(cursor + w_dur, 3)
-                    synced_words.append({
-                        "word": tok,
-                        "start": round(cursor, 3),
-                        "end": max(round(cursor + 0.08, 3), w_end_t),
-                        "probability": 1.0
-                    })
-                    cursor = w_end_t
+            rebuilt = distribute_text_into_word_timestamps(
+                text=s_text,
+                start_sec=s_start,
+                end_sec=s_end,
+                existing_words=sent.get("words") if isinstance(sent.get("words"), list) else None
+            )
+            synced_words.extend(rebuilt)
 
         synced_words = ensure_word_timestamp_continuity(synced_words)
         synced_sentences = split_words_into_micro_scenes(synced_words)
@@ -964,10 +1103,6 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
         else:
             expanded.append(w_copy)
 
-    # فحص سياقي للعبارات المركبة (مثل "تبدل الفيديو" -> "تمنتج الفيديوهات" في سياق المونتاج والريلز)
-    full_joined = " ".join(x["word"] for x in expanded)
-    is_video_editing_context = any(k in full_joined for k in ["مونتاج", "ريلز", "إيديتينج", "ذكاء", "منصة"])
-
     for i in range(len(expanded)):
         w_curr = expanded[i]["word"].strip("،,.")
         if w_curr in {"لنلو"}:
@@ -981,8 +1116,8 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
             deduped[-1]["word"] = w["word"]
         else:
             deduped.append(w)
+
     repaired = repair_truncated_words_and_sentences(deduped)
-    # Re-expand any multi-word repairs (like 'صوت وصورة') while preserving timestamps
     final_expanded = []
     for w in repaired:
         parts = str(w.get("word", "")).split()
@@ -997,6 +1132,7 @@ def apply_phrase_fixes_to_words(words_list: List[Dict[str, Any]]) -> List[Dict[s
                 })
         else:
             final_expanded.append(w)
+
     cleaned_no_retakes, _ = detect_and_remove_voiceover_retakes(final_expanded, remap_timestamps=False)
     return ensure_word_timestamp_continuity(cleaned_no_retakes)
 
@@ -1028,31 +1164,31 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
             return None
 
         thresh = max(-50.0, min(-30.0, float(audio.dBFS) - 9.0)) if audio.dBFS != -float("inf") else -40.0
-        raw_chunks = detect_nonsilent(audio, min_silence_len=320, silence_thresh=thresh, seek_step=10)
+        # اكتشاف الكلام بدقة مع اعتبار أي صمت > 250ms حد فصل طبيعي
+        raw_chunks = detect_nonsilent(audio, min_silence_len=250, silence_thresh=thresh, seek_step=10)
         if not raw_chunks:
             raw_chunks = [[0, total_ms]]
 
         merged_chunks: List[List[int]] = []
         for s_ms, e_ms in raw_chunks:
-            s_pad = max(0, s_ms - 150)
-            e_pad = min(total_ms, e_ms + 180)
+            s_pad = max(0, s_ms - 120)
+            e_pad = min(total_ms, e_ms + 140)
             if not merged_chunks:
                 merged_chunks.append([s_pad, e_pad])
             else:
                 prev_s, prev_e = merged_chunks[-1]
-                if (s_pad - prev_e < 250 and (e_pad - prev_s) < 5200) or (prev_e - prev_s < 1400 and (e_pad - prev_s) < 5500):
+                if (s_pad - prev_e < 220 and (e_pad - prev_s) < 4800) or (prev_e - prev_s < 1200 and (e_pad - prev_s) < 5000):
                     merged_chunks[-1][1] = e_pad
                 else:
                     merged_chunks.append([s_pad, e_pad])
 
-        # تقسيم المقاطع الطويلة إلى جمل رشيقة (<= 4.2 ثانية) عند أهدأ نقطة صمت بين الكلمات لمنع ضياع أي جملة في Google STT!
         final_chunks: List[Tuple[int, int]] = []
         for s_ms, e_ms in merged_chunks:
             cur_s = s_ms
-            while (e_ms - cur_s) > 4200:
-                search_start = cur_s + 2100
-                search_end = min(e_ms - 800, cur_s + 3900)
-                best_split = cur_s + 3100
+            while (e_ms - cur_s) > 4000:
+                search_start = cur_s + 2000
+                search_end = min(e_ms - 700, cur_s + 3700)
+                best_split = cur_s + 2900
                 min_rms = float("inf")
                 for probe_ms in range(search_start, max(search_start + 25, search_end), 20):
                     win_slice = audio[probe_ms:probe_ms + 45]
@@ -1060,8 +1196,8 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                         min_rms = win_slice.rms
                         best_split = probe_ms + 22
                 final_chunks.append((cur_s, min(e_ms, best_split + 35)))
-                cur_s = max(cur_s + 800, best_split - 35)
-            if e_ms - cur_s >= 180:
+                cur_s = max(cur_s + 700, best_split - 35)
+            if e_ms - cur_s >= 160:
                 final_chunks.append((cur_s, e_ms))
 
         recognizer = sr.Recognizer()
@@ -1079,8 +1215,7 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
                     continue
                 except Exception:
                     break
-            # إذا كانت القطعة > 2200ms وفشلت ككتلة واحدة، نقسمها من المنتصف عند أهدأ نقطة ونفرغ النصفين
-            if (c_e - c_s) > 2200:
+            if (c_e - c_s) > 2000:
                 mid_s = c_s + int((c_e - c_s) * 0.35)
                 mid_e = c_s + int((c_e - c_s) * 0.65)
                 best_m = (c_s + c_e) // 2
@@ -1102,9 +1237,6 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
             except Exception as e:
                 logger.warning(f"تعذر الاتصال بمحرك ar-DZ: {e}")
                 return None
-            if not text_dz:
-                continue
-
             if not text_dz or not text_dz.strip():
                 continue
 
@@ -1115,7 +1247,7 @@ def _transcribe_via_google_ar_dz_chunks(audio_path: str) -> Optional[List[Dict[s
 
             c_start_sec = c_start_ms / 1000.0
             c_end_sec = c_end_ms / 1000.0
-            sub_nonsilent = detect_nonsilent(chunk_audio, min_silence_len=120, silence_thresh=thresh - 2.0, seek_step=10)
+            sub_nonsilent = detect_nonsilent(chunk_audio, min_silence_len=100, silence_thresh=thresh - 2.0, seek_step=10)
             if sub_nonsilent:
                 speech_s_sec = c_start_sec + (sub_nonsilent[0][0] / 1000.0)
                 speech_e_sec = c_start_sec + (sub_nonsilent[-1][1] / 1000.0)
@@ -1430,7 +1562,6 @@ def _run_full_transcription(
     final_device = device if device is not None else detected_device
     final_compute = compute_type if compute_type is not None else detected_compute
 
-    # التحقق من عدم وجود أي فجوة كلامية مفقودة (> 2.5 ثانية) في نتائج ar-DZ قبل اعتمادها المباشر
     _has_large_gap = False
     if ar_dz_words and len(ar_dz_words) >= 3:
         for _gi in range(len(ar_dz_words) - 1):
@@ -1448,7 +1579,6 @@ def _run_full_transcription(
         _force_free_ram()
         return final_words, micro_scenes
 
-    # على المعالج المركزي (CPU / Streamlit Cloud) نستخدم الموديل الرشيق base لتوفير 350MB من الـ RAM لمنع خطأ OOM في المرحلة 5
     eff_model_size = "base" if (final_device == "cpu" and model_size in ("small", "medium", "large-v3", "auto")) else model_size
 
     whisper_words: List[Dict[str, Any]] = []
@@ -1468,7 +1598,7 @@ def _run_full_transcription(
             log_prob_threshold=-1.6,
             no_speech_threshold=0.85,
             vad_filter=vad_filter,
-            vad_parameters=dict(threshold=0.25, min_speech_duration_ms=100, min_silence_duration_ms=650, speech_pad_ms=350)
+            vad_parameters=dict(threshold=0.25, min_speech_duration_ms=100, min_silence_duration_ms=250, speech_pad_ms=200)
         )
 
         for seg in segments:

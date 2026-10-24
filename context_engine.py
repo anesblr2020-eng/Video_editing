@@ -718,3 +718,80 @@ def qa_report(scenes: List[Dict[str, Any]], transcript: str) -> List[str]:
 
 def storyboard_cache_key(scenes: List[Dict[str, Any]]) -> str:
     return hashlib.md5("|".join(str(s.get("text", "")) for s in scenes).encode("utf-8")).hexdigest()
+
+
+# ==============================================================================
+# 5. التحكم البصري السريع وتغيير المشهد كل 2.5 - 3 ثوانٍ (Hormozi Fast Visual Pacing & Pexels Query Builder)
+# ==============================================================================
+import math
+
+def enforce_fast_hormozi_scene_pacing(
+    planned_scenes: List[Dict[str, Any]],
+    min_scene_sec: float = 1.6,
+    max_scene_sec: float = 2.85
+) -> List[Dict[str, Any]]:
+    """
+    يضمن تغيير المشهد أو الزاوية البصرية كل `2.5` إلى `3.0` ثوانٍ كحد أقصى لكسر الملل والاحتفاظ بانتباه المشاهد (High Retention):
+    إذا كان أي مشهد أطول من `max_scene_sec` (~2.85s)، يتم تقسيمه تلقائياً إلى لقطتين بصريتين متتاليتين
+    مع تبديل زاوية الكاميرا/وضع العرض (`full_screen` <-> `stock_broll` / `split_screen_stage`) وتنويع الرسم التعبيري.
+    """
+    if not planned_scenes:
+        return []
+
+    paced_scenes: List[Dict[str, Any]] = []
+    layout_cycle = ["full_screen", "stock_broll", "split_screen_stage"]
+    archetype_fallbacks = [
+        "video_montage_studio", "time_warp_clock", "ai_neural_brain",
+        "growth_analytics", "platform_builder", "reels_smartphone"
+    ]
+
+    for idx, sc in enumerate(planned_scenes):
+        s_start = float(sc.get("start", 0.0))
+        s_end = float(sc.get("end", s_start + 2.5))
+        dur = s_end - s_start
+
+        if dur <= max_scene_sec or dur < (min_scene_sec * 1.75):
+            sc_copy = dict(sc)
+            sc_copy["scene_index"] = len(paced_scenes)
+            paced_scenes.append(sc_copy)
+            continue
+
+        # تقسيم المشهد الطويل إلى لقطات سريعة كل 2.5 - 2.8 ثانية
+        num_parts = max(2, int(math.ceil(dur / 2.65)))
+        part_dur = dur / float(num_parts)
+        words_list = list(sc.get("words") or [])
+        text_tokens = str(sc.get("text", "")).split()
+
+        for p_i in range(num_parts):
+            p_start = round(s_start + p_i * part_dur, 3)
+            p_end = round(s_end if p_i == num_parts - 1 else (s_start + (p_i + 1) * part_dur), 3)
+            sub_sc = dict(sc)
+            sub_sc["start"] = p_start
+            sub_sc["end"] = p_end
+            sub_sc["duration"] = round(p_end - p_start, 3)
+            sub_sc["scene_index"] = len(paced_scenes)
+
+            if words_list:
+                sub_words = [w for w in words_list if float(w.get("start", 0.0)) >= p_start - 0.08 and float(w.get("start", 0.0)) < p_end + 0.05]
+                if sub_words:
+                    sub_sc["words"] = sub_words
+                    sub_sc["text"] = " ".join(str(w.get("word", "")).strip() for w in sub_words if str(w.get("word", "")).strip())
+            elif text_tokens:
+                chunk_sz = max(1, int(math.ceil(len(text_tokens) / float(num_parts))))
+                tok_slice = text_tokens[p_i * chunk_sz:(p_i + 1) * chunk_sz]
+                if tok_slice:
+                    sub_sc["text"] = " ".join(tok_slice)
+
+            if p_i > 0 and not sc.get("user_override_archetype"):
+                cur_layout = str(sc.get("layout_mode", "full_screen"))
+                next_layout = layout_cycle[(layout_cycle.index(cur_layout) + p_i) % len(layout_cycle)] if cur_layout in layout_cycle else "stock_broll"
+                sub_sc["layout_mode"] = next_layout
+                sub_sc["zoom_factor"] = 1.14 if (p_i % 2 == 1) else 1.06
+                if next_layout != "stock_broll":
+                    alt_arch = archetype_fallbacks[(idx + p_i) % len(archetype_fallbacks)]
+                    sub_sc["archetype"] = alt_arch
+                    sub_sc["visual_subject"] = alt_arch
+
+            paced_scenes.append(sub_sc)
+
+    return paced_scenes

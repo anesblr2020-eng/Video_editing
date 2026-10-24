@@ -1041,8 +1041,9 @@ with col2:
                 with open(sb_save_path, "wb") as sbf:
                     shutil.copyfileobj(sb_uploaded_img, sbf)
 
+            import re as _re_mod
             forced_g = None
-            m_grid = re.match(r"^(\d+)×(\d+)", sb_grid_choice.strip())
+            m_grid = _re_mod.match(r"^(\d+)[×xX](\d+)", sb_grid_choice.strip())
             if m_grid:
                 forced_g = (int(m_grid.group(1)), int(m_grid.group(2)))
             r_order = "rtl" if "اليمين" in sb_order_choice else "ltr"
@@ -1519,7 +1520,11 @@ if result_path and os.path.exists(result_path):
                             cur_sfx_m = "auto_all"
 
                         with st.expander(f"🎬 المشهد #{sc_i + 1} ({s_st:.1f}s - {s_en:.1f}s): {sc_data.get('concept_title', '')[:38]}", expanded=(sc_i < 2)):
-                            st.caption(f"🎙️ **الكلام المنطوق:** {sc_data.get('text', '')}")
+                            new_spoken_text = st.text_input(
+                                f"🎙️ تعديل الكلام المنطوق في المشهد #{sc_i + 1} (ينعكس فوراً في الكابشن والموشن جرافيك):",
+                                value=str(sc_data.get("text", "")),
+                                key=f"sc_spoken_txt_{sc_i}"
+                            )
                             chosen_arch = st.selectbox(
                                 f"🎨 الرسمة / المجسم التعبيري للمشهد #{sc_i + 1}:",
                                 options=arch_keys,
@@ -1567,11 +1572,7 @@ if result_path and os.path.exists(result_path):
                             )
 
                             sc_copy = dict(sc_data)
-                            sc_copy["archetype"] = chosen_arch
-                            sc_copy["user_override_archetype"] = chosen_arch
-                            sc_copy["visual_subject"] = chosen_arch
-                            if isinstance(sc_copy.get("scene_style_spec"), dict):
-                                sc_copy["scene_style_spec"]["visual_archetype"] = chosen_arch
+                            sc_copy["text"] = new_spoken_text.strip() or sc_data.get("text", "")
                             sc_copy["concept_title"] = new_ctitle.strip() or sc_data.get("concept_title", "")
                             sc_copy["short_title"] = sc_copy["concept_title"]
                             sc_copy["badge_label"] = new_badge.strip() or sc_data.get("badge_label", "")
@@ -1581,6 +1582,23 @@ if result_path and os.path.exists(result_path):
                             parsed_subs = [s.strip() for s in new_subs_str.split("|") if s.strip()]
                             if parsed_subs:
                                 sc_copy["sub_items"] = parsed_subs
+                            # إذا غيّر المستخدم الرسمة يدوياً نعتمد اختياره، وإذا غيّر الكلمات المفتاحية أو الكلام المنطوق نحدّث الرسمة سياقياً تلقائياً
+                            orig_arch = str(sc_data.get("user_override_archetype") or sc_data.get("archetype") or arch_keys[0])
+                            if chosen_arch != orig_arch:
+                                eff_arch = chosen_arch
+                                sc_copy["user_override_archetype"] = eff_arch
+                            else:
+                                from motion_text import classify_micro_scene_blueprint
+                                bp_live = classify_micro_scene_blueprint(
+                                    f"{sc_copy['kpi_value']} {sc_copy['concept_title']} {sc_copy['text']} {' '.join(parsed_subs)}",
+                                    sc_i,
+                                    len(session_scenes)
+                                )
+                                eff_arch = bp_live.get("visual_subject", chosen_arch)
+                            sc_copy["archetype"] = eff_arch
+                            sc_copy["visual_subject"] = eff_arch
+                            if isinstance(sc_copy.get("scene_style_spec"), dict):
+                                sc_copy["scene_style_spec"]["visual_archetype"] = eff_arch
                             updated_scenes_plan.append(sc_copy)
 
                     btn_col_sfx_fast, btn_col_full_rerender = st.columns(2)
@@ -1607,6 +1625,12 @@ if result_path and os.path.exists(result_path):
                         st.rerun()
 
                 if full_scene_submit and active_input_path:
+                    from transcriber import sync_live_scene_edits_to_words, set_custom_caption_override
+                    updated_scenes_plan, synced_words = sync_live_scene_edits_to_words(updated_scenes_plan, current_words)
+                    if synced_words:
+                        new_w_all, new_s_all = set_custom_caption_override(custom_words=synced_words)
+                        st.session_state["caption_words"] = new_w_all
+                        st.session_state["caption_sentences"] = new_s_all
                     saved_session["planned_scenes"] = updated_scenes_plan
                     try:
                         with open(LAST_SESSION_PATH, "w", encoding="utf-8") as sf:

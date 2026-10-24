@@ -1,6 +1,15 @@
-# ==============================================================================
-# AI Video Automation - Royalty-Free Stock Video Finder & Low-RAM B-Roll Pipeline
-# ==============================================================================
+# -*- coding: utf-8 -*-
+"""
+stock_video_finder.py - محرك Pexels API للقطات B-Roll السياقية مع تقريب بطيء (100% -> 105%) وضبابية خفيفة (Gaussian Blur)
+=============================================================================================================================
+متطلبات الهندسة المعمارية (Alex Hormozi Visual Control & B-Roll Engine):
+1. ربط النظام بواجهة `Pexels API` لسحب لقطات فيديو فعلية (`B-Roll`) تتناسب مباشرة مع الكلمات المفتاحية للجملة المنطوقة
+   (`search_query` أو الكلمات المفتاحية العربية/الدارجة المترجمة آلياً إلى استعلامات Pexels دقيقة).
+2. تطبيق تأثير تقريب بطيء (`Slow Zoom-in` من `100%` إلى `105%`) مع ضبابية خفيفة (`Gaussian Blur`) وتعتيم سينمائي مدروس
+   على خلفية الـ B-Roll عبر دالة `apply_hormozi_broll_slow_zoom_and_blur` لإبراز النصوص والأيقونات الأمامية بوضوح فائق.
+3. تغيير المشهد أو الزاوية البصرية كل `2.5` إلى `3` ثوانٍ لكسر الملل (Visual Pacing).
+"""
+
 import sys
 import os
 import gc
@@ -17,7 +26,16 @@ import math
 import hashlib
 import logging
 from typing import Dict, Any, List, Optional, Tuple
+import numpy as np
 import requests
+from PIL import Image, ImageDraw, ImageFilter
+
+try:
+    import cv2
+    _HAS_CV2 = True
+except Exception:
+    cv2 = None
+    _HAS_CV2 = False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -67,7 +85,76 @@ CURATED_DIRECT_STOCK_VIDEOS = {
 }
 
 
+# قاموس تحويل الكلمات المفتاحية العربية والدارجة إلى استعلامات Pexels API إنجليزية دقيقة
+ARABIC_KEYWORD_TO_PEXELS_QUERY: List[Tuple[Tuple[str, ...], str]] = [
+    (("يمونتي", "نيمونتي", "تمونتي", "مونتاج", "تعديل فيديو", "بريمير", "كاب كات", "فيديو"), "video editing timeline computer studio"),
+    (("ما عندوش وقت", "ماعندوش وقت", "ما عندها وقت", "وقت", "ساعة", "مشغول", "تأخير", "سرعة"), "hourglass clock time lapse busy working"),
+    (("ذكاء اصطناعي", "ذكاء", "خوارزمية", "روبوت", "أوتوماتيكي", "تلقائي", "نظام"), "artificial intelligence neural network technology"),
+    (("منصة", "تطبيق", "موقع", "كود", "برمجة", "سيرفر", "تطوير"), "software developer coding laptop screen"),
+    (("ريلز", "تيك توك", "شورتس", "انستغرام", "سوشيال ميديا", "موبايل", "هاتف", "تلفون"), "person scrolling smartphone social media reels"),
+    (("مشاهدات", "انتشار", "فايرل", "مبيعات", "أرباح", "نمو", "نتائج", "إحصائيات"), "business analytics growth chart screen"),
+    (("صانع محتوى", "محتوى", "مايكروفون", "كاميرا", "تصوير", "تسجيل", "استوديو"), "content creator recording microphone studio"),
+    (("توصيل", "شحن", "طلبية", "منتج", "سلعة", "شراء", "متجر"), "ecommerce package delivery courier"),
+]
+
+
+def build_pexels_query_from_scene_keywords(
+    scene_text: str = "",
+    concept_title: str = "",
+    kpi_value: str = "",
+    category: str = "video_editor"
+) -> str:
+    """
+    يبني استعلام بحث `Pexels API` دقيق باللغة الإنجليزية من الكلمات المفتاحية التي عدلها المستخدم
+    (`kpi_value`, `concept_title`) أو من الكلام المنطوق في المشهد (`scene_text`).
+    """
+    combined = f"{kpi_value} {concept_title} {scene_text}".strip().lower()
+
+    # إذا كتب المستخدم كلمات إنجليزية مباشرة في الكلمات المفتاحية، نستخدمها فوراً
+    en_tokens = re.findall(r"[a-zA-Z]{3,}", f"{kpi_value} {concept_title}")
+    if len(en_tokens) >= 2:
+        return " ".join(en_tokens[:5])
+
+    matched_queries: List[str] = []
+    for kw_tuple, pexels_q in ARABIC_KEYWORD_TO_PEXELS_QUERY:
+        if any(kw in combined for kw in kw_tuple):
+            matched_queries.append(pexels_q)
+            if len(matched_queries) >= 2:
+                break
+
+    if matched_queries:
+        return matched_queries[0]
+
+    query_map = {
+        'ecommerce_showcase': 'charging cable phone accessories ecommerce',
+        'delivery_express': 'delivery courier package box',
+        'video_editor': 'video editing computer timeline studio',
+        'ai_technology': 'artificial intelligence technology abstract screen',
+        'busy_no_time': 'time lapse clock hourglass busy work',
+        'smartphone_reels': 'person using smartphone social media',
+        'developer_coding': 'developer coding keyboard dark screen',
+        'creator_studio': 'content creator microphone studio desk'
+    }
+    return query_map.get(category.lower(), 'video editing computer creator studio')
+
+
 def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
+    t = (scene_text or "").lower()
+    if any(w in t for w in ('يمونتي', 'نيمونتي', 'تمونتي', 'مونتاج', 'تعديل', 'قص', 'فيديو', 'محرر')):
+        return 'video_editor'
+    if any(w in t for w in ('وقت', 'ساعة', 'ما عندها وقت', 'ما عندوش وقت', 'ماعندوش وقت', 'مشغول', 'ساعات', 'تأخير')):
+        return 'busy_no_time'
+    if any(w in t for w in ('ذكاء', 'اصطناعي', 'خوارزمية', 'أوتوماتيكي', 'ai', 'neural')):
+        return 'ai_technology'
+    if any(w in t for w in ('كابل', 'شاحن', 'سيبور', 'منتج', 'سلعة', 'توصيل', 'شراء', 'تشارجي')):
+        return 'ecommerce_showcase'
+    if any(w in t for w in ('انستغرام', 'انستقرام', 'ريلز', 'تيك توك', 'شورتس', 'سوشيال', 'هاتف', 'تلفون', 'موبايل', 'smartphone')):
+        return 'smartphone_reels'
+    if any(w in t for w in ('كود', 'برمجة', 'أبني', 'تطبيق', 'موقع', 'منصة', 'developer', 'code')):
+        return 'developer_coding'
+    if any(w in t for w in ('استوديو', 'صانع محتوى', 'مبدع', 'كاميرا', 'تسجيل', 'ميكروفون', 'creator')):
+        return 'creator_studio'
+
     type_map = {
         'ecommerce_showcase': 'ecommerce_showcase',
         'delivery_express': 'delivery_express',
@@ -85,21 +172,55 @@ def map_scene_to_stock_category(scene_type: str, scene_text: str) -> str:
     }
     if scene_type in type_map:
         return type_map[scene_type]
+    return 'video_editor'
 
-    t = scene_text.lower()
-    if any(w in t for w in ('كابل', 'شاحن', 'سيبور', 'منتج', 'سلعة', 'توصيل', 'شراء', 'تشارجي')):
-        return 'ecommerce_showcase'
-    if any(w in t for w in ('انستغرام', 'انستقرام', 'ريلز', 'تيك توك', 'شورتس', 'سوشيال', 'هاتف', 'تلفون', 'موبايل', 'smartphone')):
-        return 'smartphone_reels'
-    if any(w in t for w in ('ذكاء', 'اصطناعي', 'خوارزمية', 'أوتوماتيكي', 'ai', 'neural')):
-        return 'ai_technology'
-    if any(w in t for w in ('وقت', 'ساعة', 'ما عندها وقت', 'ما عندهمش وقت', 'مشغول', 'ساعات', 'تأخير')):
-        return 'busy_no_time'
-    if any(w in t for w in ('كود', 'برمجة', 'أبني', 'تطبيق', 'موقع', 'منصة', 'developer', 'code')):
-        return 'developer_coding'
-    if any(w in t for w in ('استوديو', 'صانع محتوى', 'مبدع', 'كاميرا', 'تسجيل', 'ميكروفون', 'creator')):
-        return 'creator_studio'
-    return 'smartphone_reels' 
+
+def apply_hormozi_broll_slow_zoom_and_blur(
+    frame_rgb: np.ndarray,
+    scene_progress: float,
+    target_w: int,
+    target_h: int,
+    start_zoom: float = 1.00,
+    end_zoom: float = 1.05,
+    gaussian_sigma: float = 2.2,
+    darken_factor: float = 0.82
+) -> np.ndarray:
+    """
+    تطبيق معالجة الخلفية السينمائية بأسلوب (Alex Hormozi B-Roll Treatment):
+    1. تقريب بطيء ومستمر (`Slow Zoom-in` من `100%` إلى `105%`) طوال مدة المشهد (`scene_progress` من `0.0` إلى `1.0`).
+    2. ضبابية غاوسية خفيفة (`Subtle Gaussian Blur`) لفصل خلفية الـ B-Roll عن النصوص والأيقونات الأمامية.
+    3. تعتيم سينمائي خفيف (`darken_factor=0.82`) لإبراز النص الأصفر/الأخضر الفاقع والأيقونات بوضوح 100%.
+    """
+    if frame_rgb is None or frame_rgb.ndim != 3:
+        return frame_rgb
+
+    u = max(0.0, min(1.0, float(scene_progress)))
+    zoom_now = float(start_zoom) + (float(end_zoom) - float(start_zoom)) * u
+
+    fh, fw, _ = frame_rgb.shape
+    cw = max(16, int(round(fw / max(1.0, zoom_now))))
+    ch = max(16, int(round(fh / max(1.0, zoom_now))))
+    x1 = max(0, (fw - cw) // 2)
+    y1 = max(0, (fh - ch) // 2)
+    cropped = frame_rgb[y1:y1 + ch, x1:x1 + cw]
+
+    if _HAS_CV2 and cv2 is not None:
+        resized = cv2.resize(cropped, (int(target_w), int(target_h)), interpolation=cv2.INTER_LINEAR)
+        if gaussian_sigma > 0.2:
+            ksize = max(3, int(round(gaussian_sigma * 2.5)) | 1)
+            blurred = cv2.GaussianBlur(resized, (ksize, ksize), sigmaX=float(gaussian_sigma))
+        else:
+            blurred = resized
+    else:
+        pil_img = Image.fromarray(cropped).resize((int(target_w), int(target_h)), Image.Resampling.BILINEAR)
+        if gaussian_sigma > 0.2:
+            pil_img = pil_img.filter(ImageFilter.GaussianBlur(radius=float(gaussian_sigma)))
+        blurred = np.asarray(pil_img, dtype=np.uint8)
+
+    if 0.1 < darken_factor < 0.99:
+        blurred = np.clip(blurred.astype(np.float32) * float(darken_factor), 0, 255).astype(np.uint8)
+
+    return blurred
 
 
 def download_video_file(url: str, output_path: str, timeout: int = 12) -> bool:
@@ -107,7 +228,7 @@ def download_video_file(url: str, output_path: str, timeout: int = 12) -> bool:
         headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
         resp = requests.get(url, headers=headers, stream=True, timeout=timeout)
         if resp.status_code == 200:
-            max_bytes = 15 * 1024 * 1024  # سقف 15MB لأي مقطع B-Roll لمنع امتلاء الذاكرة
+            max_bytes = 15 * 1024 * 1024
             written = 0
             with open(output_path, 'wb') as f:
                 for chunk in resp.iter_content(chunk_size=131072):
@@ -129,13 +250,12 @@ def fetch_pexels_stock_video(query: str, api_key: str, cache_dir: str, orientati
     try:
         url = 'https://api.pexels.com/videos/search'
         headers = {'Authorization': api_key}
-        params = {'query': query, 'per_page': 4, 'orientation': orientation}
+        params = {'query': query, 'per_page': 5, 'orientation': orientation}
         resp = requests.get(url, headers=headers, params=params, timeout=8)
         if resp.status_code == 200:
             videos = resp.json().get('videos', [])
             for vid in videos:
                 files = [f for f in vid.get('video_files', []) if f.get('link') and f.get('file_type') == 'video/mp4']
-                # اختيار النسخة الخفيفة SD/HD (بعرض قريب من 540px) وتجنب ملفات 4K UHD الثقيلة التي تسقط ذاكرة السيرفر!
                 files.sort(key=lambda x: abs(int(x.get('width') or 720) - 540))
                 for f_info in files:
                     link = f_info.get('link')
@@ -151,9 +271,6 @@ def fetch_pexels_stock_video(query: str, api_key: str, cache_dir: str, orientati
 
 
 def generate_procedural_broll_clip(category: str, output_path: str, width: int = 540, height: int = 960, duration: float = 3.0) -> str:
-    import numpy as np
-    from PIL import Image, ImageDraw
-
     width = max(2, width - (width % 2))
     height = max(2, height - (height % 2))
     fps = 24
@@ -213,25 +330,34 @@ def generate_procedural_broll_clip(category: str, output_path: str, width: int =
     return output_path
 
 
-def get_stock_broll_clip(category: str, target_duration: float, cache_dir: str, width: int = 540, height: int = 960, pexels_api_key: Optional[str] = None, allow_procedural_fallback: bool = False) -> Optional[str]:
+def get_stock_broll_clip(
+    category: str,
+    target_duration: float,
+    cache_dir: str,
+    width: int = 540,
+    height: int = 960,
+    pexels_api_key: Optional[str] = None,
+    allow_procedural_fallback: bool = False,
+    custom_search_query: Optional[str] = None,
+    scene_text: str = ""
+) -> Optional[str]:
+    """
+    يسحب مقطع فيديو B-Roll فعلي من `Pexels API` (أو مكتبة المقاطع المباشرة الخالية من حقوق الملكية)
+    بناءً على الكلمات المفتاحية للجملة المنطوقة أو تعديلات المستخدم (`custom_search_query`).
+    """
     os.makedirs(cache_dir, exist_ok=True)
-    cat_key = category.lower()
+    cat_key = map_scene_to_stock_category(category, scene_text) if scene_text else category.lower()
     is_portrait = (height >= width)
     orientation = 'portrait' if is_portrait else 'landscape'
 
-    if pexels_api_key:
-        query_map = {
-            'ecommerce_showcase': 'charging cable phone accessories',
-            'delivery_express': 'delivery courier package box',
-            'video_editor': 'video editing computer',
-            'ai_technology': 'artificial intelligence technology',
-            'busy_no_time': 'time lapse clock laptop',
-            'smartphone_reels': 'person using smartphone',
-            'developer_coding': 'developer coding keyboard',
-            'creator_studio': 'content creator desk'
-        }
-        q = query_map.get(cat_key, 'technology digital screen')
-        vid_p = fetch_pexels_stock_video(q, pexels_api_key, cache_dir, orientation=orientation)
+    eff_pexels_key = pexels_api_key or os.environ.get("PEXELS_API_KEY", "")
+    if eff_pexels_key:
+        q = (custom_search_query or "").strip() or build_pexels_query_from_scene_keywords(
+            scene_text=scene_text,
+            kpi_value=custom_search_query or "",
+            category=cat_key
+        )
+        vid_p = fetch_pexels_stock_video(q, eff_pexels_key, cache_dir, orientation=orientation)
         if vid_p and os.path.exists(vid_p):
             return vid_p
 
