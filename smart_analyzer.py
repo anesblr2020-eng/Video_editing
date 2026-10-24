@@ -598,23 +598,38 @@ class WebMotionLearner:
             if len(w) > 2 and w.lower() not in filler_stop
         ]
 
-        # بناء العناصر الفرعية التوضيحية من عبارات وكلمات المشهد الفعلي وليس من نصوص ثابتة مكررة
+        from style_evolution_brain import detect_strict_speech_intent
+        speech_intent = detect_strict_speech_intent(scene_text, scene_index, total_scenes)
+
+        # بناء العناصر الفرعية التوضيحية بذكاء منطقي:
+        # - إذا كان المتحدث يعدد نقاطاً صراحةً (مثل: أفضل 3 ميزات، أولاً، ثانياً...) نقسم النقاط المنطوقة كقائمة.
+        # - أما في الكلام العام أو الترحيبي، فيُمنع منعاً باتاً تقطيع الجملة إلى شظايا مرقمة أو سحب كلمات من المشهد السابق/اللاحق!
         sub_items: List[str] = []
-        chunk_size = max(2, min(3, len(meaningful_tokens) // 2 or 2))
-        for i in range(0, len(meaningful_tokens), chunk_size):
-            phrase = " ".join(meaningful_tokens[i:i + chunk_size]).strip()
-            if len(phrase) >= 3 and phrase not in sub_items:
-                sub_items.append(phrase)
-        if len(sub_items) < 4 and next_tokens:
-            p_next = " ".join(next_tokens[:3]).strip()
-            if p_next and p_next not in sub_items:
-                sub_items.append(p_next)
-        if len(sub_items) < 4 and prev_tokens:
-            p_prev = " ".join(prev_tokens[:3]).strip()
-            if p_prev and p_prev not in sub_items:
-                sub_items.append(p_prev)
-        while len(sub_items) < 4:
-            sub_items.append(concept_title if len(sub_items) == 0 else " ".join(meaningful_tokens[:min(3, len(meaningful_tokens))]))
+        if speech_intent["is_explicit_enumeration"]:
+            parts = [p.strip() for p in re.split(r"[،,؛\-]|(?:أولاً|اولا|ثانياً|ثانيا|ثالثاً|ثالثا|رابعاً|رابعا|الشيء الأول|الشيء الثاني|الشيء الثالث|الميزة الأولى|الميزة الثانية|الخاصية الأولى|الخاصية الثانية)", raw_clean) if len(p.strip()) >= 4]
+            for pt in parts:
+                if pt not in sub_items:
+                    sub_items.append(pt[:36])
+            if len(sub_items) < 3:
+                chunk_size = max(2, min(3, len(meaningful_tokens) // 3 or 2))
+                for i in range(0, len(meaningful_tokens), chunk_size):
+                    phrase = " ".join(meaningful_tokens[i:i + chunk_size]).strip()
+                    if len(phrase) >= 4 and phrase not in sub_items:
+                        sub_items.append(phrase)
+        else:
+            # في الكلام غير التعدادي، نكتفي بخلاصة الفكرة دون تقطيع الجملة إلى 4 عناصر عشوائية!
+            if len(meaningful_tokens) >= 6:
+                half = len(meaningful_tokens) // 2
+                p1 = " ".join(meaningful_tokens[:half]).strip()
+                p2 = " ".join(meaningful_tokens[half:]).strip()
+                if len(p1) >= 4 and p1 != concept_title:
+                    sub_items.append(p1)
+                if len(p2) >= 4 and p2 != concept_title and p2 not in sub_items:
+                    sub_items.append(p2)
+            elif len(meaningful_tokens) >= 3:
+                p_tail = " ".join(meaningful_tokens[-3:]).strip()
+                if p_tail != concept_title:
+                    sub_items.append(p_tail)
 
         # استخراج أي رقم أو نسبة أو مؤشر منطوق فعلياً في الجملة
         num_m = re.search(r"(\d+\s*(?:%|ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات|ولاية|خصائص|ميزات|أضعاف|مرات)?)", scene_text or "")
@@ -675,6 +690,8 @@ class WebMotionLearner:
         }
         scene_type = scene_type_map.get(vis_subj, "growth_analytics")
 
+        first_sub = sub_items[0] if sub_items else concept_title
+        second_sub = sub_items[1] if len(sub_items) > 1 else kpi_label
         return {
             "archetype": arch,
             "visual_subject": vis_subj,
@@ -683,9 +700,12 @@ class WebMotionLearner:
             "concept_title": concept_title,
             "concept_subtitle": raw_clean[:68] if raw_clean else concept_title,
             "sub_items": sub_items[:4],
-            "balance_left": (sub_items[0], "الوضع السابق"),
-            "balance_right": (sub_items[min(1, len(sub_items) - 1)], kpi_value),
-            "before_after": (sub_items[0], "4.0", concept_title[:22], "9.8"),
+            "is_explicit_enumeration": speech_intent["is_explicit_enumeration"],
+            "is_explicit_comparison": speech_intent["is_explicit_comparison"],
+            "is_explicit_metric_counter": speech_intent["is_explicit_metric_counter"],
+            "balance_left": (first_sub, "الوضع السابق"),
+            "balance_right": (second_sub, kpi_value),
+            "before_after": (first_sub, "4.0", concept_title[:22], "9.8"),
             "typewriter_query": concept_title,
             "kpi_value": kpi_value,
             "kpi_label": kpi_label,
@@ -715,10 +735,14 @@ class MotionQualityAuditor:
             arch = str(item.get("archetype", "")).strip()
             vis_subj = str(item.get("visual_subject", "")).strip()
 
+            from style_evolution_brain import detect_strict_speech_intent
+            intent_check = detect_strict_speech_intent(raw_text, idx, total_scenes)
+            forbidden_archs = intent_check["forbidden_archetypes"]
+
             if user_arch and user_arch in ALL_DYNAMIC_VISUAL_ARCHETYPES:
                 arch = user_arch
                 vis_subj = user_arch
-            elif not arch or arch not in ALL_DYNAMIC_VISUAL_ARCHETYPES or arch in used_archs:
+            elif not arch or arch not in ALL_DYNAMIC_VISUAL_ARCHETYPES or arch in used_archs or arch in forbidden_archs:
                 arch, matched_subj = match_speech_to_visual_archetype(
                     scene_text=raw_text,
                     scene_index=idx,

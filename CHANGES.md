@@ -1,3 +1,25 @@
+# سجل التحديثات الجوهرية (Changelog - v10.0 Live Web Motion Graphics & Strict Semantic Intent Edition)
+
+## 1. محرك جلب أشكال الموشن جرافيك الحية من الإنترنت + إعادة التلوين بثيم الفيديو (`vector_lottie_engine.py` & `app.py`)
+- **جلب حي ومستمر من الإنترنت (+200,000 شكل فيكتور وموشن جرافيك)**:
+  - أضفنا محرك `search_and_fetch_web_vectors` و `translate_scene_to_web_vector_queries` المدعوم بقاموس بصري شامل للعربية والدارجة الجزائرية، يبحث حياً في مكتبات الفيكتور المفتوحة على الإنترنت (`Iconify API: Solar, Phosphor, Lucide, Tabler, Fluent, MDI` + `Lottie JSON`) ويحمل ملفات الـ `SVG` المطابقة لمعنى كل جملة منطوقة مع حفظها في الكاش `assets/web_motion_cache/`.
+- **توحيد الألوان التلقائي مع ثيم الفيديو النشط (`render_recolored_svg_motion_canvas`)**:
+  - بنينا محلل مسارات فيكتور هندسياً كاملاً (`parse_svg_path_to_polylines`) يدعم جميع أوامر الـ SVG (`M, L, H, V, C, S, Q, T, A, Z` + `circle, rect, ellipse, polygon, polyline`)، يجرد الشكل المجلوب من ألوانه الأصلية العشوائية، ويعيد تلوينه بالكامل بألوان ثيم الفيديو النشط (`primary`, `secondary`, `accent`) مع رسم تدريجي حي للمسارات (`Trim Paths` 0% -> 100%) وحلقات مدارية ثلاثية الأبعاد مرسومة فوقه (`render_web_fetched_motion_scene`).
+
+## 2. ربط وفهرسة حزم الموشن جرافيك الضخمة (400MB+ Google Drive / ZIP Streamer بدون استهلاك الرام)
+- أضفنا القسم `🌐 4.5 محرك الموشن جرافيك الحي من الإنترنت + ربط حزمة 400MB+ (Zero-OOM)` في `app.py` والدوال `import_motion_pack_from_url_or_path` و `index_custom_motion_pack_directory` في `vector_lottie_engine.py`:
+  - يدعم لصق رابط Google Drive لحزمة الـ `400MB+` (أو رابط ZIP مباشر أو مسار مجلد محلي)، حيث يقوم السيرفر بتحميلها بالتدفق المباشر إلى القرص (`8MB Chunked Streaming`) وفهرستها في `assets/custom_motion_pack/pack_index.json` واستدعاء شكل واحد فقط عند الحاجة دون تجاوز حد الـ 1GB RAM على Streamlit Cloud.
+
+## 3. بوابة المنطق الدلالي الصارم ومنع القوائم المرقمة الخاطئة (`style_evolution_brain.py` & `smart_analyzer.py` & `motion_text.py`)
+- أضفنا محرك `detect_strict_speech_intent` الذي يفحص الجملة المنطوقة بدقة:
+  - **منع الترقيم العشوائي للكلام العام**: القوالب المرقمة (`macos_folder_counter_list`, `step_cascade_ribbon_cards`, `nle_timeline_matrix`, `hero_roadmap_milestones`, `live_magnifier_scanner`) محظورة تماماً إلا عندما يعدد المتحدث نقاطاً صراحةً (مثل: *"أفضل ثلاث ميزات..."*، *"الشيء الأول... الشيء الثاني..."*، *"الخاصية الأولى..."*، *"أولاً... ثانياً..."*). لن يتحول الكلام الترحيبي أو العام (مثل *"السلام عليكم كيف الحال طيبين"* أو *"الحل هو منصة..."*) أبداً إلى لوحة مرقمة `1 - ... | 2 - ... | 3 - ...` أو عداد `+28` وهمي!
+  - **منع سحب كلمات المشهد السابق/اللاحق وتكرار الكبسولات**: أصلحنا `_build_deep_scene_blueprint` و `_draw_bottom_speech_pills` لمنع تقطيع الجملة الواحدة إلى شظايا مكررة مثل `"عندها مش • عندها مش"`.
+
+## 4. إصلاح الكلمات المبتورة صوتياً في الدارجة والعربية (`transcriber.py`)
+- أضفنا إصلاحات سياقية فورية للكلمات التي قد يبترها التعرف الصوتي السريع مثل: `"للرز" -> "للريلز"`، `"عندها مش في المونتاج" -> "عندها مشكل في المونتاج"`، و `"تصور لي الفيديوهات" -> "تصور الفيديوهات"`.
+
+---
+
 # سجل التحديثات الجوهرية (CHANGES.md - إصدار الـ 32 رسمة تعبيرية + الساوند ديزاين الكامل + المحرر الحي من المنصة)
 
 ## 1. القضاء التام على تكرار الرسومات والنصوص وتوليد 16 مجسماً تعبيرياً مفتوحاً متوافقاً 100% مع الكلام (`vector_lottie_engine.py`, `style_evolution_brain.py`, `smart_analyzer.py`, `motion_text.py`)

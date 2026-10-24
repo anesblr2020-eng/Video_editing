@@ -1026,6 +1026,80 @@ with col2:
             )
 
     # ==========================================================================
+    # القسم 4.5: محرك جلب الموشن جرافيك الحي من الإنترنت + ربط حزمة 400MB+ (Zero-OOM)
+    # ==========================================================================
+    with st.expander("🌐 4.5 محرك الموشن جرافيك الحي من الإنترنت (+200,000 شكل) + ربط حزمة 400MB+ (Google Drive / ZIP)", expanded=True):
+        from vector_lottie_engine import (
+            set_live_web_fetch_enabled,
+            is_live_web_fetch_enabled,
+            import_motion_pack_from_url_or_path,
+            get_custom_pack_stats,
+            CUSTOM_PACK_DIR,
+            index_custom_motion_pack_directory
+        )
+        st.caption(
+            "🚀 **كيف يعمل؟** يبحث النظام حياً في الإنترنت عن أشكال ورسومات الفيكتور والموشن جرافيك المطابقة لمعنى كل جملة، "
+            "و**يعيد تلوينها تلقائياً لتطابق ألوان ثيم الفيديو النشط**، ثم يرسم فوقها وحولها طبقات أنيميشن تفاعلية (Trim Paths + 3D Orbit) "
+            "حتى لا تتكرر نفس الرسومات أبداً! كما يمكنك ربط حزمة الـ **400MB+** الخاصة بك عبر رابط Google Drive أو مجلد محلي بدون استهلاك رام السيرفر."
+        )
+        web_vec_toggle = st.toggle(
+            "✅ تفعيل جلب أشكال الموشن جرافيك الحية من الإنترنت وتوحيد ألوانها مع ثيم الفيديو",
+            value=is_live_web_fetch_enabled(),
+            key="toggle_live_web_vector_engine"
+        )
+        set_live_web_fetch_enabled(web_vec_toggle)
+
+        pack_stats = get_custom_pack_stats()
+        if pack_stats.get("total_assets", 0) > 0:
+            st.success(
+                f"📦 **حزمة الموشن جرافيك الخاصة مربوطة ومفهرسة:** إجمالي `{pack_stats.get('total_assets', 0)}` أصل "
+                f"(SVG: `{pack_stats.get('svg_count', 0)}` | Lottie JSON: `{pack_stats.get('lottie_count', 0)}` | "
+                f"PNG/WebP: `{pack_stats.get('image_count', 0)}` | Video Overlays: `{pack_stats.get('video_count', 0)}`)"
+            )
+
+        pk_col1, pk_col2 = st.columns([2.2, 1.0])
+        with pk_col1:
+            pack_url_or_dir = st.text_input(
+                "🔗 رابط حزمة الـ 400MB+ (Google Drive أو رابط ZIP مباشر) أو مسار المجلد المحلي:",
+                placeholder="https://drive.google.com/file/d/... أو C:/MotionPack",
+                key="custom_motion_pack_url_input"
+            )
+        with pk_col2:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+            if st.button("📥 ربط وفهرسة الحزمة (Zero-OOM)", use_container_width=True, key="btn_import_400mb_pack"):
+                if pack_url_or_dir.strip():
+                    with st.spinner("🌐 جاري التدفق السحابي وفهرسة حزمة الموشن جرافيك على القرص بدون استهلاك الرام..."):
+                        res_pk = import_motion_pack_from_url_or_path(pack_url_or_dir.strip())
+                    if res_pk.get("ok"):
+                        st.success(f"🎉 {res_pk.get('message')}")
+                        st.rerun()
+                    else:
+                        st.warning(f"⚠️ {res_pk.get('message')}")
+                else:
+                    st.info("أدخل رابط Google Drive (تأكد أنه عام Anyone with the link) أو مسار المجلد أولاً.")
+
+        uploaded_pack_files = st.file_uploader(
+            "📂 أو ارفع ملفات من الحزمة مباشرة (SVG, Lottie JSON, PNG, WebP, أو أرشيف ZIP):",
+            type=["zip", "svg", "json", "png", "webp"],
+            accept_multiple_files=True,
+            key="direct_pack_files_uploader"
+        )
+        if uploaded_pack_files:
+            if st.button("➕ إضافة الملفات المرفوعة إلى مكتبة الموشن جرافيك الدائمة", use_container_width=True, key="btn_add_uploaded_pack_files"):
+                with st.spinner("⚙️ جاري حفظ وفهرسة أشكال الموشن جرافيك الجديدة..."):
+                    os.makedirs(CUSTOM_PACK_DIR, exist_ok=True)
+                    for up_f in uploaded_pack_files:
+                        dest_p = os.path.join(CUSTOM_PACK_DIR, up_f.name)
+                        up_f.seek(0)
+                        with open(dest_p, "wb") as out_pf:
+                            shutil.copyfileobj(up_f, out_pf, length=524288)
+                        if dest_p.lower().endswith(".zip"):
+                            import_motion_pack_from_url_or_path(dest_p)
+                    new_st = index_custom_motion_pack_directory(CUSTOM_PACK_DIR)
+                st.success(f"✅ تمت إضافة وفهرسة الملفات! إجمالي الأشكال في المكتبة الآن: `{new_st.get('total_assets', 0)}`.")
+                st.rerun()
+
+    # ==========================================================================
     # القسم 5: مصمم الساوند ديزاين الآلي واستخراج المؤثرات من Google Drive
     # ==========================================================================
     with st.expander("🔊 5. مصمم الساوند ديزاين الآلي واستخراج حزمة المؤثرات من Google Drive (مفعّل تلقائياً)", expanded=True):

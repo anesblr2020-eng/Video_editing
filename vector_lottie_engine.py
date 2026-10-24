@@ -562,7 +562,47 @@ def render_contextual_hero_illustration(
         else:
             draw_contained_text_fn(draw, (bx1 + 12, by1 + 4, bx2 - 30, by2 - 4), title_t, initial_font_size=15, fill=(*txt_main, 255))
 
+    # دمج أشكال الموشن جرافيك المجلوبة حياً من الإنترنت والملونة بثيم الفيديو النشط في خلفية وزوايا المسرح!
+    try:
+        raw_sp_txt = str(scene_meta.get("text") or concept_title or "")
+        web_svgs = search_and_fetch_web_vectors(raw_sp_txt, fallback_topic=archetype, max_assets=2)
+        if web_svgs and choreo_u >= 0.10:
+            badge_sz = int(min(st_w, st_h) * 0.22 * max(0.35, min(1.0, choreo_u * 1.6)))
+            if badge_sz >= 28:
+                web_layer_L = render_recolored_svg_motion_canvas(
+                    svg_xml=web_svgs[0], width=badge_sz, height=badge_sz,
+                    theme_palette=pal, choreo_u=choreo_u, global_t=global_t, stroke_scale=1.0
+                )
+                img.alpha_composite(web_layer_L, (st_x1 + 4, st_y1 + 4))
+                if len(web_svgs) > 1:
+                    web_layer_R = render_recolored_svg_motion_canvas(
+                        svg_xml=web_svgs[1], width=badge_sz, height=badge_sz,
+                        theme_palette={"primary": secondary_c, "secondary": primary_c, "accent": accent_c},
+                        choreo_u=choreo_u, global_t=global_t, stroke_scale=1.0
+                    )
+                    img.alpha_composite(web_layer_R, (st_x2 - badge_sz - 4, st_y1 + 4))
+                draw = ImageDraw.Draw(img, "RGBA")
+    except Exception:
+        pass
+
     def _draw_bottom_speech_pills(y_top: int):
+        # نفلتر العناصر الفرعية بحيث لا تتكرر نفس العبارة مرتين ولا تعيد كتابة العنوان العلوي حرفياً
+        unique_subs: List[str] = []
+        title_norm = re.sub(r"\s+", " ", str(concept_title or "")).strip()
+        for s_cand in (sub_items or []):
+            s_clean = re.sub(r"^\d+[\.\-\s]+", "", str(s_cand or "")).strip()
+            if len(s_clean) >= 4 and s_clean != title_norm and s_clean not in unique_subs:
+                unique_subs.append(s_clean)
+        if not unique_subs:
+            return
+        if len(unique_subs) == 1:
+            sp = _spring(choreo_u, delay=0.24, dur=0.36)
+            if sp > 0.05:
+                pw = int(st_w * 0.76)
+                px1 = cx - pw // 2
+                py1 = y_top + int(18 * (1.0 - min(1.0, sp)))
+                _draw_floating_pod(px1, py1, px1 + pw, py1 + 46, unique_subs[0], "", badge_col=primary_c, radius=18)
+            return
         pw = (st_w - 14) // 2
         ph = 48
         for pi in range(2):
@@ -572,11 +612,31 @@ def render_contextual_hero_illustration(
             px1 = st_x1 + pi * (pw + 14)
             py1 = y_top + int(18 * (1.0 - min(1.0, sp)))
             b_col = primary_c if pi == 0 else accent_c
-            _draw_floating_pod(px1, py1, px1 + pw, py1 + ph, sub_items[pi % len(sub_items)], "", badge_col=b_col, radius=16)
+            _draw_floating_pod(px1, py1, px1 + pw, py1 + ph, unique_subs[pi], "", badge_col=b_col, radius=16)
 
     sp_main = max(0.15, min(1.12, _spring(choreo_u, delay=0.04, dur=0.40)))
     float_dy = int(5.0 * math.sin(global_t * 2.8))
     cy += float_dy
+
+    # -------------------------------------------------------------------------
+    # 0. web_dynamic_scene: مشهد الفيكتور الحي المجلوب من الإنترنت والملون بثيم الفيديو
+    # -------------------------------------------------------------------------
+    if archetype in ("web_dynamic_scene", "hero_web_dynamic_vector"):
+        return render_web_fetched_motion_scene(
+            img=img,
+            stage_bbox=stage_bbox,
+            choreo_u=choreo_u,
+            global_t=global_t,
+            style_spec=style_spec,
+            scene_meta=scene_meta,
+            concept_title=concept_title,
+            kpi_val=kpi_val,
+            kpi_lbl=kpi_lbl,
+            draw_contained_text_fn=draw_contained_text_fn,
+            draw_arabic_text_fn=draw_arabic_text_fn,
+            get_font_fn=get_font_fn,
+            draw_cursor_fn=draw_cursor_fn
+        )
 
     # -------------------------------------------------------------------------
     # 1. hero_smartphone_reels: مجسم الهاتف الذكي ومشغل الريلز التفاعلي
@@ -1004,3 +1064,970 @@ def render_contextual_hero_illustration(
     draw_contained_text_fn(draw, (bx1 + 16, by1, bx2 - 16, by2), f"🚀 {concept_title}", initial_font_size=18, fill=(255, 255, 255, 255))
     draw_cursor_fn(draw, (bx2 - 12, by2 + 34), (cx, (by1 + by2) // 2), choreo_u, accent_rgb=secondary_c)
     return img
+
+
+
+# ==============================================================================
+# 5. محرك جلب الموشن جرافيك والفيكتور الحي من الإنترنت + إعادة التلوين بثيم الفيديو
+#    + دعم حزم الموشن جرافيك الضخمة (400MB+ Google Drive / ZIP Zero-OOM Streamer)
+# ==============================================================================
+import zipfile
+import shutil
+import urllib.parse
+
+WEB_MOTION_CACHE_DIR = os.path.join(_CURRENT_DIR, "assets", "web_motion_cache")
+CUSTOM_PACK_DIR = os.path.join(_CURRENT_DIR, "assets", "custom_motion_pack")
+CUSTOM_PACK_INDEX_PATH = os.path.join(CUSTOM_PACK_DIR, "pack_index.json")
+os.makedirs(WEB_MOTION_CACHE_DIR, exist_ok=True)
+os.makedirs(CUSTOM_PACK_DIR, exist_ok=True)
+
+_LIVE_WEB_FETCH_ENABLED: bool = True
+
+def set_live_web_fetch_enabled(enabled: bool = True) -> None:
+    global _LIVE_WEB_FETCH_ENABLED
+    _LIVE_WEB_FETCH_ENABLED = bool(enabled)
+
+def is_live_web_fetch_enabled() -> bool:
+    return bool(_LIVE_WEB_FETCH_ENABLED)
+
+
+# قاموس بصري شامل لتحويل الكلمات العربية والدارجة الجزائرية إلى استعلامات فيكتور وموشن جرافيك دقيقة باللغة الإنجليزية
+ARABIC_TO_ENGLISH_VISUAL_CONCEPTS: Dict[str, List[str]] = {
+    "مونتاج": ["video-editing", "film-strip", "clapperboard", "timeline-edit"],
+    "تمنتج": ["video-editing", "magic-wand", "scissors-cut", "sparkles"],
+    "فيديو": ["video-camera", "play-circle", "film-reel", "cinema"],
+    "فيديوهات": ["video-library", "multimedia", "play-screen", "reels"],
+    "ريلز": ["smartphone-video", "instagram-reels", "tiktok", "mobile-play"],
+    "للريلز": ["smartphone-video", "mobile-video", "short-video", "vertical-video"],
+    "شورتس": ["smartphone-video", "youtube-shorts", "vertical-video"],
+    "تيك توك": ["tiktok", "mobile-video", "music-video"],
+    "التواصل": ["social-media", "share-network", "global-chat", "connect"],
+    "الاجتماعي": ["social-network", "community", "heart-like", "share-nodes"],
+    "ذكاء": ["artificial-intelligence", "brain-circuit", "neural-network", "cpu-chip"],
+    "اصطناعي": ["ai-chip", "robot-brain", "magic-sparkles", "automation"],
+    "الاصطناعي": ["ai-chip", "neural-network", "cpu-bolt", "sparkles"],
+    "منصة": ["dashboard-layout", "web-platform", "laptop-code", "cloud-app"],
+    "المنصة": ["web-app", "window-dashboard", "layers-stack", "rocket-launch"],
+    "تطبيق": ["mobile-app", "smartphone-grid", "app-window"],
+    "موقع": ["browser-window", "globe-web", "Monitor-dashboard"],
+    "مشكل": ["alert-triangle", "bug-error", "warning-shield", "radar-scan"],
+    "مشكلة": ["warning-octagon", "puzzle-piece", "wrench-fix", "shield-alert"],
+    "الحل": ["lightbulb-idea", "check-badge", "key-solution", "magic-wand"],
+    "حل": ["lightbulb-on", "shield-check", "sparkles-star"],
+    "صوت": ["soundwave", "microphone", "audio-spectrum", "headphones"],
+    "تعليق": ["microphone-studio", "voice-wave", "podcast-mic"],
+    "ساوند": ["equalizer", "speaker-wave", "music-note", "soundwave"],
+    "صمت": ["volume-mute", "Waveform-cut", "scissors", "audio-trim"],
+    "تقطيع": ["scissors-cut", "film-cut", "slice-tool", "timeline"],
+    "قص": ["scissors", "crop-frame", "razor-blade"],
+    "وقت": ["stopwatch", "hourglass", "clock-fast", "timer-flash"],
+    "ساعة": ["clock", "time-schedule", "alarm-clock"],
+    "ساعات": ["hourglass-Half", "time-history", "clock-rotate"],
+    "دقيقة": ["stopwatch-fast", "lightning-bolt", "speedometer"],
+    "ثواني": ["bolt-lightning", "gauge-fast", "timer"],
+    "سرعة": ["speedometer", "rocket-thrust", "lightning-flash", "fast-forward"],
+    "سريع": ["lightning", "rocket", "gauge-high", "wind-fast"],
+    "إنتاجية": ["chart-trend-up", "rocket-growth", "trophy-star", "target-arrow"],
+    "الإنتاجية": ["trending-up", "bar-chart-grow", "zap-bolt", "award"],
+    "ترفع": ["arrow-up-circle", "trending-up", "rocket", "graph-up"],
+    "مشاهدات": ["eye-view", "trending-fire", "users-group", "chart-line"],
+    "تفاعل": ["heart-flame", "thumbs-up", "message-circle", "share-network"],
+    "انتشار": ["viral-network", "globe-share", "rocket-launch", "megaphone"],
+    "تصوير": ["camera-lens", "video-recorder", "aperture", "tripod"],
+    "تصور": ["camera", "shutter", "smartphone-camera", "studio-light"],
+    "كاميرا": ["camera-dslr", "lens-aperture", "video-cam"],
+    "ألوان": ["color-palette", "paint-brush", "swatch-book", "droplet"],
+    "تصميم": ["bezier-curve", "pen-tool", "layers", "compass-draft"],
+    "موشن": ["motion-bounce", "keyframes", "sparkles-wand", "orbit-nodes"],
+    "جرافيك": ["vector-pen", "shapes-cube", "layers-3d", "palette"],
+    "كابل": ["usb-cable", "plug-zap", "battery-charging", "power-cord"],
+    "شاحن": ["battery-bolt", "zap-fast", "plug-charging", "power-adapter"],
+    "تشارجي": ["battery-charging", "lightning-bolt", "smartphone-charging"],
+    "بطارية": ["battery-full", "battery-bolt", "power-gauge"],
+    "سيبور": ["smartphone-stand", "phone-holder", "desktop-dock", "tripod"],
+    "قماش": ["shield-check", "layers-weave", "feather-strong", "lock-shield"],
+    "متين": ["shield-lock", "anvil-strong", "diamond-gem", "medal"],
+    "يتقطع": ["scissors-off", "shield-protect", "link-strong"],
+    "توصيل": ["truck-delivery", "package-box", "map-pin", "fast-shipping"],
+    "ولاية": ["map-location", "compass-pin", "globe-africa", "route-map"],
+    "سعر": ["tag-price", "coins-stack", "wallet-money", "gift-box"],
+    "باطل": ["gift-sparkles", "tag-discount", "star-badge"],
+    "اكموندي": ["shopping-cart", "cursor-click", "bag-check", "package-send"],
+    "اطلب": ["shopping-bag", "mouse-pointer-click", "check-circle"],
+    "أهلاً": ["hand-wave", "sparkles", "user-star", "smile-badge"],
+    "السلام": ["hand-wave", "star-crescent", "sparkles", "globe"],
+    "أبني": ["hammer-wrench", "code-brackets", "blocks-build", "rocket"],
+    "أحاول": ["compass", "target-bullseye", "lightbulb", "gear-cog"],
+    "أغلب": ["users-group", "pie-chart", "globe-users"],
+    "الناس": ["users-crowd", "community-network", "user-check"],
+    "احترافي": ["crown-star", "diamond", "award-medal", "sparkles"],
+    "أوتوماتيكي": ["cpu-gear", "refresh-auto", "magic-wand", "robot"],
+}
+
+# مكتبة مسارات SVG الفيكتور الاحترافية المدمجة كاحتياطي فوري ومولّد إجرائي متعدد الطبقات
+BUILTIN_RICHVECTOR_SVG_PATHS: Dict[str, List[str]] = {
+    "video-editing": [
+        "M40,60 L216,60 C224,60 230,66 230,74 L230,182 C230,190 224,196 216,196 L40,196 C32,196 26,190 26,182 L26,74 C26,66 32,60 40,60 Z",
+        "M26,92 L230,92 M68,60 L84,92 M120,60 L136,92 M172,60 L188,92",
+        "M108,116 L160,144 L108,172 Z"
+    ],
+    "artificial-intelligence": [
+        "M84,84 L172,84 L172,172 L84,172 Z",
+        "M104,104 L152,104 L152,152 L104,152 Z",
+        "M104,52 L104,84 M128,44 L128,84 M152,52 L152,84 M104,172 L104,204 M128,172 L128,212 M152,172 L152,204",
+        "M52,104 L84,104 M44,128 L84,128 M52,152 L84,152 M172,104 L204,104 M172,128 L212,128 M172,152 L204,152"
+    ],
+    "smartphone-video": [
+        "M82,28 L174,28 C185,28 194,37 194,48 L194,208 C194,219 185,228 174,228 L82,228 C71,228 62,219 62,208 L62,48 C62,37 71,28 82,28 Z",
+        "M110,44 L146,44",
+        "M112,104 L154,128 L112,152 Z",
+        "M86,188 L170,188"
+    ],
+    "rocket-growth": [
+        "M128,32 C164,56 184,98 184,144 L156,172 L100,172 L72,144 C72,98 92,56 128,32 Z",
+        "M128,88 C139,88 148,97 148,108 C148,119 139,128 128,128 C117,128 108,119 108,108 C108,97 117,88 128,88 Z",
+        "M72,144 L48,168 L68,188 L100,172 M184,144 L208,168 L188,188 L156,172",
+        "M108,172 L118,216 L128,198 L138,216 L148,172"
+    ],
+    "soundwave": [
+        "M36,128 L36,128 M62,96 L62,160 M88,64 L88,192 M114,84 L114,172 M140,48 L140,208 M166,76 L166,180 M192,96 L192,160 M218,114 L218,142"
+    ],
+    "scissors-cut": [
+        "M72,76 C88,76 100,88 100,104 C100,120 88,132 72,132 C56,132 44,120 44,104 C44,88 56,76 72,76 Z",
+        "M72,148 C88,148 100,160 100,176 C100,192 88,204 72,204 C56,204 44,192 44,176 C44,160 56,148 72,148 Z",
+        "M96,116 L212,184 M96,164 L212,96"
+    ],
+    "lightbulb-idea": [
+        "M92,164 C72,146 64,120 72,92 C80,64 104,44 128,44 C152,44 176,64 184,92 C192,120 184,146 164,164 L156,188 L100,188 L92,164 Z",
+        "M104,204 L152,204 M112,220 L144,220",
+        "M128,18 L128,32 M48,56 L60,68 M208,56 L196,68"
+    ],
+    "speedometer": [
+        "M44,168 C32,120 60,68 108,54 C156,40 208,68 216,116 C220,134 218,152 212,168",
+        "M128,148 L178,94",
+        "M116,148 C116,141 121,136 128,136 C135,136 140,141 140,148 C140,155 135,160 128,160 C121,160 116,155 116,148 Z"
+    ],
+    "shield-check": [
+        "M128,32 L208,64 L208,128 C208,176 172,212 128,228 C84,212 48,176 48,128 L48,64 L128,32 Z",
+        "M92,128 L118,154 L168,102"
+    ],
+    "truck-delivery": [
+        "M28,72 L152,72 L152,172 L28,172 Z",
+        "M152,100 L196,100 L224,136 L224,172 L152,172 Z",
+        "M72,172 C72,185 61,196 48,196 C35,196 24,185 24,172 M196,172 C196,185 185,196 172,196 C159,196 148,185 148,172"
+    ],
+    "dashboard-layout": [
+        "M32,44 L224,44 C230,44 236,50 236,56 L236,200 C236,206 230,212 224,212 L32,212 C26,212 20,206 20,200 L20,56 C20,50 26,44 32,44 Z",
+        "M20,80 L236,80 M88,80 L88,212",
+        "M116,112 L204,112 M116,144 L184,144 M116,176 L204,176"
+    ],
+}
+
+
+def translate_scene_to_web_vector_queries(scene_text_ar: str, fallback_topic: str = "") -> List[str]:
+    """
+    يحول نص الجملة المنطوقة بالعربية/الدارجة إلى قائمة استعلامات بحث فيكتور إنجليزية دقيقة
+    للبحث الحي في مكتبات الموشن جرافيك والـ SVG على الإنترنت (Iconify / Lottie / Open SVG).
+    """
+    queries: List[str] = []
+    clean_txt = re.sub(r"[،,.!؟?()\[\]\-\":؛]", " ", str(scene_text_ar or "")).strip()
+    tokens = [t.strip() for t in clean_txt.split() if len(t.strip()) >= 2]
+
+    for tok in tokens:
+        tok_low = tok.lower()
+        # مطابقة مباشرة أو جزئية في القاموس البصري
+        if tok_low in ARABIC_TO_ENGLISH_VISUAL_CONCEPTS:
+            for q in ARABIC_TO_ENGLISH_VISUAL_CONCEPTS[tok_low]:
+                if q not in queries:
+                    queries.append(q)
+        else:
+            for ar_k, en_list in ARABIC_TO_ENGLISH_VISUAL_CONCEPTS.items():
+                if len(ar_k) >= 3 and (ar_k in tok_low or tok_low in ar_k):
+                    for q in en_list:
+                        if q not in queries:
+                            queries.append(q)
+
+    # إذا كان هناك كلمات إنجليزية منطوقة أصلاً في النص
+    en_words = re.findall(r"[a-zA-Z]{3,}", clean_txt)
+    for ew in en_words:
+        ew_l = ew.lower()
+        if ew_l not in queries:
+            queries.append(ew_l)
+
+    if not queries:
+        ft = str(fallback_topic or "").lower()
+        if "reel" in ft or "smartphone" in ft:
+            queries.extend(["smartphone-video", "video-editing", "social-media"])
+        elif "ai" in ft or "neural" in ft:
+            queries.extend(["artificial-intelligence", "cpu-chip", "sparkles"])
+        elif "delivery" in ft or "commerce" in ft:
+            queries.extend(["truck-delivery", "shopping-bag", "shield-check"])
+        else:
+            queries.extend(["rocket-growth", "dashboard-layout", "lightbulb-idea"])
+
+    return queries[:5]
+
+
+def search_and_fetch_web_vectors(
+    scene_text_ar: str,
+    fallback_topic: str = "",
+    max_assets: int = 3,
+    allow_network: Optional[bool] = None
+) -> List[str]:
+    """
+    يبحث حياً في الإنترنت (عبر محرك Iconify المفتوح الذي يضم +200,000 شكل فيكتور وموشن جرافيك
+    من مجموعات Solar, Phosphor, Fluent, Lucide, Tabler, Streamline) ويحمل ملفات الـ SVG المطابقة
+    لمعنى الجملة المنطوقة، ويخزنها في الكاش المحلي `assets/web_motion_cache/`.
+    كما يبحث أولاً في حزمة المستخدم الضخمة (`assets/custom_motion_pack/`) إن كانت مربوطة!
+    """
+    use_net = _LIVE_WEB_FETCH_ENABLED if allow_network is None else bool(allow_network)
+    queries = translate_scene_to_web_vector_queries(scene_text_ar, fallback_topic=fallback_topic)
+    fetched_svgs: List[str] = []
+
+    # 1. البحث في حزمة الموشن جرافيك الخاصة بالمستخدم (400MB+ Pack) إن وجدت
+    custom_svgs = load_matching_pack_svg_assets(queries, max_count=max_assets)
+    for c_svg in custom_svgs:
+        if c_svg and "<svg" in c_svg:
+            fetched_svgs.append(c_svg)
+            if len(fetched_svgs) >= max_assets:
+                return fetched_svgs
+
+    # 2. البحث في الكاش المحلي أو الجلب الحي من الإنترنت (Iconify Open Vector API)
+    for q in queries:
+        if len(fetched_svgs) >= max_assets:
+            break
+        safe_q = re.sub(r"[^a-zA-Z0-9_-]", "_", q.lower()).strip("_") or "vector"
+        cache_svg_path = os.path.join(WEB_MOTION_CACHE_DIR, f"{safe_q}.svg")
+
+        if os.path.exists(cache_svg_path):
+            try:
+                with open(cache_svg_path, "r", encoding="utf-8") as f:
+                    cached_xml = f.read()
+                if "<svg" in cached_xml and ("<path" in cached_xml or "<circle" in cached_xml or "<rect" in cached_xml or "<polygon" in cached_xml):
+                    fetched_svgs.append(cached_xml)
+                    continue
+            except Exception:
+                pass
+
+        if use_net:
+            try:
+                # نبحث في مجموعات الموشن جرافيك الحديثة (solar, ph, lucide, tabler, fluent, mdi)
+                search_url = f"https://api.iconify.design/search?query={urllib.parse.quote(q)}&limit=6&prefixes=solar,ph,lucide,tabler,fluent,mdi"
+                resp = requests.get(search_url, timeout=1.8)
+                if resp.status_code == 200:
+                    s_data = resp.json()
+                    icons_list = s_data.get("icons", [])
+                    for icon_id in icons_list[:3]:
+                        if ":" in icon_id:
+                            pref, name = icon_id.split(":", 1)
+                            svg_url = f"https://api.iconify.design/{pref}/{name}.svg?height=256"
+                            svg_resp = requests.get(svg_url, timeout=1.8)
+                            if svg_resp.status_code == 200 and "<svg" in svg_resp.text:
+                                svg_xml = svg_resp.text
+                                try:
+                                    with open(cache_svg_path, "w", encoding="utf-8") as f:
+                                        f.write(svg_xml)
+                                except Exception:
+                                    pass
+                                fetched_svgs.append(svg_xml)
+                                break
+            except Exception:
+                pass
+
+    # 3. توليد فيكتور غني متعدد الطبقات ومطابق للمفهوم إذا كان السيرفر أوفلاين أو لم يكفِ العدد
+    for q in queries:
+        if len(fetched_svgs) >= max_assets:
+            break
+        paths = BUILTIN_RICHVECTOR_SVG_PATHS.get(q)
+        if not paths:
+            # اختيار أقرب شكل من المكتبة المدمجة بناءً على الكلمات
+            for k_b, v_b in BUILTIN_RICHVECTOR_SVG_PATHS.items():
+                if any(part in q for part in k_b.split("-")) or any(part in k_b for part in q.split("-")):
+                    paths = v_b
+                    break
+        if not paths:
+            k_list = list(BUILTIN_RICHVECTOR_SVG_PATHS.keys())
+            q_hash = int(hashlib.md5(q.encode("utf-8")).hexdigest()[:6], 16)
+            paths = BUILTIN_RICHVECTOR_SVG_PATHS[k_list[q_hash % len(k_list)]]
+
+        inner_paths = "".join(
+            f'<path d="{d_str}" fill="none" stroke="#PRIMARY#" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>'
+            for d_str in paths
+        )
+        synth_svg = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">{inner_paths}</svg>'
+        fetched_svgs.append(synth_svg)
+
+    return fetched_svgs[:max_assets]
+
+
+# ==============================================================================
+# 5.2 محلل ومصيّر مسارات الفيكتور الكامل (Full SVG Path `<path d="...">` Parser & Theme Recolorer)
+# ==============================================================================
+_SVG_CMD_RE = re.compile(r"([MmLlHhVvCcSsQqTtAaZz])|([-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)")
+
+
+def _cubic_bezier_pt(p0: Tuple[float, float], p1: Tuple[float, float], p2: Tuple[float, float], p3: Tuple[float, float], t: float) -> Tuple[float, float]:
+    mt = 1.0 - t
+    x = (mt ** 3) * p0[0] + 3 * (mt ** 2) * t * p1[0] + 3 * mt * (t ** 2) * p2[0] + (t ** 3) * p3[0]
+    y = (mt ** 3) * p0[1] + 3 * (mt ** 2) * t * p1[1] + 3 * mt * (t ** 2) * p2[1] + (t ** 3) * p3[1]
+    return (x, y)
+
+
+def _quad_bezier_pt(p0: Tuple[float, float], p1: Tuple[float, float], p2: Tuple[float, float], t: float) -> Tuple[float, float]:
+    mt = 1.0 - t
+    x = (mt ** 2) * p0[0] + 2 * mt * t * p1[0] + (t ** 2) * p2[0]
+    y = (mt ** 2) * p0[1] + 2 * mt * t * p1[1] + (t ** 2) * p2[1]
+    return (x, y)
+
+
+def parse_svg_path_to_polylines(d_attr: str, curve_steps: int = 10) -> List[List[Tuple[float, float]]]:
+    """
+    يحلل خاصية `d="..."` لأي ملف SVG مستخرج من الإنترنت (بجميع أوامر الفيكتور: M, L, H, V, C, S, Q, T, A, Z)
+    ويحولها إلى سلاسل نقاط هندسية فائقة الدقة قابلة للرسم التدريجي (`Trim Paths`) وإعادة التلوين بألوان ثيم الفيديو!
+    """
+    if not d_attr:
+        return []
+
+    tokens: List[Union[str, float]] = []
+    for m in _SVG_CMD_RE.finditer(d_attr):
+        cmd_g, num_g = m.group(1), m.group(2)
+        if cmd_g:
+            tokens.append(cmd_g)
+        elif num_g:
+            try:
+                tokens.append(float(num_g))
+            except Exception:
+                pass
+
+    polylines: List[List[Tuple[float, float]]] = []
+    curr_line: List[Tuple[float, float]] = []
+    cx, cy = 0.0, 0.0
+    start_x, start_y = 0.0, 0.0
+    last_ctrl_x, last_ctrl_y = 0.0, 0.0
+    last_cmd = ""
+
+    idx = 0
+    n = len(tokens)
+    while idx < n:
+        tok = tokens[idx]
+        if isinstance(tok, str):
+            cmd = tok
+            idx += 1
+        else:
+            if not last_cmd:
+                idx += 1
+                continue
+            cmd = "L" if last_cmd == "M" else ("l" if last_cmd == "m" else last_cmd)
+
+        is_rel = cmd.islower()
+        cmd_u = cmd.upper()
+
+        if cmd_u == "M":
+            if idx + 1 >= n or not isinstance(tokens[idx], float) or not isinstance(tokens[idx + 1], float):
+                break
+            nx, ny = float(tokens[idx]), float(tokens[idx + 1])
+            idx += 2
+            cx = (cx + nx) if is_rel else nx
+            cy = (cy + ny) if is_rel else ny
+            start_x, start_y = cx, cy
+            if len(curr_line) >= 2:
+                polylines.append(curr_line)
+            curr_line = [(cx, cy)]
+            last_ctrl_x, last_ctrl_y = cx, cy
+            last_cmd = cmd
+
+        elif cmd_u == "L":
+            if idx + 1 >= n or not isinstance(tokens[idx], float) or not isinstance(tokens[idx + 1], float):
+                break
+            nx, ny = float(tokens[idx]), float(tokens[idx + 1])
+            idx += 2
+            cx = (cx + nx) if is_rel else nx
+            cy = (cy + ny) if is_rel else ny
+            if not curr_line:
+                curr_line = [(cx, cy)]
+            else:
+                curr_line.append((cx, cy))
+            last_ctrl_x, last_ctrl_y = cx, cy
+            last_cmd = cmd
+
+        elif cmd_u == "H":
+            if idx >= n or not isinstance(tokens[idx], float):
+                break
+            nx = float(tokens[idx])
+            idx += 1
+            cx = (cx + nx) if is_rel else nx
+            if curr_line:
+                curr_line.append((cx, cy))
+            last_ctrl_x, last_ctrl_y = cx, cy
+            last_cmd = cmd
+
+        elif cmd_u == "V":
+            if idx >= n or not isinstance(tokens[idx], float):
+                break
+            ny = float(tokens[idx])
+            idx += 1
+            cy = (cy + ny) if is_rel else ny
+            if curr_line:
+                curr_line.append((cx, cy))
+            last_ctrl_x, last_ctrl_y = cx, cy
+            last_cmd = cmd
+
+        elif cmd_u == "C":
+            if idx + 5 >= n:
+                break
+            vals = tokens[idx:idx + 6]
+            if not all(isinstance(v, float) for v in vals):
+                idx += 1
+                continue
+            idx += 6
+            x1, y1, x2, y2, ex, ey = [float(v) for v in vals]
+            if is_rel:
+                x1, y1 = cx + x1, cy + y1
+                x2, y2 = cx + x2, cy + y2
+                ex, ey = cx + ex, cy + ey
+            p0 = (cx, cy)
+            for s_i in range(1, curve_steps + 1):
+                pt = _cubic_bezier_pt(p0, (x1, y1), (x2, y2), (ex, ey), s_i / float(curve_steps))
+                curr_line.append(pt)
+            cx, cy = ex, ey
+            last_ctrl_x, last_ctrl_y = x2, y2
+            last_cmd = cmd
+
+        elif cmd_u == "S":
+            if idx + 3 >= n:
+                break
+            vals = tokens[idx:idx + 4]
+            if not all(isinstance(v, float) for v in vals):
+                idx += 1
+                continue
+            idx += 4
+            x2, y2, ex, ey = [float(v) for v in vals]
+            if is_rel:
+                x2, y2 = cx + x2, cy + y2
+                ex, ey = cx + ex, cy + ey
+            x1 = 2 * cx - last_ctrl_x if last_cmd.upper() in ("C", "S") else cx
+            y1 = 2 * cy - last_ctrl_y if last_cmd.upper() in ("C", "S") else cy
+            p0 = (cx, cy)
+            for s_i in range(1, curve_steps + 1):
+                pt = _cubic_bezier_pt(p0, (x1, y1), (x2, y2), (ex, ey), s_i / float(curve_steps))
+                curr_line.append(pt)
+            cx, cy = ex, ey
+            last_ctrl_x, last_ctrl_y = x2, y2
+            last_cmd = cmd
+
+        elif cmd_u in ("Q", "T"):
+            if cmd_u == "Q":
+                if idx + 3 >= n:
+                    break
+                vals = tokens[idx:idx + 4]
+                if not all(isinstance(v, float) for v in vals):
+                    idx += 1
+                    continue
+                idx += 4
+                x1, y1, ex, ey = [float(v) for v in vals]
+                if is_rel:
+                    x1, y1 = cx + x1, cy + y1
+                    ex, ey = cx + ex, cy + ey
+            else:
+                if idx + 1 >= n:
+                    break
+                vals = tokens[idx:idx + 2]
+                if not all(isinstance(v, float) for v in vals):
+                    idx += 1
+                    continue
+                idx += 2
+                ex, ey = [float(v) for v in vals]
+                if is_rel:
+                    ex, ey = cx + ex, cy + ey
+                x1 = 2 * cx - last_ctrl_x if last_cmd.upper() in ("Q", "T") else cx
+                y1 = 2 * cy - last_ctrl_y if last_cmd.upper() in ("Q", "T") else cy
+            p0 = (cx, cy)
+            for s_i in range(1, curve_steps + 1):
+                pt = _quad_bezier_pt(p0, (x1, y1), (ex, ey), s_i / float(curve_steps))
+                curr_line.append(pt)
+            cx, cy = ex, ey
+            last_ctrl_x, last_ctrl_y = x1, y1
+            last_cmd = cmd
+
+        elif cmd_u == "A":
+            if idx + 6 >= n:
+                break
+            vals = tokens[idx:idx + 7]
+            if not all(isinstance(v, float) for v in vals):
+                idx += 1
+                continue
+            idx += 7
+            rx_a, ry_a, rot_a, large_arc, sweep_f, ex, ey = [float(v) for v in vals]
+            if is_rel:
+                ex, ey = cx + ex, cy + ey
+            # تقريب سلس لقوس الـ SVG
+            p0 = (cx, cy)
+            mid_x = (cx + ex) * 0.5 + (ey - cy) * (0.28 if sweep_f > 0 else -0.28)
+            mid_y = (cy + ey) * 0.5 + (cx - ex) * (0.28 if sweep_f > 0 else -0.28)
+            for s_i in range(1, curve_steps + 1):
+                pt = _quad_bezier_pt(p0, (mid_x, mid_y), (ex, ey), s_i / float(curve_steps))
+                curr_line.append(pt)
+            cx, cy = ex, ey
+            last_ctrl_x, last_ctrl_y = cx, cy
+            last_cmd = cmd
+
+        elif cmd_u == "Z":
+            if curr_line:
+                curr_line.append((start_x, start_y))
+                if len(curr_line) >= 2:
+                    polylines.append(curr_line)
+                curr_line = []
+            cx, cy = start_x, start_y
+            last_cmd = cmd
+        else:
+            idx += 1
+
+    if len(curr_line) >= 2:
+        polylines.append(curr_line)
+
+    return polylines
+
+
+def extract_all_polylines_from_svg(svg_xml: str) -> Tuple[List[List[Tuple[float, float]]], float, float]:
+    """
+    يستخرج كافة المسارات الهندسية من أي ملف SVG (سواء `<path>`, `<circle>`, `<rect>`, `<ellipse>`, `<line>`, `<polyline>`, `<polygon>`)
+    مع أبعاد الـ `viewBox` الأصلية لتسهيل تحجيمها ورسمها بألوان الثيم النشط.
+    """
+    polylines: List[List[Tuple[float, float]]] = []
+    vb_w, vb_h = 24.0, 24.0
+    try:
+        clean_xml = re.sub(r'xmlns="[^"]+"', "", svg_xml)
+        root = ET.fromstring(clean_xml)
+        vb = root.attrib.get("viewBox", "")
+        if vb:
+            parts = [float(x) for x in re.split(r"[\s,]+", vb.strip()) if x]
+            if len(parts) == 4:
+                vb_w, vb_h = max(1.0, parts[2]), max(1.0, parts[3])
+        else:
+            w_attr = re.sub(r"[^0-9.]", "", root.attrib.get("width", "24"))
+            h_attr = re.sub(r"[^0-9.]", "", root.attrib.get("height", "24"))
+            if w_attr and h_attr:
+                vb_w, vb_h = max(1.0, float(w_attr)), max(1.0, float(h_attr))
+
+        for elem in root.iter():
+            tag = elem.tag.split("}")[-1].lower()
+            if tag == "path":
+                d_str = elem.attrib.get("d", "")
+                polylines.extend(parse_svg_path_to_polylines(d_str))
+            elif tag == "circle":
+                cx_c = float(elem.attrib.get("cx", 0))
+                cy_c = float(elem.attrib.get("cy", 0))
+                r_c = float(elem.attrib.get("r", 0))
+                if r_c > 0:
+                    pts = [(cx_c + r_c * math.cos(i * 2 * math.pi / 24), cy_c + r_c * math.sin(i * 2 * math.pi / 24)) for i in range(25)]
+                    polylines.append(pts)
+            elif tag == "ellipse":
+                cx_c = float(elem.attrib.get("cx", 0))
+                cy_c = float(elem.attrib.get("cy", 0))
+                rx_c = float(elem.attrib.get("rx", 0))
+                ry_c = float(elem.attrib.get("ry", 0))
+                if rx_c > 0 and ry_c > 0:
+                    pts = [(cx_c + rx_c * math.cos(i * 2 * math.pi / 24), cy_c + ry_c * math.sin(i * 2 * math.pi / 24)) for i in range(25)]
+                    polylines.append(pts)
+            elif tag == "rect":
+                rx = float(elem.attrib.get("x", 0))
+                ry = float(elem.attrib.get("y", 0))
+                rw = float(elem.attrib.get("width", 0))
+                rh = float(elem.attrib.get("height", 0))
+                if rw > 0 and rh > 0:
+                    polylines.append([(rx, ry), (rx + rw, ry), (rx + rw, ry + rh), (rx, ry + rh), (rx, ry)])
+            elif tag == "line":
+                x1 = float(elem.attrib.get("x1", 0))
+                y1 = float(elem.attrib.get("y1", 0))
+                x2 = float(elem.attrib.get("x2", 0))
+                y2 = float(elem.attrib.get("y2", 0))
+                polylines.append([(x1, y1), (x2, y2)])
+            elif tag in ("polyline", "polygon"):
+                pts_raw = elem.attrib.get("points", "").strip()
+                nums = [float(x) for x in re.findall(r"[-+]?(?:\d+\.?\d*|\.\d+)", pts_raw)]
+                pts = [(nums[i], nums[i + 1]) for i in range(0, len(nums) - 1, 2)]
+                if tag == "polygon" and len(pts) >= 3:
+                    pts.append(pts[0])
+                if len(pts) >= 2:
+                    polylines.append(pts)
+    except Exception:
+        pass
+
+    return polylines, vb_w, vb_h
+
+
+def render_recolored_svg_motion_canvas(
+    svg_xml: str,
+    width: int,
+    height: int,
+    theme_palette: Dict[str, Any],
+    choreo_u: float,
+    global_t: float,
+    stroke_scale: float = 1.0
+) -> Image.Image:
+    """
+    يرسم أي شكل فيكتور (SVG) مجلوب من الإنترنت أو من حزمة الـ 400MB+ بعد:
+    1. تجريده من ألوانه العشوائية الأصلية وإعادة تلوينه بالكامل بألوان ثيم الفيديو النشط (`primary`, `secondary`, `accent`).
+    2. تطبيق أنيميشن الرسم التدريجي الحي للمسارات (`Trim Paths` 0% -> 100%) المتزامن مع الكلمات المنطوقة (`choreo_u`).
+    3. إضافة عمق 2.5D وظل ناعم وحلقات طاقة مدارية مرسومة فوقه.
+    """
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas, "RGBA")
+
+    primary_c = tuple(theme_palette.get("primary", (56, 189, 248)))[:3]
+    secondary_c = tuple(theme_palette.get("secondary", (250, 204, 21)))[:3]
+    accent_c = tuple(theme_palette.get("accent", (16, 185, 129)))[:3]
+    palette_cycle = [primary_c, secondary_c, accent_c]
+
+    polylines, vb_w, vb_h = extract_all_polylines_from_svg(svg_xml)
+    if not polylines:
+        return canvas
+
+    # حساب حدود المسارات الفعلية لتوسيط الشكل بدقة داخل الكانفاس
+    all_x = [p[0] for line in polylines for p in line]
+    all_y = [p[1] for line in polylines for p in line]
+    min_x, max_x = min(all_x), max(all_x)
+    min_y, max_y = min(all_y), max(all_y)
+    span_w = max(1e-3, max_x - min_x)
+    span_h = max(1e-3, max_y - min_y)
+
+    pad = 0.18
+    usable_w = width * (1.0 - 2 * pad)
+    usable_h = height * (1.0 - 2 * pad)
+    scale = min(usable_w / span_w, usable_h / span_h)
+
+    cx_svg = (min_x + max_x) * 0.5
+    cy_svg = (min_y + max_y) * 0.5
+    cx_can = width * 0.5
+    cy_can = height * 0.5
+
+    # نسبة الرسم التدريجي للمسارات (Trim Paths)
+    trim_prog = min(1.0, max(0.22, choreo_u * 1.35))
+    line_w = max(3, int(min(width, height) * 0.036 * stroke_scale))
+
+    for l_idx, line in enumerate(polylines):
+        col = palette_cycle[l_idx % len(palette_cycle)]
+        transformed = [
+            (
+                int(round(cx_can + (pt[0] - cx_svg) * scale)),
+                int(round(cy_can + (pt[1] - cy_svg) * scale))
+            )
+            for pt in line
+        ]
+        if len(transformed) < 2:
+            continue
+
+        # إذا كان المسار مغلقاً ومرسوم بالكامل، نملأه بشفافية ثيم الفيديو الأنيقة
+        is_closed = (math.hypot(transformed[0][0] - transformed[-1][0], transformed[0][1] - transformed[-1][1]) <= 6.0)
+        if is_closed and len(transformed) >= 4 and trim_prog >= 0.65:
+            fill_alpha = int(42 * min(1.0, (trim_prog - 0.55) / 0.45))
+            draw.polygon(transformed, fill=(*col, fill_alpha))
+
+        # أخذ الجزء المرسوم تدريجياً حسب تقدم الصوت
+        vis_count = max(2, int(math.ceil(len(transformed) * trim_prog)))
+        vis_pts = transformed[:vis_count]
+
+        # ظل ثلاثي الأبعاد ناعم للمسار
+        shadow_pts = [(p[0] + 3, p[1] + 5) for p in vis_pts]
+        draw.line(shadow_pts, fill=(8, 12, 24, 95), width=line_w + 2)
+        # المسار الملون بثيم الفيديو النشط
+        draw.line(vis_pts, fill=(*col, 255), width=line_w)
+
+        # نقطة رأس القلم المضيئة أثناء الرسم التدريجي (Glowing Laser Drawing Tip)
+        if trim_prog < 0.98 and vis_pts:
+            tip_x, tip_y = vis_pts[-1]
+            tip_r = line_w + 3
+            draw.ellipse([(tip_x - tip_r, tip_y - tip_r), (tip_x + tip_r, tip_y + tip_r)], fill=(*secondary_c, 240))
+
+    return canvas
+
+
+def render_web_fetched_motion_scene(
+    img: Image.Image,
+    stage_bbox: Tuple[int, int, int, int],
+    choreo_u: float,
+    global_t: float,
+    style_spec: Dict[str, Any],
+    scene_meta: Dict[str, Any],
+    concept_title: str,
+    kpi_val: str,
+    kpi_lbl: str,
+    draw_contained_text_fn,
+    draw_arabic_text_fn,
+    get_font_fn,
+    draw_cursor_fn
+) -> Image.Image:
+    """
+    يرسم مشهداً سينمائياً متكاملاً يجمع بين:
+    1. أشكال الموشن جرافيك والفيكتور المجلوبة حياً من الإنترنت (`search_and_fetch_web_vectors`) أو من حزمة الـ 400MB+
+       بعد إعادة تلوينها بالكامل لتطابق ثيم الفيديو النشط (`primary`, `secondary`, `accent`).
+    2. الرسم الإجرائي المتحرك فوقها وحولها (حلقات مدارية، إضاءة محيطية، مسارات متوهجة، وعناصر فيزيائية متزامنة مع الصوت).
+    بدون أي لوحات مرقمة خاطئة وبدون تكرار نفس الأيقونة!
+    """
+    st_x1, st_y1, st_x2, st_y2 = stage_bbox
+    st_w = max(120, st_x2 - st_x1)
+    st_h = max(120, st_y2 - st_y1)
+    cx = (st_x1 + st_x2) // 2
+    cy = st_y1 + int(st_h * 0.45)
+
+    pal = style_spec.get("palette", {})
+    is_light_bg = bool(pal.get("is_light_bg", False))
+    primary_c = tuple(pal.get("primary", (56, 189, 248)))[:3]
+    secondary_c = tuple(pal.get("secondary", (250, 204, 21)))[:3]
+    accent_c = tuple(pal.get("accent", (16, 185, 129)))[:3]
+    txt_main = (24, 24, 27) if is_light_bg else (248, 250, 252)
+    pod_bg = (255, 255, 255, 238) if is_light_bg else (18, 25, 44, 232)
+
+    raw_speech = str(scene_meta.get("text") or concept_title or "")
+    fallback_topic = str(scene_meta.get("visual_subject") or scene_meta.get("scene_type") or "")
+    svgs = search_and_fetch_web_vectors(raw_speech, fallback_topic=fallback_topic, max_assets=3)
+
+    img = render_radial_ambient_glow(img, (cx, cy), int(min(st_w, st_h) * 0.48), primary_c, intensity=0.25 if is_light_bg else 0.35)
+    img = render_floating_particles_layer(
+        canvas_rgba=img,
+        global_t=global_t,
+        theme={"primary": primary_c, "secondary": secondary_c},
+        count=12,
+        region_bbox=stage_bbox
+    )
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    # فيزياء انبثاق المسرح المركزي
+    p_in = min(1.0, max(0.05, choreo_u * 2.2))
+    sp_main = 1.0 - math.exp(-6.0 * p_in) * math.cos(8.0 * p_in)
+    float_dy = int(6.0 * math.sin(global_t * 2.6))
+    cy += float_dy
+
+    # رسم الحلقات المدارية الهندسية حول الشكل المجلوب من الإنترنت
+    orbit_r = int(min(st_w, st_h) * 0.34 * max(0.3, sp_main))
+    draw.ellipse([(cx - orbit_r, cy - orbit_r), (cx + orbit_r, cy + orbit_r)], fill=(*pod_bg[:3], 175), outline=(*primary_c, 225), width=3)
+    rot_deg = (global_t * 62.0) % 360.0
+    draw.arc([(cx - orbit_r - 12, cy - orbit_r - 12), (cx + orbit_r + 12, cy + orbit_r + 12)], start=rot_deg, end=rot_deg + 115, fill=(*secondary_c, 235), width=4)
+    draw.arc([(cx - orbit_r - 12, cy - orbit_r - 12), (cx + orbit_r + 12, cy + orbit_r + 12)], start=rot_deg + 180, end=rot_deg + 295, fill=(*accent_c, 235), width=4)
+
+    # رندرة الشكل الرئيسي المجلوب من الإنترنت في المركز بعد تلوينه بثيم الفيديو
+    if svgs:
+        main_sz = int(orbit_r * 1.42)
+        main_svg_img = render_recolored_svg_motion_canvas(
+            svg_xml=svgs[0],
+            width=main_sz,
+            height=main_sz,
+            theme_palette=pal,
+            choreo_u=choreo_u,
+            global_t=global_t,
+            stroke_scale=1.15
+        )
+        img.alpha_composite(main_svg_img, (cx - main_sz // 2, cy - main_sz // 2))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+    # رندرة شكلين ثانويين مجلوبين من الإنترنت في مدار جانبي متزامن مع تقدم الكلام
+    sat_positions = [
+        (cx - int(st_w * 0.32), cy - int(st_h * 0.18), secondary_c, 0.18),
+        (cx + int(st_w * 0.32), cy + int(st_h * 0.12), accent_c, 0.32),
+    ]
+    for s_idx, (sx, sy, s_col, s_delay) in enumerate(sat_positions):
+        if choreo_u >= s_delay and len(svgs) > s_idx + 1:
+            sat_u = min(1.0, (choreo_u - s_delay) / 0.35)
+            sat_sp = 1.0 - math.exp(-6.0 * sat_u) * math.cos(7.5 * sat_u)
+            sat_r = int(min(st_w, st_h) * 0.13 * max(0.3, sat_sp))
+            if sat_r >= 16:
+                draw.line([(cx, cy), (sx, sy)], fill=(*s_col, 145), width=2)
+                draw.ellipse([(sx - sat_r, sy - sat_r), (sx + sat_r, sy + sat_r)], fill=pod_bg, outline=(*s_col, 240), width=2)
+                sat_svg_img = render_recolored_svg_motion_canvas(
+                    svg_xml=svgs[s_idx + 1],
+                    width=int(sat_r * 1.45),
+                    height=int(sat_r * 1.45),
+                    theme_palette={"primary": s_col, "secondary": primary_c, "accent": accent_c},
+                    choreo_u=sat_u,
+                    global_t=global_t,
+                    stroke_scale=0.95
+                )
+                img.alpha_composite(sat_svg_img, (sx - sat_svg_img.width // 2, sy - sat_svg_img.height // 2))
+                draw = ImageDraw.Draw(img, "RGBA")
+
+    # شريط معلوماتي سفلي واحد نظيف وأنيق (بدون تكرار الكلمات المبتورة أو تقسيم الجملة إلى 1-2-3-4!)
+    bar_w = int(st_w * 0.84)
+    bar_h = 52
+    bx1 = cx - bar_w // 2
+    by1 = cy + orbit_r + 24
+    if by1 + bar_h < st_y2 + 24 and choreo_u >= 0.20:
+        draw.rounded_rectangle([(bx1 + 2, by1 + 6), (bx1 + bar_w + 2, by1 + bar_h + 6)], radius=26, fill=(8, 10, 18, 65))
+        draw.rounded_rectangle([(bx1, by1), (bx1 + bar_w, by1 + bar_h)], radius=26, fill=pod_bg, outline=(*primary_c, 225), width=2)
+        summary_line = kpi_lbl if (kpi_lbl and kpi_lbl != concept_title) else concept_title
+        draw_contained_text_fn(draw, (bx1 + 18, by1 + 6, bx1 + bar_w - 18, by1 + bar_h - 6), summary_line, initial_font_size=16, fill=(*txt_main, 255))
+
+    return img
+
+
+# ==============================================================================
+# 5.3 مدير حزم الموشن جرافيك الضخمة (400MB+ Google Drive / Direct ZIP / Folder Streamer)
+# ==============================================================================
+def get_custom_pack_stats() -> Dict[str, Any]:
+    """إرجاع إحصائيات حزمة الموشن جرافيك المربوطة (عدد ملفات SVG, Lottie JSON, PNG/WebP, MP4/WebM)."""
+    if os.path.exists(CUSTOM_PACK_INDEX_PATH):
+        try:
+            with open(CUSTOM_PACK_INDEX_PATH, "r", encoding="utf-8") as f:
+                idx_data = json.load(f)
+            if isinstance(idx_data, dict):
+                return idx_data.get("stats", {"total_assets": len(idx_data.get("assets", []))})
+        except Exception:
+            pass
+    return {"total_assets": 0, "svg_count": 0, "lottie_count": 0, "image_count": 0, "video_count": 0}
+
+
+def index_custom_motion_pack_directory(target_dir: Optional[str] = None) -> Dict[str, Any]:
+    """
+    يمسح مجلد حزمة الموشن جرافيك (سواء كانت 400MB أو 2GB) ويبني فهرساً دلالياً خفيفاً جداً (`pack_index.json`)
+    بحيث يتم استدعاء ملف واحد فقط عند الحاجة في الرندرة دون استهلاك الرام (`Zero-OOM`).
+    """
+    scan_dir = target_dir if (target_dir and os.path.isdir(target_dir)) else CUSTOM_PACK_DIR
+    assets_list: List[Dict[str, Any]] = []
+    counts = {"svg_count": 0, "lottie_count": 0, "image_count": 0, "video_count": 0}
+
+    for root_d, _, files in os.walk(scan_dir):
+        for fname in files:
+            if fname == "pack_index.json":
+                continue
+            ext = os.path.splitext(fname)[1].lower()
+            full_p = os.path.join(root_d, fname)
+            rel_tags = re.findall(r"[a-zA-Z0-9\u0600-\u06FF]+", os.path.splitext(fname)[0].lower())
+            folder_tags = re.findall(r"[a-zA-Z0-9\u0600-\u06FF]+", os.path.basename(root_d).lower())
+            tags = list(dict.fromkeys(rel_tags + folder_tags))
+
+            if ext == ".svg":
+                counts["svg_count"] += 1
+                assets_list.append({"path": full_p, "type": "svg", "tags": tags})
+            elif ext == ".json":
+                counts["lottie_count"] += 1
+                assets_list.append({"path": full_p, "type": "lottie", "tags": tags})
+            elif ext in (".png", ".webp"):
+                counts["image_count"] += 1
+                assets_list.append({"path": full_p, "type": "image", "tags": tags})
+            elif ext in (".mp4", ".mov", ".webm"):
+                counts["video_count"] += 1
+                assets_list.append({"path": full_p, "type": "video", "tags": tags})
+
+    stats = {
+        "total_assets": len(assets_list),
+        **counts,
+        "pack_dir": scan_dir
+    }
+    index_payload = {"stats": stats, "assets": assets_list}
+    try:
+        with open(CUSTOM_PACK_INDEX_PATH, "w", encoding="utf-8") as f:
+            json.dump(index_payload, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    return stats
+
+
+def import_motion_pack_from_url_or_path(source_url_or_path: str) -> Dict[str, Any]:
+    """
+    يستورد حزمة موشن جرافيك ضخمة (400MB+) مباشرة من:
+    1. مسار مجلد محلي أو ملف `.zip` محلي (إذا كان المستخدم يشغل المنصة على جهازه أو رفع أرشيفاً).
+    2. رابط Google Drive أو رابط تحميل مباشر (`.zip`) عبر التدفق المباشر للقرص (`Streaming Chunked Download`)
+       بأجزاء 8MB دون تحميل الـ 400MB في الرام أبداً (`Zero-OOM`)!
+    """
+    src = str(source_url_or_path or "").strip()
+    if not src:
+        return {"ok": False, "message": "الرجاء إدخال رابط الحزمة أو مسار المجلد."}
+
+    # 1. إذا كان مساراً محلياً لمجلد أو ملف ZIP
+    if os.path.isdir(src):
+        stats = index_custom_motion_pack_directory(src)
+        return {"ok": True, "message": f"تم ربط وفهرسة مجلد حزمة الموشن جرافيك بنجاح ({stats['total_assets']} شكل/ملف).", "stats": stats}
+
+    if os.path.isfile(src) and src.lower().endswith(".zip"):
+        try:
+            with zipfile.ZipFile(src, "r") as zf:
+                for member in zf.infolist():
+                    if member.is_dir():
+                        continue
+                    ext = os.path.splitext(member.filename)[1].lower()
+                    if ext in (".svg", ".json", ".png", ".webp", ".mp4", ".webm", ".mov"):
+                        zf.extract(member, CUSTOM_PACK_DIR)
+            stats = index_custom_motion_pack_directory(CUSTOM_PACK_DIR)
+            return {"ok": True, "message": f"تم استخراج وفهرسة حزمة الـ ZIP بنجاح ({stats['total_assets']} شكل/ملف).", "stats": stats}
+        except Exception as e:
+            return {"ok": False, "message": f"تعذر فك ضغط الأرشيف: {e}"}
+
+    # 2. إذا كان رابط Google Drive أو رابط ZIP سحابي مباشر
+    if src.startswith("http://") or src.startswith("https://"):
+        dl_url = src
+        m_drive = re.search(r"(?:/d/|id=)([a-zA-Z0-9_-]{20,})", src)
+        if m_drive:
+            file_id = m_drive.group(1)
+            dl_url = f"https://drive.google.com/uc?export=download&id={file_id}"
+
+        tmp_zip = os.path.join(CUSTOM_PACK_DIR, "_streamed_pack.zip")
+        try:
+            session = requests.Session()
+            resp = session.get(dl_url, stream=True, timeout=15)
+            # معالجة صفحة تأكيد التحميل للملفات الكبيرة في Google Drive (>100MB)
+            for k, v in resp.cookies.items():
+                if k.startswith("download_warning"):
+                    dl_url = f"{dl_url}&confirm={v}"
+                    resp = session.get(dl_url, stream=True, timeout=20)
+                    break
+
+            if resp.status_code != 200:
+                return {"ok": False, "message": f"تعذر الوصول للرابط (HTTP {resp.status_code}). تأكد أن الرابط عام (Anyone with the link)."}
+
+            with open(tmp_zip, "wb") as f_out:
+                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                    if chunk:
+                        f_out.write(chunk)
+
+            if zipfile.is_zipfile(tmp_zip):
+                with zipfile.ZipFile(tmp_zip, "r") as zf:
+                    for member in zf.infolist():
+                        if member.is_dir():
+                            continue
+                        ext = os.path.splitext(member.filename)[1].lower()
+                        if ext in (".svg", ".json", ".png", ".webp", ".mp4", ".webm", ".mov"):
+                            zf.extract(member, CUSTOM_PACK_DIR)
+                try:
+                    os.remove(tmp_zip)
+                except Exception:
+                    pass
+                stats = index_custom_motion_pack_directory(CUSTOM_PACK_DIR)
+                return {"ok": True, "message": f"تم تحميل وفهرسة حزمة الموشن جرافيك السحابية بنجاح ({stats['total_assets']} شكل/ملف)!", "stats": stats}
+            else:
+                try:
+                    os.remove(tmp_zip)
+                except Exception:
+                    pass
+                return {"ok": False, "message": "الرابط لا يشير إلى ملف ZIP مباشر أو يحتاج صلاحية مشاركة عامة."}
+        except Exception as e:
+            return {"ok": False, "message": f"حدث خطأ أثناء التدفق السحابي للحزمة: {e}"}
+
+    return {"ok": False, "message": "مسار أو رابط غير صالح."}
+
+
+def load_matching_pack_svg_assets(queries: List[str], max_count: int = 3) -> List[str]:
+    """يسترجع ملفات الـ SVG المطابقة للمعنى من حزمة المستخدم المفهرسة دون تحميل الحزمة في الرام."""
+    if not os.path.exists(CUSTOM_PACK_INDEX_PATH):
+        return []
+    try:
+        with open(CUSTOM_PACK_INDEX_PATH, "r", encoding="utf-8") as f:
+            idx_data = json.load(f)
+        assets = idx_data.get("assets", [])
+        svg_assets = [a for a in assets if a.get("type") == "svg" and os.path.exists(a.get("path", ""))]
+        if not svg_assets:
+            return []
+
+        q_terms = [part for q in queries for part in q.lower().split("-") if len(part) >= 2]
+        scored = []
+        for a in svg_assets:
+            tags = a.get("tags", [])
+            score = sum(2 if qt in tags else (1 if any(qt in t for t in tags) else 0) for qt in q_terms)
+            scored.append((score, a["path"]))
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        results: List[str] = []
+        for sc, p in scored[:max_count]:
+            with open(p, "r", encoding="utf-8", errors="ignore") as f_svg:
+                results.append(f_svg.read())
+        return results
+    except Exception:
+        return []

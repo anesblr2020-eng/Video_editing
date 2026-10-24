@@ -18,6 +18,7 @@ Principal Video DSP & Self-Evolving Visual Intelligence Engine (Zero-OOM Archite
 """
 
 import os
+import re
 import sys
 import gc
 import json
@@ -75,6 +76,7 @@ def hex_to_rgb(hex_str: str, fallback: Tuple[int, int, int] = (56, 189, 248)) ->
 # ==============================================================================
 ALL_DYNAMIC_VISUAL_ARCHETYPES: List[str] = [
     # --- المجموعة أ: 16 رسمة ومجسم فيكتور تعبيري مخصص 100% للكلام المنطوق (Open-Canvas Speech-Matched Hero Illustrations) ---
+    "web_dynamic_scene",               # 0. مشهد الفيكتور الحي المجلوب من الإنترنت والملون بثيم الفيديو النشط
     "hero_smartphone_reels",           # 1. مجسم الهاتف الذكي ومشغل الريلز التفاعلي ثلاثي الأبعاد
     "hero_camera_production",          # 2. عدسة الكاميرا السينمائية وشفرات الإضاءة ومؤشر التسجيل REC
     "hero_waveform_scissors",          # 3. مقص الليزر الذكي يقطع فجوات الصمت والأخطاء من الموجة الصوتية
@@ -111,6 +113,7 @@ ALL_DYNAMIC_VISUAL_ARCHETYPES: List[str] = [
 ]
 
 ARCHETYPE_LABELS_AR: Dict[str, str] = {
+    "web_dynamic_scene": "🌐 موشن جرافيك وفيكتور حي من الإنترنت بلون الثيم (Live Web Vector & Motion)",
     "hero_smartphone_reels": "📱 مجسم الهاتف ومشغل الريلز التفاعلي (Hero Smartphone & Reels)",
     "hero_camera_production": "🎥 عدسة الكاميرا السينمائية والتصوير (Hero Cinema Camera Lens)",
     "hero_waveform_scissors": "✂️ مقص الليزر الذكي وقص الصمت من الموجة (Hero Waveform & Scissors)",
@@ -146,6 +149,88 @@ ARCHETYPE_LABELS_AR: Dict[str, str] = {
 }
 
 
+# قوائم الحظر المنطقي الصارم لمنع وضع قوالب مرقمة أو مقارنات أو عدادات في مشاهد الكلام العام
+ENUMERATION_ONLY_ARCHETYPES = {
+    "macos_folder_counter_list",
+    "step_cascade_ribbon_cards",
+    "nle_timeline_matrix",
+    "hero_roadmap_milestones",
+    "live_magnifier_scanner",
+}
+
+COMPARISON_ONLY_ARCHETYPES = {
+    "damped_balance_scale",
+    "floating_3d_stat_Compare",
+    "hero_comparison_duel",
+}
+
+METRIC_COUNTER_ONLY_ARCHETYPES = {
+    "chrono_ring_3d_counter",
+    "dual_metric_gauge_pods",
+}
+
+
+def detect_strict_speech_intent(
+    scene_text: str,
+    scene_index: int = 0,
+    total_scenes: int = 1
+) -> Dict[str, Any]:
+    """
+    محرك المنطق الدلالي الصارم (`Strict Semantic Intent Gatekeeper`):
+    يحلل الجملة المنطوقة ليحدد بدقة متى يكون المتحدث يعدد نقاطاً فعلياً (أولاً، ثانياً، ثلاث ميزات...)،
+    ومتى يقارن بين شيئين، ومتى يذكر رقماً حقيقياً، ومتى يتحدث بشكل عام أو ترحيبي.
+    يمنع منعاً باتاً تحويل الكلام العام (مثل "السلام عليكم كيف الحال" أو "الحل هو منصة...") إلى لوحة مرقمة 1-2-3-4!
+    """
+    t = re.sub(r'[،,.!؟?()\[\]\-":؛]', " ", str(scene_text or "")).strip().lower()
+
+    # 1. كشف التعداد الصريح فقط (Explicit Enumeration Markers)
+    enum_patterns = [
+        r"\b(أولا|اولا|ثانيا|ثالثا|رابعا|خامسا)\b",
+        r"\b(الشيء الأول|الشيء الاول|الشيء الثاني|الشيء الثالث)\b",
+        r"\b(الميزة الأولى|الميزه الاولى|الميزة الثانية|الميزه الثانيه|الميزة الثالثة)\b",
+        r"\b(الخاصية الأولى|الخاصيه الاولى|الخاصية الثانية|الخاصيه الثانيه|الخاصية الثالثة)\b",
+        r"\b(الخطوة الأولى|الخطوه الاولى|الخطوة الثانية|الخطوه الثانيه|الخطوة الثالثة)\b",
+        r"\b(ثلاث ميزات|ثلاث خصائص|3 ميزات|3 خصائص|أربع ميزات|اربع خصائص|عدة خطوات|خطوات)\b",
+        r"\b(رقم واحد|رقم 1|رقم اثنين|رقم 2|النقطة الأولى|النقطه الاولى)\b",
+    ]
+    is_explicit_enumeration = any(re.search(pat, t) for pat in enum_patterns)
+
+    # 2. كشف المقارنة الصريحة فقط (Explicit Comparison Markers)
+    comp_patterns = [
+        r"\b(مقابل|الفرق بين|فرق بين|مقارنة ب|عكس|قبل وبعد|بدل ما|أفضل من|افضل من|أحسن من|احسن من)\b"
+    ]
+    is_explicit_comparison = any(re.search(pat, t) for pat in comp_patterns)
+
+    # 3. كشف الأرقام والمقاييس المنطوقة فعلياً (Explicit Metric / Number Markers)
+    # نتحقق من وجود رقم صريح غير رقم عمر تعريفي بسيط في جملة الترحيب
+    has_digits = bool(re.search(r"\b(\d+)\s*(%|ثانية|ثواني|دقيقة|دقائق|ساعة|ساعات|ولاية|أضعاف|مرات|يوم|أيام)\b", t))
+    has_verbal_metric = any(kw in t for kw in ["أقل من دقيقة", "اقل من دقيقه", "58 ولاية", "100%", "مئة بالمئة"])
+    is_explicit_metric_counter = bool(has_digits or has_verbal_metric)
+
+    # 4. كشف الجمل الترحيبية أو التعريفية العامة (Greeting / Intro / General Conversational Speech)
+    greeting_keywords = ["السلام عليكم", "أهلا", "اهلا", "مرحبا", "كيف الحال", "واش راكم", "طيبين", "عمري", "اسمي", "معكم"]
+    is_greeting_or_intro = (scene_index == 0 and any(gk in t for gk in greeting_keywords)) or any(
+        gk in t for gk in ["السلام عليكم", "كيف الحال", "واش راكم", "طيبين"]
+    )
+
+    # القوالب الممنوعة منطقياً لهذا المشهد
+    forbidden_archetypes = set()
+    if not is_explicit_enumeration or is_greeting_or_intro:
+        forbidden_archetypes.update(ENUMERATION_ONLY_ARCHETYPES)
+    if not is_explicit_comparison or is_greeting_or_intro:
+        forbidden_archetypes.update(COMPARISON_ONLY_ARCHETYPES)
+    if not is_explicit_metric_counter or is_greeting_or_intro:
+        forbidden_archetypes.update(METRIC_COUNTER_ONLY_ARCHETYPES)
+
+    return {
+        "is_explicit_enumeration": is_explicit_enumeration,
+        "is_explicit_comparison": is_explicit_comparison,
+        "is_explicit_metric_counter": is_explicit_metric_counter,
+        "is_greeting_or_intro": is_greeting_or_intro,
+        "forbidden_archetypes": forbidden_archetypes,
+    }
+
+
 def match_speech_to_visual_archetype(
     scene_text: str,
     scene_index: int,
@@ -153,85 +238,95 @@ def match_speech_to_visual_archetype(
     used_archetypes: Optional[List[str]] = None,
     variation_seed: int = 0
 ) -> Tuple[str, str]:
-    # يربط الكلمات المنطوقة في الجملة مباشرة بالرسمة/المجسم التعبيري المتوافق معها 100% مع ضمان عدم التكرار
+    """
+    يربط الكلمات المنطوقة في الجملة مباشرة بالرسمة/المجسم التعبيري المتوافق معها 100%
+    أو بمشهد الفيكتور الحي المجلوب من الإنترنت (`web_dynamic_scene`) مع تطبيق بوابة المنطق الصارم
+    (`detect_strict_speech_intent`) التي تمنع ظهور القوائم المرقمة (1-2-3-4) أو العدادات الوهمية في الكلام العام!
+    """
     used = set(used_archetypes or [])
     t_low = (scene_text or "").lower()
+    intent = detect_strict_speech_intent(scene_text, scene_index, total_scenes)
+    forbidden = intent["forbidden_archetypes"]
+
+    # إذا كان المتحدث يعدد نقاطاً صراحةً (مثل: "أفضل ثلاث ميزات..." أو "الشيء الأول...")
+    if intent["is_explicit_enumeration"]:
+        enum_cands = ["hero_roadmap_milestones", "step_cascade_ribbon_cards", "macos_folder_counter_list"]
+        for ec in enum_cands:
+            if ec not in used:
+                return ec, "hero_roadmap_milestones"
+
+    # إذا كان المتحدث يقارن صراحةً بين شيئين
+    if intent["is_explicit_comparison"]:
+        comp_cands = ["hero_comparison_duel", "damped_balance_scale", "floating_3d_stat_Compare"]
+        for cc in comp_cands:
+            if cc not in used:
+                return cc, "hero_comparison_duel"
 
     rules: List[Tuple[str, List[str], List[str]]] = [
         (
             "hero_power_cable_stand",
             ["كابل", "شاحن", "تشارجي", "يتشارجا", "سوبر فاست", "بطارية", "سيبور", "حامل", "ستاند", "سلك"],
-            ["hero_power_cable_stand", "pack_3d_extruding_pillars", "floating_3d_stat_Compare"]
+            ["hero_power_cable_stand", "web_dynamic_scene", "pack_3d_extruding_pillars"]
         ),
         (
             "hero_shield_durability",
             ["قماش", "يتقطع", "مغلف", "متين", "متانة", "ضمان", "أصلي", "اصلي", "حماية", "مقاوم", "جودة"],
-            ["hero_shield_durability", "radar_target_sweep", "dual_metric_gauge_pods"]
+            ["hero_shield_durability", "radar_target_sweep", "web_dynamic_scene"]
         ),
         (
             "hero_commerce_delivery",
             ["توصيل", "ولاية", "58", "باب الدار", "سعر", "سومة", "بري", "دينار", "مجاني", "باطل", "اكموندي", "اطلب"],
-            ["hero_commerce_delivery", "chrono_ring_3d_counter", "hero_cta_magnet_finale"]
+            ["hero_commerce_delivery", "web_dynamic_scene", "hero_cta_magnet_finale"]
         ),
         (
             "hero_waveform_scissors",
             ["قص", "تقطيع", "صمت", "سكوت", "فراغات", "أخطاء", "غلط", "يحذف", "يشيل", "تنقية"],
-            ["hero_waveform_scissors", "nle_timeline_matrix", "live_magnifier_scanner"]
+            ["hero_waveform_scissors", "web_dynamic_scene", "dark_cinema_fanned_cards"]
         ),
         (
             "hero_camera_production",
             ["تصور", "تصوير", "كاميرا", "عدسة", "لقطة", "سجل", "تسجيل", "إضاءة", "استوديو"],
-            ["hero_camera_production", "dark_cinema_fanned_cards", "reels_6card_showcase_grid"]
+            ["hero_camera_production", "web_dynamic_scene", "reels_6card_showcase_grid"]
         ),
         (
             "hero_ai_neural_core",
             ["ذكاء", "اصطناعي", "الاصطناعي", "آلي", "تلقائي", "يفهم", "يحلل", "خوارزمية", "محرك", "ai"],
-            ["hero_ai_neural_core", "neural_hub_spoke_network", "radar_target_sweep"]
+            ["hero_ai_neural_core", "neural_hub_spoke_network", "web_dynamic_scene"]
         ),
         (
             "hero_chrono_speedometer",
             ["وقت", "ساعات", "ساعة", "دقيقة", "دقيقه", "ثواني", "ثانية", "سرعة", "سريع", "أقل من", "اقل من", "توفير"],
-            ["hero_chrono_speedometer", "chrono_ring_3d_counter", "dual_metric_gauge_pods"]
+            ["hero_chrono_speedometer", "chrono_ring_3d_counter", "web_dynamic_scene"]
         ),
         (
             "hero_sound_wave_mixer",
             ["صوت", "تعليق", "مايك", "ساوند", "مؤثرات", "ووش", "نغمة", "تردد", "سمع"],
-            ["hero_sound_wave_mixer", "hero_waveform_scissors", "nle_timeline_matrix"]
+            ["hero_sound_wave_mixer", "dark_cinema_fanned_cards", "web_dynamic_scene"]
         ),
         (
             "hero_viral_rocket_chart",
-            ["إنتاجية", "انتاجية", "انتشار", "مشاهدات", "تفاعل", "ريتش", "نمو", "يرفع", "مضاعفة", "نتائج", "نجاح"],
-            ["hero_viral_rocket_chart", "bezier_growth_nodes", "pack_3d_extruding_pillars"]
+            ["إنتاجية", "انتاجية", "انتشار", "مشاهدات", "تفاعل", "ريتش", "نمو", "يرفع", "ترفع", "مضاعفة", "نتائج", "نجاح"],
+            ["hero_viral_rocket_chart", "bezier_growth_nodes", "web_dynamic_scene"]
         ),
         (
             "hero_smartphone_reels",
-            ["ريلز", "تيك توك", "شورتس", "انستغرام", "يوتيوب", "التواصل الاجتماعي", "فيديوهات", "مقطع", "تليفون", "هاتف"],
-            ["hero_smartphone_reels", "reels_6card_showcase_grid", "interactive_profile_follow_card"]
+            ["ريلز", "للريلز", "تيك توك", "شورتس", "انستغرام", "يوتيوب", "التواصل الاجتماعي", "فيديوهات", "مقطع", "تليفون", "هاتف"],
+            ["hero_smartphone_reels", "reels_6card_showcase_grid", "web_dynamic_scene"]
         ),
         (
             "hero_creative_palette_pen",
             ["تصميم", "ألوان", "الوان", "ثيم", "لوقو", "شعار", "موشن", "جرافيك", "غرافيك", "أشكال", "رسومات", "ستايل"],
-            ["hero_creative_palette_pen", "dark_cinema_fanned_cards", "pack_3d_extruding_pillars"]
+            ["hero_creative_palette_pen", "web_dynamic_scene", "pack_3d_extruding_pillars"]
         ),
         (
             "hero_problem_radar_fix",
             ["مشكل", "مشكلة", "معاناة", "يعاني", "صعب", "صعيب", "متعب", "ممل", "مشتت", "ضيق", "تعب"],
-            ["hero_problem_radar_fix", "damped_balance_scale", "floating_3d_stat_Compare"]
+            ["hero_problem_radar_fix", "radar_target_sweep", "web_dynamic_scene"]
         ),
         (
             "hero_platform_workspace",
-            ["منصة", "تطبيق", "موقع", "برنامج", "نظام", "مسؤولة", "المسؤولة", "جبت لكم", "جيت لكم", "الحل", "أداة"],
-            ["hero_platform_workspace", "macos_folder_counter_list", "live_magnifier_scanner"]
-        ),
-        (
-            "hero_roadmap_milestones",
-            ["خطوة", "خطوات", "مراحل", "أولاً", "ثانياً", "ثالثاً", "الأولى", "الثانية", "الثالثة", "ثلاث", "خصائص", "طريقة"],
-            ["hero_roadmap_milestones", "step_cascade_ribbon_cards", "macos_folder_counter_list"]
-        ),
-        (
-            "hero_comparison_duel",
-            ["مقابل", "الفرق", "فرق", "مقارنة", "عكس", "أحسن", "أفضل", "بدل", "يدوي", "عادي"],
-            ["hero_comparison_duel", "damped_balance_scale", "floating_3d_stat_Compare"]
+            ["منصة", "تطبيق", "موقع", "برنامج", "نظام", "مسؤولة", "المسؤولة", "جبت لكم", "جيت لكم", "الحل", "أداة", "أبني", "ابني"],
+            ["hero_platform_workspace", "web_dynamic_scene", "interactive_profile_follow_card"]
         ),
         (
             "hero_cta_magnet_finale",
@@ -255,30 +350,34 @@ def match_speech_to_visual_archetype(
         if hits > best_score:
             best_score = hits
             best_subj = subj
-            best_candidates = list(cand_archs)
+            best_candidates = [c for c in cand_archs if c not in forbidden]
 
     text_hash = int(hashlib.md5((scene_text or f"s_{scene_index}").encode("utf-8", errors="ignore")).hexdigest()[:6], 16)
     seed_val = int(variation_seed) + scene_index * 13 + text_hash
 
     if best_candidates:
-        # نختار دائماً الرسمة التعبيرية المباشرة (hero_*) المطابقة لمعنى الجملة أولاً لمنع تكرار البطاقات المربعة
-        unused_hero_cands = [c for c in best_candidates if c.startswith("hero_") and c not in used]
+        unused_hero_cands = [c for c in best_candidates if (c.startswith("hero_") or c == "web_dynamic_scene") and c not in used]
         if unused_hero_cands:
             return unused_hero_cands[0], (best_subj or unused_hero_cands[0])
         unused_cands = [c for c in best_candidates if c not in used]
         if unused_cands:
             return unused_cands[seed_val % len(unused_cands)], (best_subj or unused_cands[0])
 
-    # إن لم تطابق قاعدة محددة أو استُهلكت، نختار من قائمة الرسومات التعبيرية والأنفوجرافيك غير المستخدمة في هذا الفيديو
-    hero_first_pool = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if a.startswith("hero_") and a not in used]
-    other_pool = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if not a.startswith("hero_") and a not in used]
-    combined_unused = hero_first_pool + other_pool
-    if combined_unused:
-        chosen = combined_unused[seed_val % len(combined_unused)]
+    # للجمل الترحيبية أو الكلام العام الذي لا يطابق قاعدة متخصصة، نفضل دائماً مشاهد الفيكتور الحي من الإنترنت والرسومات التعبيرية المفتوحة
+    safe_general_pool = [
+        a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES
+        if a not in forbidden and a not in used and (a == "web_dynamic_scene" or a.startswith("hero_"))
+    ]
+    if not safe_general_pool:
+        safe_general_pool = [a for a in ALL_DYNAMIC_VISUAL_ARCHETYPES if a not in forbidden and a not in used]
+    if safe_general_pool:
+        # إذا كان المشهد ترحيبياً عاماً، نستخدم مشهد الفيكتور الحي من الإنترنت مباشرةً إن لم يُستخدم بعد
+        if intent["is_greeting_or_intro"] and "web_dynamic_scene" in safe_general_pool:
+            return "web_dynamic_scene", (best_subj or "web_dynamic_scene")
+        chosen = safe_general_pool[seed_val % len(safe_general_pool)]
         return chosen, (best_subj or chosen)
 
-    fallback = ALL_DYNAMIC_VISUAL_ARCHETYPES[seed_val % len(ALL_DYNAMIC_VISUAL_ARCHETYPES)]
-    return fallback, (best_subj or fallback)
+    return "web_dynamic_scene", (best_subj or "web_dynamic_scene")
 
 
 PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {

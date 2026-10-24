@@ -88,6 +88,8 @@ from physics_easing import (
     apply_fast_directional_motion_blur
 )
 from vector_lottie_engine import (
+        search_and_fetch_web_vectors,
+        render_recolored_svg_motion_canvas,
     render_lottie_or_svg_badge,
     draw_animated_stroke_dash_rect,
     render_floating_particles_layer,
@@ -95,6 +97,7 @@ from vector_lottie_engine import (
     render_contextual_hero_illustration
 )
 from style_evolution_brain import (
+        detect_strict_speech_intent,
     evaluate_and_evolve_frame,
     get_best_params_for_scene_type,
     get_active_brand_theme,
@@ -1141,9 +1144,17 @@ def _render_dynamic_archetype_stage(
     kpi_val = str(scene_meta.get("kpi_value") or "+44")
     kpi_lbl = str(scene_meta.get("kpi_label") or "أداء احترافي")
 
-    sub_items = [re.sub(r"^\d+[\.\-\s]+", "", str(s)).strip() for s in (scene_meta.get("sub_items") or []) if str(s).strip()]
+    raw_sub_items = [re.sub(r"^\d+[\.\-\s]+", "", str(s)).strip() for s in (scene_meta.get("sub_items") or []) if str(s).strip()]
+    sub_items: List[str] = []
+    for s_it in raw_sub_items:
+        if s_it and s_it not in sub_items:
+            sub_items.append(s_it)
+    for fallback_s in [concept_title, kpi_lbl, badge_label.split("•")[-1].strip(), kpi_val]:
+        fb_clean = str(fallback_s or "").strip()
+        if fb_clean and fb_clean not in sub_items:
+            sub_items.append(fb_clean)
     while len(sub_items) < 6:
-        sub_items.append(kpi_lbl if len(sub_items) % 2 == 0 else kpi_val)
+        sub_items.append(concept_title)
 
     # حساب التقدم المتزامن مع الكلمات المنطوقة فعلياً (Audio-Synced Progression)
     sc_w_list = scene_words if scene_words else (scene_meta.get("word_strings") or concept_title.split())
@@ -1182,6 +1193,21 @@ def _render_dynamic_archetype_stage(
     archetype = legacy_map.get(raw_arch, raw_arch)
     if archetype not in ALL_DYNAMIC_VISUAL_ARCHETYPES:
         archetype = ALL_DYNAMIC_VISUAL_ARCHETYPES[(step_num - 1) % len(ALL_DYNAMIC_VISUAL_ARCHETYPES)]
+
+    # بوابة المنطق الصارم: منع ظهور القوالب المرقمة (1-2-3-4) أو الميزان أو العدادات في مشاهد الكلام العام غير المرقمة!
+    if not user_override_arch and callable(detect_strict_speech_intent):
+        raw_scene_txt = str(scene_meta.get("text") or concept_title or "")
+        intent_info = detect_strict_speech_intent(raw_scene_txt, step_num - 1, total_scenes)
+        if archetype in intent_info.get("forbidden_archetypes", set()):
+            matched_arch, _ = match_speech_to_visual_archetype(
+                scene_text=raw_scene_txt,
+                scene_index=step_num - 1,
+                total_scenes=total_scenes,
+                used_archetypes=[],
+                variation_seed=step_num * 17
+            )
+            archetype = matched_arch if matched_arch not in intent_info.get("forbidden_archetypes", set()) else "web_dynamic_scene"
+
     if not user_override_arch and step_num == total_scenes and total_scenes >= 3 and archetype not in ("hero_cta_magnet_finale", "kinetic_quote_dm_finale", "hero_commerce_delivery"):
         archetype = "hero_cta_magnet_finale" if (step_num % 2 == 0) else "kinetic_quote_dm_finale"
 
@@ -1224,7 +1250,7 @@ def _render_dynamic_archetype_stage(
     # =========================================================================
     # Archetypes 1..16 (Bespoke Speech-Matched Open-Canvas Hero Illustrations)
     # =========================================================================
-    if archetype.startswith("hero_"):
+    if archetype.startswith("hero_") or archetype == "web_dynamic_scene":
         return render_contextual_hero_illustration(
             img=img,
             archetype=archetype,
@@ -1410,15 +1436,14 @@ def _render_dynamic_archetype_stage(
         by1 = st_y1 + int(st_h * 0.16) + int(28 * (1.0 - card_sp))
         bx2, by2 = bx1 + cw, by1 + ch
 
-        # العداد العملاق شبه الشفاف خلف أعلى البطاقة (+25 -> +34 -> +44 كما في 6944.mp4)
+        # العداد الخلفي يظهر فقط إذا ذكر المتحدث رقماً حقيقياً في الجملة (بدون أي أرقام +28 أو +44 عشوائية!)
         num_m = re.search(r"(\d+)", f"{kpi_val} {concept_title}")
-        target_c = int(num_m.group(1)) if num_m else 44
-        if target_c < 10:
-            target_c = 44
-        cur_c = max(10, int(round(target_c * min(1.0, max(0.25, choreo_u * 1.35)))))
-        cnt_font = get_arabic_font(max(42, int(h * 0.056)), bold=True)
-        cnt_col = (161, 161, 170, 175) if is_light_bg else (148, 163, 184, 175)
-        draw_arabic_text(draw, (cx, by1 - int(h * 0.026)), f"+{cur_c}", font=cnt_font, fill=cnt_col)
+        if num_m:
+            target_c = max(1, int(num_m.group(1)))
+            cur_c = max(1, int(round(target_c * min(1.0, max(0.25, choreo_u * 1.35)))))
+            cnt_font = get_arabic_font(max(40, int(h * 0.052)), bold=True)
+            cnt_col = (161, 161, 170, 175) if is_light_bg else (148, 163, 184, 175)
+            draw_arabic_text(draw, (cx, by1 - int(h * 0.026)), f"+{cur_c}", font=cnt_font, fill=cnt_col)
 
         # البطاقة البيضاء الناعمة بدون أي حدود سوداء كرتونية (Soft 3D Drop Shadow)
         img = _draw_soft_elevated_card(
@@ -1892,9 +1917,10 @@ def _render_dynamic_archetype_stage(
             pill_y = rad_cy + max_r + 18
             img = _draw_soft_elevated_card(img, (st_x1 + 14, pill_y, st_x2 - 14, pill_y + 50), radius=25, fill_rgba=(255, 255, 255, 252), shadow_offset_y=10, shadow_blur=12, shadow_alpha=40)
             draw = ImageDraw.Draw(img, "RGBA")
+            rad_pill_txt = concept_title if (kpi_val == sub_items[0] or kpi_val in sub_items[0]) else f"{kpi_val}  •  {sub_items[0]}"
             draw_contained_arabic_text(
                 draw, (st_x1 + 26, pill_y, st_x2 - 26, pill_y + 50),
-                f"{kpi_val}  •  {sub_items[0]}", initial_font_size=17, fill=(*dark_navy, 255)
+                rad_pill_txt, initial_font_size=17, fill=(*dark_navy, 255)
             )
         return img
 

@@ -107,6 +107,11 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
     "ريز": "ريلز",
     "ريز،": "ريلز،",
     "الريز": "الريلز",
+    "للرز": "للريلز",
+    "للريز": "للريلز",
+    "لريز": "للريلز",
+    "لريلز": "للريلز",
+    "الرز": "الريلز",
     "وشراكم": "واش راكم",
     "واشراكم": "واش راكم",
     "علاه": "علاش",
@@ -185,6 +190,12 @@ PHRASE_LEVEL_FIXES = [
     (r"ترفع\s+ان\s+ترفع", "ترفع"),
     (r"ترفع\s+أن\s+ترفع", "ترفع"),
     (r"لاحظت\s+ان\s+في", "لاحظت أن في"),
+    (r"عندها\s+مش\s+في", "عندها مشكل في"),
+    (r"عنده\s+مش\s+في", "عندها مشكل في"),
+    (r"ما\s+عندها\s+مش\s+في", "ما عندها مشكل في"),
+    (r"في\s+المونتاج\s+للرز", "في المونتاج للريلز"),
+    (r"في\s+المونتاج\s+للريز", "في المونتاج للريلز"),
+    (r"تصور\s+لي\s+الفيديوهات", "تصور الفيديوهات"),
 ]
 
 
@@ -198,6 +209,11 @@ CONTEXTUAL_BROKEN_WORD_REPAIRS = [
     (r"(?<!\w)الان\s+أغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
     (r"(?<!\w)الان\s+اغلب\s+الناس(?!\w)", "لأن أغلب الناس"),
     (r"(?<!\w)تصور\s+للفيديوهات(?!\w)", "تصور الفيديوهات"),
+    (r"(?<!\w)تصور\s+لي\s+الفيديوهات(?!\w)", "تصور الفيديوهات"),
+    (r"(?<!\w)عندها\s+مش\s+في(?!\w)", "عندها مشكل في"),
+    (r"(?<!\w)مش\s+في\s+المونتاج(?!\w)", "مشكل في المونتاج"),
+    (r"(?<!\w)للرز(?!\w)", "للريلز"),
+    (r"(?<!\w)للريز(?!\w)", "للريلز"),
     (r"(?<!\w)التواصل\s+الاج(?!\w)", "التواصل الاجتماعي"),
     (r"(?<!\w)مواقع\s+التواصل\s+الاج(?!\w)", "مواقع التواصل الاجتماعي"),
     (r"(?<!\w)الاج(?!\w)", "الاجتماعي"),
@@ -259,6 +275,21 @@ def repair_truncated_words_and_sentences(words_list):
     for i, w_obj in enumerate(repaired):
         raw_w = str(w_obj.get("word", "")).strip()
         clean_w = raw_w.strip("،,.!؟?")
+        if clean_w in {"للرز", "للريز", "لريز"}:
+            repaired[i]["word"] = "للريلز"
+            clean_w = "للريلز"
+        if clean_w == "مش" and i + 1 < n:
+            nxt_w_check = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            prev_w_check = str(repaired[i - 1].get("word", "")).strip("،,.!؟?") if i > 0 else ""
+            if nxt_w_check == "في" or prev_w_check in {"عندها", "عنده"}:
+                repaired[i]["word"] = "مشكل"
+                clean_w = "مشكل"
+        if clean_w == "لي" and i > 0 and i + 1 < n:
+            prev_w_check = str(repaired[i - 1].get("word", "")).strip("،,.!؟?")
+            nxt_w_check = str(repaired[i + 1].get("word", "")).strip("،,.!؟?")
+            if prev_w_check in {"تصور", "يصور"} and "فيديو" in nxt_w_check:
+                repaired[i]["word"] = ""
+                clean_w = ""
         if clean_w in SINGLE_TRUNCATED_TOKEN_MAP:
             repaired[i]["word"] = SINGLE_TRUNCATED_TOKEN_MAP[clean_w]
             clean_w = repaired[i]["word"]
