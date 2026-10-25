@@ -328,8 +328,8 @@ def _execute_master_director_pipeline(
         # تقسيم الكلمات إلى مشاهد سريعة تتغير كل 2.5 إلى 3.0 ثوانٍ لكسر الملل
         micro_scenes = split_words_into_micro_scenes(
             word_data,
-            max_words_per_scene=6,
-            max_duration_per_scene=2.85,
+            max_words_per_scene=10,
+            max_duration_per_scene=4.5,
             min_words_per_scene=3
         )
         force_free_ram()
@@ -362,9 +362,9 @@ def _execute_master_director_pipeline(
                 gemini_api_key=gemini_api_key,
                 openai_api_key=openai_api_key
             )
-            master_plan = enforce_fast_hormozi_scene_pacing(master_plan, min_scene_sec=1.6, max_scene_sec=2.9)
+            master_plan = enforce_fast_hormozi_scene_pacing(master_plan, min_scene_sec=1.6, max_scene_sec=4.5)
         else:
-            master_plan = enforce_fast_hormozi_scene_pacing(micro_scenes, min_scene_sec=1.6, max_scene_sec=2.9)
+            master_plan = enforce_fast_hormozi_scene_pacing(micro_scenes, min_scene_sec=1.6, max_scene_sec=4.5)
 
         broll_scenes_count = sum(1 for sc in master_plan if sc.get("layout_mode") == "stock_broll")
         update_progress(0.42, f"3/5: تحضير {broll_scenes_count} مشاهد B-Roll حقيقية عبر Pexels API...")

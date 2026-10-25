@@ -136,12 +136,10 @@ def build_stage1_kinetic_only_plan(words: List[Dict[str, Any]], duration: float 
     يبني خطة المرحلة 1: قالب واحد فقط (kinetic_hook) + كابشن متزامن على الصوت المرجعي.
     """
     chunks = [
-        (0.00, 2.00, "السلام عليكم، على بالي بلي راك تعاني", ["تحدي صناع", "المحتوى"]),
-        (2.00, 4.15, "من مشكل الوقت وما عندكش الوقت", ["ضيق الوقت", "اليومي"]),
-        (4.15, 6.75, "باش تمونطي لي فيديو وتطلعهم في السوشيال", ["صعوبة المونتاج", "المستمر"]),
-        (6.75, 9.05, "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا", ["توقف نشر", "الحسابات"]),
-        (9.05, 11.25, "عموماً يموتوا، وأنت ما على بالكش", ["هبوط التفاعل", "والوصول"]),
-        (11.25, 13.65, "بلي كاين منصة اسمها فيديو إيديتينغ", ["منصة فيديو", "إيديتينغ"]),
+        (0.00, 3.05, "السلام عليكم، على بالي بلي راك تعاني من مشكل الوقت", ["تحدي صناع", "المحتوى"]),
+        (3.05, 6.75, "وما عندكش الوقت باش تمونطي لي فيديو وتطلعهم في السوشيال", ["ضيق الوقت", "وصعوبة المونتاج"]),
+        (6.75, 9.80, "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا عموماً يموتوا،", ["توقف نشر", "الحسابات"]),
+        (9.80, 13.65, "وأنت ما على بالكش بلي كاين منصة اسمها فيديو إيديتينغ", ["منصة فيديو", "إيديتينغ"]),
         (13.65, 16.05, "تقدر تمونطي لك لي فيديو تاعك بالموشن جرافيك", ["مونتاج ذكي", "وتلقائي"]),
         (16.05, 18.25, "وبالمونتاج العادي وتنقي الصوت", ["تنقية الصوت", "والمشاهد"]),
         (18.25, 20.35, "وتنحي الصمت من الفيديو بشكل مجاني", ["حذف الصمت", "مجاناً"]),
@@ -229,15 +227,31 @@ def build_semantic_representation_graph(
     cur_w: List[Dict[str, Any]] = []
     pause_after_indices = {int(p.get("after_word_index", -99)): p for p in pauses}
 
+    try:
+        from transcriber import can_split_between_arabic_words, is_semantic_clause_starter
+    except ImportError:
+        can_split_between_arabic_words = lambda p, n, pp="": True
+        is_semantic_clause_starter = lambda w, p="", pp="": False
+
     for i, w in enumerate(words):
         cur_w.append(w)
         span = float(cur_w[-1]["end"]) - float(cur_w[0]["start"])
         txt = str(w.get("word", ""))
+        nxt_txt = str(words[i + 1].get("word", "")) if i + 1 < len(words) else ""
+        pp_txt = str(cur_w[-2].get("word", "")) if len(cur_w) >= 2 else ""
         w_idx = int(w.get("index", i))
         has_major_punct = any(p in txt for p in ["،", ",", ".", "؟", "?", "!"])
         has_pause_here = w_idx in pause_after_indices and pause_after_indices[w_idx].get("duration_sec", 0.0) >= 0.14
+        syntactically_safe = can_split_between_arabic_words(txt, nxt_txt, pp_txt) if nxt_txt else True
+        next_is_starter = is_semantic_clause_starter(nxt_txt, txt, pp_txt) if nxt_txt else False
 
-        if (has_major_punct and span >= 1.2) or (has_pause_here and span >= 1.35) or span >= 3.0 or len(cur_w) >= 8:
+        if syntactically_safe and (
+            (has_major_punct and span >= 1.2)
+            or (has_pause_here and span >= 1.5)
+            or (next_is_starter and len(cur_w) >= 3)
+            or span >= 4.2
+            or len(cur_w) >= 10
+        ):
             if span >= 1.15 or len(cur_w) >= 3:
                 units_raw.append((float(cur_w[0]["start"]), float(cur_w[-1]["end"]), list(cur_w)))
                 cur_w = []

@@ -896,6 +896,8 @@ def create_studio_background(
     return canvas_np
 
 
+_PRO_STAGE_BG_CACHE: Dict[Tuple[Any, ...], Image.Image] = {}
+
 def _render_pro_stage_background(
     width: int,
     height: int,
@@ -906,6 +908,18 @@ def _render_pro_stage_background(
     scene_progress: float = 0.5,
     broll_frame_rgb: Optional[np.ndarray] = None
 ) -> Image.Image:
+    if broll_frame_rgb is None:
+        pal_c = style_spec.get("palette", {})
+        bg_key = (
+            width, height, step_num, force_dark_cinema,
+            tuple(pal_c.get("top_bg", (12, 17, 32)))[:3],
+            tuple(pal_c.get("bottom_bg", (22, 32, 58)))[:3],
+            tuple(pal_c.get("glow", (56, 189, 248)))[:3],
+            bool(pal_c.get("is_light_bg", False)),
+            bool(style_spec.get("has_giant_bg_numbers", False))
+        )
+        if bg_key in _PRO_STAGE_BG_CACHE:
+            return _PRO_STAGE_BG_CACHE[bg_key].copy()
     # إذا توفرت لقطة B-Roll حقيقية (من Pexels API)، نطبق Slow Zoom-in (105%) + Gaussian Blur خفيف + تعتيم سينمائي لضمان وضوح النص!
     if broll_frame_rgb is not None and isinstance(broll_frame_rgb, np.ndarray) and broll_frame_rgb.ndim == 3:
         try:
@@ -952,6 +966,10 @@ def _render_pro_stage_background(
             bg_d = ImageDraw.Draw(pil_bg, "RGBA")
             f_giant = get_arabic_font(max(90, int(width * 0.24)), bold=True)
             bg_d.text((width // 2, int(height * 0.16)), f"{step_num:02d}", font=f_giant, fill=(203, 213, 225, 55), anchor="mm")
+        if broll_frame_rgb is None:
+            if len(_PRO_STAGE_BG_CACHE) > 16:
+                _PRO_STAGE_BG_CACHE.clear()
+            _PRO_STAGE_BG_CACHE[bg_key] = pil_bg.copy()
         return pil_bg
 
     if (0.299 * raw_top[0] + 0.587 * raw_top[1] + 0.114 * raw_top[2]) > 75:
@@ -980,7 +998,12 @@ def _render_pro_stage_background(
     mask2 = np.exp(-dist2 * 2.1)[:, :, None] * 0.16
     canvas_np = np.clip(canvas_np * (1.0 - mask2) + glow_c * mask2, 0, 255).astype(np.uint8)
 
-    return Image.fromarray(canvas_np, mode="RGB").convert("RGBA")
+    res_pil_bg = Image.fromarray(canvas_np, mode="RGB").convert("RGBA")
+    if broll_frame_rgb is None:
+        if len(_PRO_STAGE_BG_CACHE) > 16:
+            _PRO_STAGE_BG_CACHE.clear()
+        _PRO_STAGE_BG_CACHE[bg_key] = res_pil_bg.copy()
+    return res_pil_bg
 
 
 def _draw_soft_elevated_card(
@@ -2608,6 +2631,7 @@ def render_single_scene_canvas(
     width: int,
     height: int,
     bg_cache: Dict[str, np.ndarray],
+    draw_subtitle: bool = True,
     **kwargs
 ) -> Image.Image:
     theme_name, theme, is_light, logo_path, logo_pos = _resolve_active_theme_and_style(scene_meta)
@@ -2653,19 +2677,20 @@ def render_single_scene_canvas(
         total_duration=total_duration
     )
 
-    caption_theme = {
-        "primary": tuple(pal.get("primary", (217, 155, 28))),
-        "secondary": tuple(pal.get("sticker_bg", (234, 179, 8)))
-    }
-    _render_unified_karaoke_subtitle(
-        img=img,
-        sc_words=scene_words,
-        act_word=active_word,
-        w_prog=word_local_progress,
-        cap_y=int(height * 0.865),
-        theme=caption_theme,
-        active_word_idx=active_word_idx
-    )
+    if draw_subtitle and scene_words:
+        caption_theme = {
+            "primary": tuple(pal.get("primary", (217, 155, 28))),
+            "secondary": tuple(pal.get("sticker_bg", (234, 179, 8)))
+        }
+        _render_unified_karaoke_subtitle(
+            img=img,
+            sc_words=scene_words,
+            act_word=active_word,
+            w_prog=word_local_progress,
+            cap_y=int(height * 0.865),
+            theme=caption_theme,
+            active_word_idx=active_word_idx
+        )
 
     return img
 
@@ -2950,6 +2975,8 @@ def render_hormozi_kinetic_caption(
         cur_right_x -= (ww + word_spaces)
 
 
+_SUBTITLE_BAR_CACHE: Dict[Tuple[Any, ...], Tuple[Image.Image, int, int]] = {}
+
 def _render_unified_karaoke_subtitle(
     img: Image.Image,
     sc_words: List[str],
@@ -2959,16 +2986,36 @@ def _render_unified_karaoke_subtitle(
     theme: Dict[str, Any],
     active_word_idx: Optional[int] = None
 ):
-    render_hormozi_kinetic_caption(
-        img=img,
-        sc_words=sc_words,
-        act_word=act_word,
-        w_prog=w_prog,
-        cap_y=cap_y,
-        theme=theme,
-        active_word_idx=active_word_idx,
-        progressive_word_reveal=False
+    if not sc_words:
+        return
+    w, h = img.size
+    sub_key = (
+        w, h, tuple(sc_words), str(act_word), int(active_word_idx or 0), int(cap_y),
+        tuple(theme.get("primary", (16, 185, 129)))[:3],
+        tuple(theme.get("secondary", (250, 204, 21)))[:3]
     )
+    cached_sub = _SUBTITLE_BAR_CACHE.get(sub_key)
+    if cached_sub is None:
+        if len(_SUBTITLE_BAR_CACHE) > 64:
+            _SUBTITLE_BAR_CACHE.clear()
+        band_h = max(140, int(h * 0.14))
+        band_y1 = max(0, int(cap_y - band_h // 2))
+        temp_full = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        render_hormozi_kinetic_caption(
+            img=temp_full,
+            sc_words=sc_words,
+            act_word=act_word,
+            w_prog=0.5,
+            cap_y=cap_y,
+            theme=theme,
+            active_word_idx=active_word_idx,
+            progressive_word_reveal=False
+        )
+        band_crop = temp_full.crop((0, band_y1, w, min(h, band_y1 + band_h)))
+        cached_sub = (band_crop, 0, band_y1)
+        _SUBTITLE_BAR_CACHE[sub_key] = cached_sub
+    band_crop, bx, by = cached_sub
+    img.alpha_composite(band_crop, (bx, by))
 
 
 # ==============================================================================
@@ -3186,7 +3233,8 @@ def render_master_directed_video_frame(
                 audio_level=audio_level,
                 width=w,
                 height=h,
-                bg_cache=bg_cache
+                bg_cache=bg_cache,
+                draw_subtitle=False
             )
             img = render_one_take_camera_handoff(
                 prev_img=prev_img,
@@ -3266,8 +3314,8 @@ def create_kinetic_typography_video(
 
             semantic_clauses = split_words_into_micro_scenes(
                 words,
-                max_words_per_scene=6,
-                max_duration_per_scene=2.8,
+                max_words_per_scene=10,
+                max_duration_per_scene=4.5,
                 min_words_per_scene=3
             )
             full_transcript = " ".join(w.get("word", "") for w in words)
@@ -3328,7 +3376,8 @@ def create_kinetic_typography_video(
                 audio_level=0.8,
                 width=vw,
                 height=vh,
-                bg_cache=bg_cache
+                bg_cache=bg_cache,
+                draw_subtitle=False
             )
 
             time_into = t - sc["start"]
@@ -3347,7 +3396,8 @@ def create_kinetic_typography_video(
                     audio_level=0.8,
                     width=vw,
                     height=vh,
-                    bg_cache=bg_cache
+                    bg_cache=bg_cache,
+                    draw_subtitle=False
                 )
                 t_mode = trans_cycle[active_idx % len(trans_cycle)]
                 curr_img = render_one_take_camera_handoff(
@@ -3359,6 +3409,22 @@ def create_kinetic_typography_video(
                     curr_meta=sc,
                     stage_bbox=(int(vw * 0.04), int(vh * 0.112), int(vw * 0.96), int(vh * 0.725))
                 )
+
+            # رسم شريط الكابشن السفلي كطبقة HUD ثابتة بعد انتهاء الانتقال لمنع قفز الكابشن أو ازدواجه!
+            pal_sub = (sc.get("scene_style_spec") or {}).get("palette", {})
+            caption_theme = {
+                "primary": tuple(pal_sub.get("primary", (16, 185, 129))),
+                "secondary": tuple(pal_sub.get("sticker_bg", (250, 204, 21)))
+            }
+            _render_unified_karaoke_subtitle(
+                img=curr_img,
+                sc_words=sc_words,
+                act_word=act_w,
+                w_prog=w_p,
+                cap_y=int(vh * 0.865),
+                theme=caption_theme,
+                active_word_idx=act_w_idx
+            )
 
             return np.array(curr_img.convert("RGB"), dtype=np.uint8)
 

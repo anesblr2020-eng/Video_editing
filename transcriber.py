@@ -63,6 +63,11 @@ ALGERIAN_DARIJA_INITIAL_PROMPT = (
 ALGERIAN_DARIJA_LEXICON_FIXES = {
     # تصحيحات خاصة بمصطلحات المونتاج وصناعة المحتوى بالدارجة الجزائرية
     "تنوضي": "يمونتي",
+    "ايديتين": "إيديتينغ",
+    "ايديتينغ": "إيديتينغ",
+    "إيديتين": "إيديتينغ",
+    "وبالاي": "وبالـ AI",
+    "بالاي": "بالـ AI",
     "ينوضي": "يمونتي",
     "نوضي": "يمونتي",
     "يمونطي": "يمونتي",
@@ -187,6 +192,10 @@ ALGERIAN_DARIJA_LEXICON_FIXES = {
 }
 
 PHRASE_LEVEL_FIXES = [
+    (r"وبالـ\s*AI\s+أي\b", "وبالـ AI"),
+    (r"وبالاي\s+أي\b", "وبالـ AI"),
+    (r"وبالاي\s+اي\b", "وبالـ AI"),
+    (r"فيديو\s+ايديتين\b", "فيديو إيديتينغ"),
     (r"باش\s+تنوضي\s+لي\s+فيديو\s+واش\s+ترفعهم", "باش تمونتي الفيديوهات وترفعهم"),
     (r"باش\s+يمونتي\s+فيديو\s+الحساب\s+تاعك", "باش تمونتي الفيديوهات وترفعهم في حسابك"),
     (r"من\s+مشكل\s+وما\s+عندكش\s+الوقت", "من مشكل الوقت وما عندكش الوقت"),
@@ -861,66 +870,193 @@ def sync_live_scene_edits_to_words(
     return synced_scenes, all_synced_words
 
 
+# ==============================================================================
+# قواعد الحدود النحوية والدلالية الصارمة للدارجة الجزائرية والعربية (Semantic Clause Boundaries)
+# تمنع قطع المشاهد بعد أي حرف جر أو أداة ربط أو مضاف أو إشارة أو نفي منعاً باتاً
+# ==============================================================================
+FORBIDDEN_SCENE_END_WORDS = {
+    # حروف الجر والظروف المكانية/الزمانية المضافة
+    "من", "في", "على", "إلى", "الى", "عن", "مع", "بين", "تحت", "فوق", "أمام", "امام",
+    "وراء", "خلف", "حول", "دون", "بدون", "بلا", "عند", "لدى", "منذ", "مذ", "خلال", "عبر",
+    "ضد", "نحو", "قرب", "وسط", "داخل", "خارج", "قبل", "بعد", "أسفل", "اسفل", "أعلى", "اعلى",
+    # حروف الجر والربط المفردة
+    "ب", "ك", "ل", "و", "ف", "بـ", "كـ", "لـ", "وـ", "فـ",
+    # أدوات الإضافة والملكية بالدارجة والفصحى
+    "تاع", "نتاع", "متاع", "ديال", "شغل", "جال", "سبيل",
+    # أدوات الربط والتعليل والشرط والاستثناء
+    "بلي", "باش", "باه", "كي", "كيما", "لأن", "لان", "لأنه", "لانه", "لأنها", "لانها",
+    "أنه", "انه", "أنها", "انها", "أن", "ان", "إن", "إذ", "اذ", "إذا", "اذا", "لو", "لولا",
+    "كون", "حتى", "حتي", "أو", "او", "أم", "ام", "ولا", "بل", "لكن", "لاكن", "بصح", "غير",
+    "سوى", "عدا", "حاشا", "خاطر", "علاش", "كيفاش", "واش", "وش", "وين", "وقتاش", "شحال", "قداش",
+    # أدوات النفي والنهي والتحقيق والاستقبال
+    "ما", "وما", "لا", "لم", "لن", "ليس", "ليست", "ماشي", "مش", "موش", "قد", "سوف", "راح", "غادي",
+    # أسماء الإشارة والأسماء الموصولة والضمائر المنفصلة
+    "هذا", "هذه", "هاد", "هاذ", "هادي", "هاذي", "هذوك", "هادوك", "هذاك", "هداك", "ذلك", "تلك",
+    "وهذا", "وهاد", "وهاذ", "وهذه",
+    "الذي", "التي", "الذين", "اللي", "الي", "لي",
+    "أنا", "انا", "أنت", "انت", "انتي", "وانت", "وأنت", "وإنت", "أنتما", "أنتم", "انتم", "هم", "هما", "هن", "نحن", "احنا", "هو", "هي",
+    # مضافات شائعة وكلمات ناقصة دلالياً بدون ما بعدها
+    "كل", "أي", "اي", "بعض", "نفس", "مثل", "شبه", "أغلب", "اغلب", "معظم", "كامل", "قاع", "كاع",
+    "بزاف", "شوية", "شويا", "أكثر", "اكثر", "أقل", "اقل", "أحسن", "احسن", "أفضل", "افضل", "أول", "اول", "آخر", "اخر",
+    "بشكل", "بطريقة", "بأسلوب", "فيها", "فيه", "عندي", "عندك", "عنده", "عندها", "عندنا", "عندكم", "عندهم",
+    "راني", "راك", "راكي", "راه", "راهو", "راهي", "رانا", "راكم", "راهم", "كان", "كانت", "يكون", "تكون",
+    "كاين", "كاينه", "ماكانش", "مكاينش",
+    "اسم", "واسم", "اسمها", "اسمه", "اسمو", "منصة", "المنصة", "بالذكاء", "بذكاء", "وبالذكاء",
+    "وبالاي", "بالاي", "رابط", "الرابط", "مشكل", "مشكلة", "حل", "الحل", "حساب", "الحساب", "الكونت", "كونت",
+    # أفعال ناقصة أو متعدية شائعة لا يكتمل معناها بدون مفعولها المباشر
+    "تقدر", "نقدر", "يقدر", "تقدرو", "نقدرو", "يقدرو", "تحب", "نحب", "يحب", "لازم", "خصك", "خصني",
+    "أحاول", "احاول", "أبني", "ابني", "تعمل", "تخدم", "يمونتي", "تمونتي", "تمونطي", "يمونطي", "تمنتج", "يمنتج",
+    "تنحي", "ينحي", "تنقي", "ينقي", "تبدل", "ترفع", "تطلع", "وتطلع", "وتنقي", "وتنحي", "وتمونتي", "وتمونطي",
+    "ومخلي", "مخلي", "وخلا", "قاعد", "وقاعد", "عمري", "تعاني", "يعاني", "نعاني", "تعانيو", "يعانيو",
+}
+
+FORBIDDEN_SCENE_START_WORDS = {
+    "بالي", "بالك", "بالكش", "لك", "لي", "لهم", "لها", "له", "لنا", "لكم", "بيك", "بيه", "بيها", "بيهم",
+    "تاع", "نتاع", "متاع", "ديال", "تاعي", "تاعك", "تاعو", "تاعها", "تاعهم", "تاعنا", "تاعكم",
+    "من", "في", "على", "إلى", "الى", "عن", "مع", "بلي", "باش", "باه",
+    "الاصطناعي", "الإصطناعي", "ميديا", "إيديتينغ", "ايديتينغ", "جرافيك", "غرافيك", "برك", "فقط",
+    "العادي", "مجاني", "مجاناً", "مجانا", "عموماً", "عموما", "الفيديو", "فيديو", "الصوت", "الصمت", "الوقت",
+    "أي", "اي", "أسفل", "اسفل", "عليكم",
+}
+
+INSEPARABLE_ARABIC_BIGRAMS = {
+    ("السلام", "عليكم"), ("وعليكم", "السلام"),
+    ("على", "بالي"), ("على", "بالك"), ("على", "بالكش"),
+    ("ما", "على"), ("وما", "على"), ("وأنت", "ما"), ("وانت", "ما"),
+    ("بلي", "راك"), ("راك", "تعاني"), ("تعاني", "من"),
+    ("من", "مشكل"), ("مشكل", "تاع"), ("مشكل", "الوقت"), ("تاع", "الوقت"),
+    ("وما", "عندكش"), ("ما", "عندكش"), ("عندكش", "الوقت"),
+    ("باش", "تمونتي"), ("باش", "تمونطي"),
+    ("تمونتي", "لي"), ("تمونطي", "لي"), ("تمونتي", "لك"), ("تمونطي", "لك"),
+    ("تقدر", "تمونتي"), ("تقدر", "تمونطي"),
+    ("لي", "فيديو"), ("فيديو", "تاعك"),
+    ("وتطلعهم", "في"), ("ترفعهم", "في"), ("في", "السوشيال"), ("السوشيال", "ميديا"), ("والسوشيال", "ميديا"),
+    ("ومخلي", "الحساب"), ("ومخلي", "الكونت"), ("الحساب", "تاعك"), ("الكونت", "تاعك"),
+    ("تاعك", "في"), ("في", "انستغرام"), ("في", "إنستغرام"),
+    ("بلي", "كاين"), ("كاين", "منصة"), ("منصة", "اسمها"), ("اسمها", "فيديو"),
+    ("فيديو", "ايديتينغ"), ("فيديو", "إيديتينغ"),
+    ("بالموشن", "جرافيك"), ("وبالمونتاج", "العادي"), ("بالمونتاج", "العادي"),
+    ("وتنقي", "الصوت"), ("وتنحي", "الصمت"), ("وتمونتي", "الصمت"), ("الصمت", "من"), ("من", "الفيديو"),
+    ("وهذا", "بشكل"), ("بشكل", "مجاني"),
+    ("وبالذكاء", "الاصطناعي"), ("بالذكاء", "الاصطناعي"), ("الاصطناعي", "برك"),
+    ("وبالاي", "أي"), ("وبالاي", "اي"), ("بالاي", "أي"), ("بالاي", "اي"),
+    ("رابط", "التسجيل"), ("التسجيل", "في"), ("في", "أسفل"), ("في", "اسفل"), ("أسفل", "الفيديو"), ("اسفل", "الفيديو"),
+}
+
+
+def _clean_arabic_token_for_boundary(w: str) -> str:
+    return re.sub(r"[^\w\u0600-\u06FF]", "", str(w or "")).strip()
+
+
+def can_split_between_arabic_words(prev_word_txt: str, next_word_txt: str, prev_prev_word_txt: str = "") -> bool:
+    """
+    تتحقق مما إذا كان الفصل بين كلمتين متتاليتين سليماً نحوياً ودلالياً،
+    وتمنع الفصل بعد أي حرف جر أو أداة ربط أو مضاف أو اسم إشارة أو أداة نفي.
+    """
+    p_clean = _clean_arabic_token_for_boundary(prev_word_txt)
+    n_clean = _clean_arabic_token_for_boundary(next_word_txt)
+    pp_clean = _clean_arabic_token_for_boundary(prev_prev_word_txt)
+    if not p_clean or not n_clean:
+        return True
+    if (p_clean, n_clean) in INSEPARABLE_ARABIC_BIGRAMS:
+        return False
+    # حالة نطق "وبالاي أي" (وبالـ AI) حيث "أي" هي الحرف الثاني من AI وليست أداة إضافة عربية
+    if p_clean in {"أي", "اي"} and pp_clean in {"وبالاي", "بالاي"}:
+        return n_clean not in FORBIDDEN_SCENE_START_WORDS
+    if p_clean in FORBIDDEN_SCENE_END_WORDS:
+        return False
+    if len(p_clean) <= 2 and p_clean not in {"برك", "صح", "تم", "يد", "دم"}:
+        return False
+    if n_clean in FORBIDDEN_SCENE_START_WORDS:
+        return False
+    return True
+
+
+def is_semantic_clause_starter(word_txt: str, prev_word_txt: str = "", prev_prev_word_txt: str = "") -> bool:
+    """تحدد ما إذا كانت الكلمة تمثل بداية جملة دلالية جديدة (Semantic Clause Starter)."""
+    w_clean = _clean_arabic_token_for_boundary(word_txt)
+    p_clean = _clean_arabic_token_for_boundary(prev_word_txt)
+    if not w_clean:
+        return False
+    if not can_split_between_arabic_words(prev_word_txt, word_txt, prev_prev_word_txt):
+        return False
+    if w_clean in {"رابط", "الرابط", "التسجيل"} and p_clean not in {"رابط", "الرابط", "من", "في", "على", "مع"}:
+        return True
+    if w_clean in {
+        "وما", "ولكن", "لكن", "بصح", "باش", "لأن", "لان", "خاطر", "علاش", "كيفاش",
+        "ومخلي", "وخلا", "وأنت", "وانت", "وإنت", "تقدر", "نقدر", "يقدر",
+        "وبالمونتاج", "وتنحي", "وتمونتي", "وتمونطي", "وبالذكاء", "وبالاي",
+        "سجل", "ادخل", "اطلب", "اكموندي"
+    }:
+        return True
+    return False
+
+
 def split_words_into_micro_scenes(
     words_list: List[Dict[str, Any]],
-    max_words_per_scene: int = 6,
-    max_duration_per_scene: float = 2.8,
+    max_words_per_scene: int = 10,
+    max_duration_per_scene: float = 4.5,
     min_words_per_scene: int = 3
 ) -> List[Dict[str, Any]]:
     """
-    تقسيم الكلمات إلى مشاهد ديناميكية سريعة الإيقاع بأسلوب Alex Hormozi (2.5 إلى 3.0 ثانية للمشهد)
-    للحفاظ على انتباه المشاهد (High Retention) وكسر الملل البصري.
+    تقسيم الكلمات إلى مشاهد على حدود الجمل الدلالية المكتملة (Semantic Clauses) وعند الوقفات الصوتية الطبيعية فقط،
+    مع منع القطع منعاً باتاً بعد أي حرف جر أو أداة ربط أو مضاف أو اسم إشارة أو نفي.
     """
     if not words_list:
         return []
 
-    eff_max_words = max(4, min(7, int(max_words_per_scene)))
-    eff_max_dur = max(2.2, min(3.0, float(max_duration_per_scene)))
-    eff_min_words = max(2, min(4, int(min_words_per_scene)))
+    eff_max_words = max(8, min(14, int(max_words_per_scene) if int(max_words_per_scene) >= 8 else 10))
+    eff_max_dur = max(3.6, min(6.0, float(max_duration_per_scene) if float(max_duration_per_scene) >= 3.5 else 4.5))
+    eff_min_words = max(2, min(5, int(min_words_per_scene)))
+
+    # حفظ الفجوات الصوتية الأصلية قبل تنعيم التوقيت لاستخدامها في كشف الوقفات الصوتية الحقيقية
+    orig_gaps: List[float] = [0.0] * len(words_list)
+    for i in range(1, len(words_list)):
+        g = float(words_list[i].get("start", 0.0)) - float(words_list[i - 1].get("end", 0.0))
+        orig_gaps[i] = max(0.0, g)
 
     words_list = ensure_word_timestamp_continuity(words_list)
     raw_scenes: List[Dict[str, Any]] = []
     current_group: List[Dict[str, Any]] = []
 
-    major_clause_starters = {
-        "لأن", "لان", "علاش", "كيفاش", "واسم", "لكن", "باش",
-        "التوصيل", "اكموندي", "اطلب", "المشكل", "الحل", "ومغلف", "معنتها"
-    }
-
-    non_breaking_end_words = {
-        "أنا", "انا", "عمري", "وقاعد", "أحاول", "احاول", "أبني", "ابني",
-        "تعمل", "بشكل", "لأن", "لان", "أغلب", "اغلب", "ما", "عندها",
-        "تمنتج", "يمونتي", "تبدل", "وترفع", "كل", "واسم", "اسم", "منصة", "المنصة",
-        "فيديو", "بالذكاء", "بذكاء", "على", "جال", "كابل", "سيبور", "في", "نفس"
-    }
-
     for idx, w in enumerate(words_list):
         w_txt = str(w.get("word", "")).strip()
         if not w_txt:
             continue
-        w_clean = w_txt.strip("،,.!؟?")
+        w_clean = _clean_arabic_token_for_boundary(w_txt)
 
         if current_group:
             grp_start = float(current_group[0]["start"])
-            grp_dur = float(w["end"]) - grp_start
+            prev_end = float(current_group[-1]["end"])
+            grp_dur = prev_end - grp_start
             prev_word_txt = str(current_group[-1]["word"]).strip()
-            prev_clean = prev_word_txt.strip("،,.!؟?")
-            gap = float(w["start"]) - float(current_group[-1]["end"])
+            pp_word_txt = str(current_group[-2]["word"]).strip() if len(current_group) >= 2 else ""
+            natural_gap = orig_gaps[idx] if idx < len(orig_gaps) else max(0.0, float(w["start"]) - prev_end)
 
+            syntactically_safe = can_split_between_arabic_words(prev_word_txt, w_txt, pp_word_txt)
             ends_with_strong_punct = any(prev_word_txt.endswith(p) for p in [".", "!", "؟", "?"])
-            is_clause_starter = (w_clean in major_clause_starters and len(current_group) >= eff_min_words)
-            prev_is_non_breaking = (prev_clean in non_breaking_end_words)
+            ends_with_comma = any(prev_word_txt.endswith(p) for p in ["،", ",", ";", "؛"])
+            clause_starter = is_semantic_clause_starter(w_txt, prev_word_txt, pp_word_txt)
+            is_cta_start = (
+                w_clean in {"رابط", "الرابط", "التسجيل"}
+                and _clean_arabic_token_for_boundary(prev_word_txt) not in {"رابط", "الرابط", "من", "في", "على", "مع"}
+            )
 
             should_split = False
-            if gap >= 0.35 and len(current_group) >= 2:
-                should_split = True
-            elif ends_with_strong_punct and len(current_group) >= eff_min_words:
-                should_split = True
-            elif is_clause_starter and not prev_is_non_breaking:
-                should_split = True
-            elif (len(current_group) >= eff_max_words or grp_dur >= eff_max_dur) and not prev_is_non_breaking:
-                should_split = True
-            elif len(current_group) >= eff_max_words + 2:
+            if syntactically_safe:
+                if natural_gap >= 0.30 and len(current_group) >= 2:
+                    should_split = True
+                elif ends_with_strong_punct and len(current_group) >= 2:
+                    should_split = True
+                elif ends_with_comma and len(current_group) >= eff_min_words and grp_dur >= 1.4:
+                    should_split = True
+                elif is_cta_start and len(current_group) >= 2:
+                    should_split = True
+                elif clause_starter and (len(current_group) >= eff_min_words or grp_dur >= 1.5):
+                    should_split = True
+                elif (len(current_group) >= eff_max_words or grp_dur >= eff_max_dur):
+                    should_split = True
+            elif len(current_group) >= 15 or grp_dur >= 6.5:
                 should_split = True
 
             if should_split:
@@ -942,52 +1078,39 @@ def split_words_into_micro_scenes(
             "words": list(current_group)
         })
 
+    # دمج أي مشهد قصير جداً أو مبتور نحوياً مع المشهد المجاور لضمان اكتمال الجملة الدلالية
     merged_scenes: List[Dict[str, Any]] = []
     for sc in raw_scenes:
         sc_words = sc.get("words", [])
         sc_dur = float(sc["end"]) - float(sc["start"])
-        if merged_scenes and (len(sc_words) < 2 or sc_dur < 1.2):
+        if merged_scenes:
             prev_sc = merged_scenes[-1]
-            if len(prev_sc["words"]) + len(sc_words) <= 8 and (float(sc["end"]) - float(prev_sc["start"])) <= 3.2:
+            prev_words = prev_sc.get("words", [])
+            prev_last_w = str(prev_words[-1]["word"]) if prev_words else ""
+            prev_pp_w = str(prev_words[-2]["word"]) if len(prev_words) >= 2 else ""
+            curr_first_w = str(sc_words[0]["word"]) if sc_words else ""
+            if not can_split_between_arabic_words(prev_last_w, curr_first_w, prev_pp_w):
+                prev_sc["words"].extend(sc_words)
+                prev_sc["end"] = sc["end"]
+                prev_sc["text"] = " ".join(x["word"] for x in prev_sc["words"])
+                continue
+            if (len(sc_words) < 2 or sc_dur < 0.9) and len(prev_sc["words"]) + len(sc_words) <= 13:
                 prev_sc["words"].extend(sc_words)
                 prev_sc["end"] = sc["end"]
                 prev_sc["text"] = " ".join(x["word"] for x in prev_sc["words"])
                 continue
         merged_scenes.append(sc)
 
-    # ضمان إيقاع B-Roll ومشاهد سريع (2.5 - 3.0 ثانية كحد أقصى للمشهد لكسر الملل البصري)
-    paced_scenes: List[Dict[str, Any]] = []
-    for sc in merged_scenes:
-        sc_w = sc.get("words", [])
-        sc_dur = float(sc["end"]) - float(sc["start"])
-        if sc_dur > 3.1 and len(sc_w) >= 4:
-            mid_idx = len(sc_w) // 2
-            w1, w2 = sc_w[:mid_idx], sc_w[mid_idx:]
-            paced_scenes.append({
-                "text": " ".join(x["word"] for x in w1),
-                "start": round(float(w1[0]["start"]), 3),
-                "end": round(float(w1[-1]["end"]), 3),
-                "words": w1
-            })
-            paced_scenes.append({
-                "text": " ".join(x["word"] for x in w2),
-                "start": round(float(w2[0]["start"]), 3),
-                "end": round(float(w2[-1]["end"]), 3),
-                "words": w2
-            })
-        else:
-            paced_scenes.append(sc)
-
-    for idx in range(len(paced_scenes) - 1):
-        gap = paced_scenes[idx + 1]["start"] - paced_scenes[idx]["end"]
+    for idx in range(len(merged_scenes) - 1):
+        gap = merged_scenes[idx + 1]["start"] - merged_scenes[idx]["end"]
         if 0.0 < gap <= 1.0:
-            paced_scenes[idx]["end"] = paced_scenes[idx + 1]["start"]
-            if paced_scenes[idx]["words"]:
-                paced_scenes[idx]["words"][-1]["end"] = paced_scenes[idx + 1]["start"]
+            merged_scenes[idx]["end"] = merged_scenes[idx + 1]["start"]
+            if merged_scenes[idx]["words"]:
+                merged_scenes[idx]["words"][-1]["end"] = merged_scenes[idx + 1]["start"]
         elif gap > 1.0:
-            paced_scenes[idx]["end"] = round(paced_scenes[idx]["end"] + min(0.6, gap * 0.4), 3)
+            merged_scenes[idx]["end"] = round(merged_scenes[idx]["end"] + min(0.6, gap * 0.4), 3)
 
-    return paced_scenes
+    return merged_scenes
 
 
 # ==============================================================================

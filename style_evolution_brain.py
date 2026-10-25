@@ -472,10 +472,10 @@ PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
                 "sticker_txt": (17, 24, 39), "headline_txt": (17, 24, 39)
             },
             "body_steps": {
-                "top_bg": (8, 14, 18), "bottom_bg": (14, 28, 34), "glow": (0, 212, 164),
-                "primary": (0, 212, 164), "secondary": (250, 204, 21), "accent": (255, 107, 0),
-                "card_bg": (16, 26, 34), "is_light_bg": False, "sticker_bg": (0, 168, 132),
-                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
+                "top_bg": (248, 252, 250), "bottom_bg": (228, 242, 236), "glow": (0, 168, 132),
+                "primary": (0, 168, 132), "secondary": (250, 204, 21), "accent": (15, 23, 42),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (0, 168, 132),
+                "sticker_txt": (255, 255, 255), "headline_txt": (17, 24, 39)
             },
             "outro_finale": {
                 "top_bg": (250, 252, 251), "bottom_bg": (232, 244, 239), "glow": (0, 168, 132),

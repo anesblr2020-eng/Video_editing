@@ -400,18 +400,57 @@ def decompose_scene_clauses_and_verb(
         "حتى", "ليحول", "تتحول", "يحول", "ويكشف", "ويولد", "بضغطة", "فوراً",
         "فورا", "تلقائياً", "تلقائيا", "بدون", "بفضل", "عبر", "داخل", "تحت"
     }
+    try:
+        from transcriber import can_split_between_arabic_words
+    except ImportError:
+        can_split_between_arabic_words = lambda p, n, pp="": True
+
     pivot_tok_idx = max(1, n_tok // 2)
+    found_marker = False
     for ti, tok in enumerate(tokens):
         clean_t = re.sub(r"[،,.!؟?:؛]", "", tok)
         if 1 <= ti <= n_tok - 2 and (clean_t in pivot_markers or tok.endswith("،") or tok.endswith(",")):
-            pivot_tok_idx = ti + (1 if tok.endswith(("،", ",")) else 0)
-            break
+            cand_idx = ti + (1 if tok.endswith(("،", ",")) else 0)
+            if 1 <= cand_idx < n_tok:
+                prev_w = tokens[cand_idx - 1]
+                next_w = tokens[cand_idx]
+                pp_w = tokens[cand_idx - 2] if cand_idx >= 2 else ""
+                if can_split_between_arabic_words(prev_w, next_w, pp_w):
+                    pivot_tok_idx = cand_idx
+                    found_marker = True
+                    break
+
+    if not found_marker and n_tok >= 3:
+        # تعديل نقطة المنتصف بحيث لا نفصل أبداً بين حرف الجر ومجروره أو المضاف والمضاف إليه
+        for offset in range(0, n_tok):
+            for cand_idx in (pivot_tok_idx + offset, pivot_tok_idx - offset):
+                if 1 <= cand_idx < n_tok:
+                    prev_w = tokens[cand_idx - 1]
+                    next_w = tokens[cand_idx]
+                    pp_w = tokens[cand_idx - 2] if cand_idx >= 2 else ""
+                    if can_split_between_arabic_words(prev_w, next_w, pp_w):
+                        pivot_tok_idx = cand_idx
+                        found_marker = True
+                        break
+            if found_marker:
+                break
 
     clause_a_tokens = tokens[:pivot_tok_idx] if tokens else ["الفكرة", "الأولى"]
     clause_b_tokens = tokens[pivot_tok_idx:] if len(tokens) > pivot_tok_idx else tokens[-2:]
 
-    clause_a = " ".join(clause_a_tokens[:4])
-    clause_b = " ".join(clause_b_tokens[:5])
+    # منع بتر آخر كلمة في clause_a أو clause_b إذا وقعت على حرف جر أو أداة ربط
+    def _trim_safe_clause(tok_list: List[str], max_len: int) -> str:
+        sub = list(tok_list[:max_len])
+        while len(sub) < len(tok_list) and not can_split_between_arabic_words(
+            sub[-1], tok_list[len(sub)], sub[-2] if len(sub) >= 2 else ""
+        ):
+            sub.append(tok_list[len(sub)])
+            if len(sub) >= max_len + 3:
+                break
+        return " ".join(sub)
+
+    clause_a = _trim_safe_clause(clause_a_tokens, 5)
+    clause_b = _trim_safe_clause(clause_b_tokens, 6)
 
     pivot_u = round(min(0.62, max(0.38, pivot_tok_idx / float(max(2, n_tok)))), 3)
     if words and len(words) >= 2:

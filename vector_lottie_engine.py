@@ -21,7 +21,7 @@ import math
 import hashlib
 import logging
 import xml.etree.ElementTree as ET
-from typing import Dict, Any, List, Tuple, Optional, Union
+from typing import Dict, Any, List, Tuple, Optional, Union, Callable
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter
@@ -586,6 +586,843 @@ def _draw_editorial_viewfinder_brackets(
     draw.line([(x2, y2 - arm_len), (x2, y2)], fill=color_rgba, width=width)
 
 
+
+# ==============================================================================
+# V4 CINEMA ENGINE (PyCairo Shaders, Semantic Focus Keyword, Distinct Sub-Items,
+# & Custom Stage Architectures)
+# ==============================================================================
+FORBIDDEN_STICKER_WORDS = {
+    "من", "في", "على", "إلى", "الى", "عن", "مع", "بين", "تحت", "فوق", "أمام", "امام", "خلف", "وراء",
+    "ب", "ك", "ل", "و", "ف", "بـ", "كـ", "لـ", "تاع", "نتاع", "متاع", "ديال", "تاعك", "تاعي", "تاعو", "تاعها", "تاعهم",
+    "بلي", "باش", "باه", "كي", "كيما", "لأن", "لان", "أنه", "انه", "أن", "ان", "إن", "إذا", "اذا", "لو",
+    "حتى", "حتي", "أو", "او", "ولا", "بل", "لكن", "لاكن", "بصح", "غير", "خاطر", "علاش", "كيفاش", "واش", "وين",
+    "ما", "وما", "لا", "لم", "لن", "ليس", "ماشي", "مش", "موش", "قد", "سوف", "راح", "غادي",
+    "هذا", "هذه", "هاد", "هاذ", "هادي", "هاذي", "وهذا", "وهاد", "ذلك", "تلك", "الذي", "التي", "اللي", "لي",
+    "أنا", "انا", "أنت", "انت", "وانت", "وأنت", "هو", "هي", "هم", "نحن", "احنا",
+    "كل", "أي", "اي", "بعض", "نفس", "مثل", "قاع", "كاع", "برك", "فقط", "عموماً", "عموما", "بشكل", "بطريقة",
+    "راني", "راك", "راه", "راهي", "كان", "كانت", "يكون", "تكون", "كاين", "ماكانش",
+    "تقدر", "نقدر", "يقدر", "تقدرو", "نقدرو", "لازم", "خصك", "بالي", "بالك", "بالكش", "لك", "لهم", "فيها", "فيه",
+    "السلام", "عليكم", "مرحبا", "أهلا", "اهلا", "اسمها", "اسمه", "أسفل", "اسفل", "عندكش", "عندي", "عندك",
+}
+
+HIGH_VALUE_DOMAIN_KEYWORDS = {
+    "الوقت", "وقت", "ساعات", "ثواني", "المونتاج", "مونتاج", "تمونتي", "تمونطي", "يمونتي",
+    "موشن", "جرافيك", "غرافيك", "الصمت", "الصوت", "انستغرام", "إنستغرام", "السوشيال", "ميديا",
+    "إيديتينغ", "ايديتينغ", "Editing", "AI", "الاصطناعي", "الذكاء", "مجاني", "مجاناً", "100%",
+    "التسجيل", "الرابط", "يموتوا", "التفاعل", "المشاهدات", "ريلز", "Reels", "الفيديو", "فيديوهات",
+}
+
+
+
+_V4_SPRITE_CACHE: Dict[Tuple[Any, ...], Image.Image] = {}
+
+def _v4_paste_cached_contained_text(
+    canvas_rgba: Image.Image,
+    bbox: Tuple[int, int, int, int],
+    text: str,
+    initial_font_size: int,
+    min_font_size: int,
+    fill: Tuple[int, int, int, int],
+    draw_contained_text_fn: Callable,
+) -> None:
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    bw, bh = max(20, x2 - x1), max(16, y2 - y1)
+    key = ("txt", bw, bh, str(text), int(initial_font_size), int(min_font_size), tuple(fill[:4]))
+    spr = _V4_SPRITE_CACHE.get(key)
+    if spr is None:
+        if len(_V4_SPRITE_CACHE) > 256:
+            _V4_SPRITE_CACHE.clear()
+        spr = Image.new("RGBA", (bw, bh), (0, 0, 0, 0))
+        d = ImageDraw.Draw(spr, "RGBA")
+        draw_contained_text_fn(d, (0, 0, bw, bh), text, initial_font_size=initial_font_size, min_font_size=min_font_size, fill=fill)
+        _V4_SPRITE_CACHE[key] = spr
+    canvas_rgba.alpha_composite(spr, (x1, y1))
+
+
+def _v4_clean_word(w: str) -> str:
+    return re.sub(r"[^\w\u0600-\u06FF%]", "", str(w or "")).strip()
+
+
+def select_semantic_focus_keyword(text: str, fallback_accent: str = "") -> Tuple[str, str]:
+    words = [w.strip() for w in str(text or "").split() if w.strip()]
+    if not words:
+        return ("موشن جرافيك ذكي", "AI")
+    if len(words) == 1:
+        w0 = _v4_clean_word(words[0])
+        if w0 in FORBIDDEN_STICKER_WORDS:
+            return ("منصة المونتاج الذكي", "مجاناً")
+        return ("الميزة الذكية", words[0])
+
+    best_idx = -1
+    best_score = -999
+    for idx, w in enumerate(words):
+        cw = _v4_clean_word(w)
+        if not cw or cw in FORBIDDEN_STICKER_WORDS or len(cw) <= 2:
+            continue
+        score = len(cw) * 2
+        if cw in HIGH_VALUE_DOMAIN_KEYWORDS:
+            score += 40
+        if any(k in cw for k in ["وقت", "مونتاج", "موشن", "صمت", "صوت", "انست", "سوشيال", "ذكاء", "اصطناعي", "مجان", "تسجيل", "رابط", "ايديت", "فيديو", "يموت"]):
+            score += 30
+        if any(ch.isdigit() for ch in cw):
+            score += 35
+        if idx >= len(words) // 2:
+            score += 8
+        if score > best_score:
+            best_score = score
+            best_idx = idx
+
+    if best_idx == -1:
+        fb = _v4_clean_word(fallback_accent)
+        if fb and fb not in FORBIDDEN_STICKER_WORDS and len(fb) > 2:
+            return (" ".join(words), fallback_accent)
+        return (" ".join(words), "تلقائياً")
+
+    focus_word = words[best_idx].strip("،,.!؟?")
+    if best_idx > 0 and _v4_clean_word(words[best_idx - 1]) in {"الذكاء", "وبالذكاء", "بالذكاء", "موشن", "بالموشن", "فيديو", "سوشيال", "السوشيال", "بشكل"}:
+        focus_word = f"{words[best_idx - 1]} {focus_word}"
+        remaining = words[:best_idx - 1] + words[best_idx + 1:]
+    elif best_idx + 1 < len(words) and _v4_clean_word(words[best_idx + 1]) in {"الاصطناعي", "جرافيك", "غرافيك", "إيديتينغ", "ايديتينغ", "ميديا", "مجاني"}:
+        focus_word = f"{focus_word} {words[best_idx + 1].strip('،,.!؟?')}"
+        remaining = words[:best_idx] + words[best_idx + 2:]
+    else:
+        remaining = words[:best_idx] + words[best_idx + 1:]
+
+    main_line = " ".join(remaining).strip("،,. ")
+    if not main_line or len(_v4_clean_word(main_line)) <= 2:
+        main_line = " ".join(words).strip("،,. ")
+    return (main_line, focus_word)
+
+
+def build_distinct_contextual_sub_items(scene_text: str, stage_type: str, existing_items: Optional[List[str]] = None) -> List[str]:
+    t_low = str(scene_text or "").lower()
+    if stage_type == "chrono_time_drain" or any(k in t_low for k in ["وقت", "تعاني", "مشكل", "عندكش"]):
+        return [
+            "استنزاف ساعات طويلة في القص اليدوي",
+            "تأخر نشر الفيديوهات والريلز يومياً",
+            "إرهاق مستمر قبل رفع أي محتوى",
+        ]
+    if stage_type == "social_account_decline" or any(k in t_low for k in ["انستغرام", "إنستغرام", "سوشيال", "يموت", "حساب", "الكونت"]):
+        return [
+            "توقف النشر اليومي في الحساب",
+            "هبوط وصول الريلز والتفاعل -68%",
+            "موت الحساب بسبب غياب الاستمرارية",
+        ]
+    if stage_type == "ai_platform_prompt_sim" or any(k in t_low for k in ["منصة", "اسمها", "ايديتينغ", "إيديتينغ"]):
+        return [
+            "منصة Video Editing بالذكاء الاصطناعي",
+            "تحويل الفيديو الخام إلى ريلز بضغطة زر",
+            "مونتاج سحابي فوري بدون خبرة مسبقة",
+        ]
+    if stage_type == "nle_waveform_laser_scissors" or any(k in t_low for k in ["صمت", "تنحي", "ينحي", "تنقي", "صوت", "موشن", "العادي"]):
+        return [
+            "حذف فترات الصمت والفراغات تلقائياً",
+            "تنقية الصوت وموازنة الترددات",
+            "إضافة الموشن جرافيك والكابشن الفوري",
+        ]
+    if stage_type == "ai_chip_free_100" or any(k in t_low for k in ["مجاني", "مجاناً", "اصطناعي", "بالاي", "ai"]):
+        return [
+            "معالج ذكاء اصطناعي متكامل 100%",
+            "مجاني بالكامل لصناع المحتوى",
+            "سرعة تصيير فائقة بجودة استوديو 1080p",
+        ]
+    if stage_type == "cta_interactive_lockup" or any(k in t_low for k in ["رابط", "التسجيل", "أسفل", "اسفل"]):
+        return [
+            "اضغط على رابط التسجيل أسفل الفيديو",
+            "ابدأ مونتاج فيديوهاتك مجاناً الآن",
+            "ضاعف إنتاجيتك وانشر يومياً بسهولة",
+        ]
+    return [
+        "أتمتة المونتاج والموشن جرافيك بالكامل",
+        "توفير 90% من وقت تحرير الفيديوهات",
+        "جودة استوديو احترافية ترفع التفاعل",
+    ]
+
+
+def classify_scene_stage_architecture(scene_text: str, scene_index: int, total_scenes: int) -> Dict[str, Any]:
+    t = str(scene_text or "").strip()
+    t_low = t.lower()
+
+    if scene_index == total_scenes - 1 or any(k in t_low for k in ["رابط", "التسجيل", "أسفل الفيديو", "اسفل الفيديو"]):
+        return {
+            "stage_type": "cta_interactive_lockup",
+            "clause_a": "ابدأ تجربة المنصة الآن",
+            "clause_b": "رابط التسجيل في أسفل الفيديو",
+            "focus_sticker": "سجّل مجاناً",
+            "kpi_badge": "وصول فوري مجاني",
+            "pivot_u": 0.40,
+        }
+    if any(k in t_low for k in ["مجاني", "مجاناً", "بالاي", "وبالاي", "الاصطناعي", "وبالذكاء"]) and not any(k in t_low for k in ["صمت", "تنحي"]):
+        return {
+            "stage_type": "ai_chip_free_100",
+            "clause_a": "مونتاج أوتوماتيكي بالكامل",
+            "clause_b": "بشكل مجاني وبالذكاء الاصطناعي",
+            "focus_sticker": "مجاني 100%",
+            "kpi_badge": "AI AUTO STUDIO",
+            "pivot_u": 0.44,
+        }
+    if any(k in t_low for k in ["صمت", "تنحي", "ينحي", "تنقي", "الصوت", "بالمونتاج العادي"]):
+        return {
+            "stage_type": "nle_waveform_laser_scissors",
+            "clause_a": "تنقية الصوت والمونتاج الذكي",
+            "clause_b": "حذف الصمت من الفيديو تلقائياً",
+            "focus_sticker": "حذف الصمت",
+            "kpi_badge": "بدون فجوات صمت",
+            "pivot_u": 0.45,
+        }
+    if any(k in t_low for k in ["منصة", "اسمها", "ايديتينغ", "إيديتينغ", "بالموشن", "موشن جرافيك", "تمونتي لك", "تمونطي لك"]):
+        return {
+            "stage_type": "ai_platform_prompt_sim",
+            "clause_a": "منصة Video Editing الذكية",
+            "clause_b": "تحول فيديوهاتك بالموشن جرافيك",
+            "focus_sticker": "Video Editing",
+            "kpi_badge": "بضغطة زر واحدة",
+            "pivot_u": 0.46,
+        }
+    if any(k in t_low for k in ["انستغرام", "إنستغرام", "يموتوا", "يموت", "ومخلي الحساب", "الحساب تاعك"]):
+        return {
+            "stage_type": "social_account_decline",
+            "clause_a": "إهمال النشر في إنستغرام",
+            "clause_b": "توقف الحساب وهبوط التفاعل",
+            "focus_sticker": "توقف الحساب",
+            "kpi_badge": "انخفاض الوصول -68%",
+            "pivot_u": 0.46,
+        }
+    return {
+        "stage_type": "chrono_time_drain",
+        "clause_a": "تعاني من مشكلة ضيق الوقت؟",
+        "clause_b": "لا وقت لمونتاج ونشر الفيديوهات",
+        "focus_sticker": "ضيق الوقت",
+        "kpi_badge": "ساعات ضائعة يومياً",
+        "pivot_u": 0.45,
+    }
+
+
+def _v4_cairo_rounded_rect_path(ctx, x: float, y: float, w: float, h: float, r: float):
+    r = max(0.0, min(r, w / 2.0, h / 2.0))
+    ctx.new_sub_path()
+    ctx.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+    ctx.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+    ctx.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+    ctx.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+    ctx.close_path()
+
+
+def _v4_pil_from_cairo_surface(surface) -> Image.Image:
+    w = surface.get_width()
+    h = surface.get_height()
+    buf = surface.get_data()
+    arr = np.ndarray(shape=(h, w, 4), dtype=np.uint8, buffer=buf)
+    rgba = np.empty_like(arr)
+    rgba[:, :, 0] = arr[:, :, 2]
+    rgba[:, :, 1] = arr[:, :, 1]
+    rgba[:, :, 2] = arr[:, :, 0]
+    rgba[:, :, 3] = arr[:, :, 3]
+    return Image.fromarray(rgba, mode="RGBA")
+
+
+def _v4_draw_glass_card(
+    img: Image.Image,
+    bbox: Tuple[int, int, int, int],
+    radius: int = 28,
+    fill_rgba: Tuple[int, int, int, int] = (20, 28, 48, 235),
+    border_rgba: Tuple[int, int, int, int] = (56, 189, 248, 220),
+    border_width: int = 3,
+    shadow_alpha: int = 80,
+    top_highlight_rgb: Optional[Tuple[int, int, int]] = None
+) -> Image.Image:
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    if x2 - x1 < 24 or y2 - y1 < 24:
+        return img
+    draw = ImageDraw.Draw(img, "RGBA")
+    for si in range(3, 0, -1):
+        pad_s = si * 5
+        alpha_s = max(8, shadow_alpha // (si + 1))
+        draw.rounded_rectangle(
+            [(x1 - pad_s // 2 + 4, y1 + pad_s + 4), (x2 + pad_s // 2 + 4, y2 + pad_s + 6)],
+            radius=radius + pad_s // 2,
+            fill=(6, 10, 20, alpha_s)
+        )
+    draw.rounded_rectangle(
+        [(x1, y1), (x2, y2)],
+        radius=radius,
+        fill=fill_rgba,
+        outline=border_rgba,
+        width=border_width
+    )
+    hl_col = top_highlight_rgb if top_highlight_rgb else (255, 255, 255)
+    draw.rounded_rectangle(
+        [(x1 + 4, y1 + 4), (x2 - 4, y1 + max(18, int((y2 - y1) * 0.18)))],
+        radius=max(6, radius - 4),
+        fill=(*hl_col, 22)
+    )
+    return img
+
+
+def _v4_render_cairo_hero_graphic(
+    stage_type: str,
+    width: int,
+    height: int,
+    choreo_u: float,
+    global_t: float,
+    primary_rgb: Tuple[int, int, int],
+    secondary_rgb: Tuple[int, int, int],
+    accent_rgb: Tuple[int, int, int],
+    is_light_bg: bool = False,
+) -> Image.Image:
+    w, h = max(64, int(width)), max(64, int(height))
+    if not _HAS_CAIRO:
+        return Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+    ctx = cairo.Context(surface)
+    cx, cy = w / 2.0, h / 2.0
+    pr, pg, pb = [c / 255.0 for c in primary_rgb[:3]]
+    sr, sg, sb = [c / 255.0 for c in secondary_rgb[:3]]
+    ar, ag, ab = [c / 255.0 for c in accent_rgb[:3]]
+
+    rad_glow = cairo.RadialGradient(cx, cy, w * 0.04, cx, cy, w * 0.48)
+    rad_glow.add_color_stop_rgba(0.0, pr, pg, pb, 0.30 if not is_light_bg else 0.18)
+    rad_glow.add_color_stop_rgba(0.6, sr, sg, sb, 0.10 if not is_light_bg else 0.06)
+    rad_glow.add_color_stop_rgba(1.0, pr, pg, pb, 0.0)
+    ctx.set_source(rad_glow)
+    ctx.paint()
+
+    if stage_type == "chrono_time_drain":
+        r_outer = min(w, h) * 0.42
+        grad_face = cairo.RadialGradient(cx - r_outer * 0.2, cy - r_outer * 0.2, r_outer * 0.1, cx, cy, r_outer)
+        grad_face.add_color_stop_rgba(0.0, 0.12, 0.16, 0.26, 0.96)
+        grad_face.add_color_stop_rgba(1.0, 0.06, 0.09, 0.16, 0.98)
+        ctx.arc(cx, cy, r_outer, 0, 2 * math.pi)
+        ctx.set_source(grad_face)
+        ctx.fill_preserve()
+        ctx.set_line_width(4.0)
+        ctx.set_source_rgba(pr, pg, pb, 0.55)
+        ctx.stroke()
+
+        r_arc = r_outer * 0.80
+        start_ang = math.radians(135)
+        end_ang = math.radians(405)
+        ctx.set_line_width(18.0)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.arc(cx, cy, r_arc, start_ang, end_ang)
+        ctx.set_source_rgba(0.30, 0.36, 0.48, 0.35)
+        ctx.stroke()
+
+        prog = min(1.0, max(0.25, choreo_u * 1.25))
+        active_end = start_ang + (end_ang - start_ang) * prog
+        grad_arc = cairo.LinearGradient(cx - r_arc, cy, cx + r_arc, cy)
+        grad_arc.add_color_stop_rgba(0.0, 0.98, 0.75, 0.14, 1.0)
+        grad_arc.add_color_stop_rgba(0.5, 0.98, 0.45, 0.12, 1.0)
+        grad_arc.add_color_stop_rgba(1.0, 0.96, 0.22, 0.32, 1.0)
+        ctx.arc(cx, cy, r_arc, start_ang, active_end)
+        ctx.set_source(grad_arc)
+        ctx.stroke()
+
+        for ti in range(13):
+            ang = start_ang + (end_ang - start_ang) * (ti / 12.0)
+            r0 = r_arc - 24
+            r1 = r_arc - (10 if ti % 3 == 0 else 15)
+            ctx.move_to(cx + r0 * math.cos(ang), cy + r0 * math.sin(ang))
+            ctx.line_to(cx + r1 * math.cos(ang), cy + r1 * math.sin(ang))
+            ctx.set_line_width(3.5 if ti % 3 == 0 else 2.0)
+            ctx.set_source_rgba(0.95, 0.97, 1.0, 0.85 if ti % 3 == 0 else 0.45)
+            ctx.stroke()
+
+        jitter = 0.04 * math.sin(global_t * 14.0) if prog > 0.75 else 0.0
+        needle_ang = active_end + jitter
+        nx = cx + (r_arc - 18) * math.cos(needle_ang)
+        ny = cy + (r_arc - 18) * math.sin(needle_ang)
+        ctx.move_to(cx, cy)
+        ctx.line_to(nx, ny)
+        ctx.set_line_width(6.5)
+        ctx.set_source_rgba(0.98, 0.26, 0.36, 1.0)
+        ctx.stroke()
+
+        ctx.arc(cx, cy, 14, 0, 2 * math.pi)
+        ctx.set_source_rgba(0.98, 0.78, 0.18, 1.0)
+        ctx.fill_preserve()
+        ctx.set_line_width(4.0)
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.95)
+        ctx.stroke()
+
+    elif stage_type == "social_account_decline":
+        pad_x = w * 0.08
+        pad_y = h * 0.10
+        cw_box = w - 2 * pad_x
+        ch_box = h - 2 * pad_y
+
+        _v4_cairo_rounded_rect_path(ctx, pad_x, pad_y, cw_box, ch_box, 26)
+        ctx.set_source_rgba(0.07, 0.10, 0.18, 0.96)
+        ctx.fill_preserve()
+        ctx.set_line_width(3.5)
+        ctx.set_source_rgba(0.96, 0.25, 0.37, 0.85)
+        ctx.stroke()
+
+        for gi in range(1, 4):
+            gy = pad_y + ch_box * (gi / 4.0)
+            ctx.move_to(pad_x + 20, gy)
+            ctx.line_to(pad_x + cw_box - 20, gy)
+            ctx.set_line_width(1.5)
+            ctx.set_source_rgba(0.45, 0.52, 0.65, 0.22)
+            ctx.stroke()
+
+        pts = [
+            (0.08, 0.22),
+            (0.24, 0.28),
+            (0.42, 0.46),
+            (0.60, 0.66),
+            (0.78, 0.78),
+            (0.92, 0.85),
+        ]
+        prog_curve = min(1.0, max(0.35, choreo_u * 1.35))
+        scaled_pts = []
+        for u_x, u_y in pts:
+            if u_x <= prog_curve + 0.12:
+                px = pad_x + cw_box * u_x
+                py = pad_y + ch_box * u_y
+                scaled_pts.append((px, py))
+
+        if len(scaled_pts) >= 2:
+            ctx.move_to(scaled_pts[0][0], pad_y + ch_box - 16)
+            for px, py in scaled_pts:
+                ctx.line_to(px, py)
+            ctx.line_to(scaled_pts[-1][0], pad_y + ch_box - 16)
+            ctx.close_path()
+            grad_fill = cairo.LinearGradient(0, pad_y, 0, pad_y + ch_box)
+            grad_fill.add_color_stop_rgba(0.0, 0.96, 0.24, 0.36, 0.42)
+            grad_fill.add_color_stop_rgba(1.0, 0.96, 0.24, 0.36, 0.02)
+            ctx.set_source(grad_fill)
+            ctx.fill()
+
+            ctx.move_to(scaled_pts[0][0], scaled_pts[0][1])
+            for px, py in scaled_pts[1:]:
+                ctx.line_to(px, py)
+            ctx.set_line_width(7.0)
+            ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+            ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+            ctx.set_source_rgba(0.98, 0.24, 0.36, 1.0)
+            ctx.stroke()
+
+            lx, ly = scaled_pts[-1]
+            ctx.arc(lx, ly, 12, 0, 2 * math.pi)
+            ctx.set_source_rgba(0.98, 0.24, 0.36, 1.0)
+            ctx.fill_preserve()
+            ctx.set_line_width(3.5)
+            ctx.set_source_rgba(1.0, 1.0, 1.0, 0.95)
+            ctx.stroke()
+
+    elif stage_type == "nle_waveform_laser_scissors":
+        pad_x = w * 0.06
+        pad_y = h * 0.12
+        tw = w - 2 * pad_x
+        th = h - 2 * pad_y
+
+        _v4_cairo_rounded_rect_path(ctx, pad_x, pad_y, tw, th, 24)
+        ctx.set_source_rgba(0.07, 0.10, 0.18, 0.96)
+        ctx.fill_preserve()
+        ctx.set_line_width(3.5)
+        ctx.set_source_rgba(pr, pg, pb, 0.80)
+        ctx.stroke()
+
+        mid_y = pad_y + th * 0.52
+        n_bars = 32
+        bar_step = (tw - 48) / float(n_bars)
+        cut_u = min(1.0, max(0.18, choreo_u * 1.20))
+        cut_x = pad_x + 24 + (tw - 48) * cut_u
+
+        for bi in range(n_bars):
+            bx = pad_x + 24 + bi * bar_step
+            is_silence = bi in (8, 9, 10, 11, 20, 21, 22)
+            cleaned = bx <= cut_x
+            if is_silence and not cleaned:
+                bh = th * 0.05
+                ctx.set_source_rgba(0.96, 0.26, 0.36, 0.90)
+            else:
+                bh = th * (0.12 + 0.26 * abs(math.sin(bi * 0.55 + global_t * 3.5)))
+                if cleaned:
+                    ctx.set_source_rgba(0.10, 0.85, 0.62, 0.96)
+                else:
+                    ctx.set_source_rgba(pr, pg, pb, 0.85)
+            _v4_cairo_rounded_rect_path(ctx, bx, mid_y - bh, max(6.0, bar_step * 0.58), bh * 2, 4.0)
+            ctx.fill()
+
+        ctx.move_to(cut_x, pad_y - 10)
+        ctx.line_to(cut_x, pad_y + th + 10)
+        ctx.set_line_width(4.5)
+        ctx.set_source_rgba(0.98, 0.80, 0.15, 1.0)
+        ctx.stroke()
+
+        sc_y = pad_y + 12
+        for dx_ring in (-14, 14):
+            ctx.arc(cut_x + dx_ring, sc_y, 10, 0, 2 * math.pi)
+            ctx.set_line_width(3.5)
+            ctx.set_source_rgba(0.98, 0.80, 0.15, 1.0)
+            ctx.stroke()
+        ctx.move_to(cut_x - 8, sc_y + 8)
+        ctx.line_to(cut_x + 12, sc_y + 34)
+        ctx.move_to(cut_x + 8, sc_y + 8)
+        ctx.line_to(cut_x - 12, sc_y + 34)
+        ctx.set_line_width(4.0)
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.98)
+        ctx.stroke()
+
+    elif stage_type in ("ai_chip_free_100", "ai_platform_prompt_sim"):
+        chip_sz = min(w, h) * 0.48
+        x0, y0 = cx - chip_sz / 2.0, cy - chip_sz / 2.0
+
+        for i in range(12):
+            ang = i * (2 * math.pi / 12.0)
+            r_in = chip_sz * 0.52
+            r_out = chip_sz * 0.82
+            ix, iy = cx + r_in * math.cos(ang), cy + r_in * math.sin(ang)
+            ox, oy = cx + r_out * math.cos(ang), cy + r_out * math.sin(ang)
+            ctx.move_to(ix, iy)
+            ctx.line_to(ox, oy)
+            ctx.set_line_width(3.5)
+            ctx.set_source_rgba(pr, pg, pb, 0.65)
+            ctx.stroke()
+
+            pulse = (global_t * 1.8 + i * 0.17) % 1.0
+            px = ix + (ox - ix) * pulse
+            py = iy + (oy - iy) * pulse
+            ctx.arc(px, py, 5.5, 0, 2 * math.pi)
+            ctx.set_source_rgba(0.98, 0.82, 0.18, 0.95)
+            ctx.fill()
+
+            ctx.arc(ox, oy, 7.0, 0, 2 * math.pi)
+            ctx.set_source_rgba(0.10, 0.85, 0.62, 0.95)
+            ctx.fill()
+
+        _v4_cairo_rounded_rect_path(ctx, x0, y0, chip_sz, chip_sz, 28)
+        grad_chip = cairo.LinearGradient(x0, y0, x0 + chip_sz, y0 + chip_sz)
+        grad_chip.add_color_stop_rgba(0.0, 0.10, 0.16, 0.30, 0.98)
+        grad_chip.add_color_stop_rgba(1.0, 0.05, 0.08, 0.18, 0.98)
+        ctx.set_source(grad_chip)
+        ctx.fill_preserve()
+        ctx.set_line_width(4.0)
+        ctx.set_source_rgba(pr, pg, pb, 0.95)
+        ctx.stroke()
+
+        core_r = chip_sz * (0.28 + 0.02 * math.sin(global_t * 5.0))
+        ctx.arc(cx, cy, core_r, 0, 2 * math.pi)
+        grad_core = cairo.RadialGradient(cx - core_r * 0.3, cy - core_r * 0.3, 4, cx, cy, core_r)
+        grad_core.add_color_stop_rgba(0.0, 0.25, 0.95, 0.78, 0.95)
+        grad_core.add_color_stop_rgba(1.0, pr, pg, pb, 0.85)
+        ctx.set_source(grad_core)
+        ctx.fill_preserve()
+        ctx.set_line_width(3.0)
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.90)
+        ctx.stroke()
+
+    else:
+        r_portal = min(w, h) * 0.36
+        for ri in range(3, 0, -1):
+            rr = r_portal * (0.85 + ri * 0.18)
+            ctx.arc(cx, cy, rr, 0, 2 * math.pi)
+            ctx.set_line_width(3.0)
+            ctx.set_source_rgba(pr, pg, pb, 0.28 / ri)
+            ctx.stroke()
+
+        ctx.arc(cx, cy, r_portal * 0.78, 0, 2 * math.pi)
+        grad_cta = cairo.RadialGradient(cx - r_portal * 0.25, cy - r_portal * 0.25, 8, cx, cy, r_portal * 0.78)
+        grad_cta.add_color_stop_rgba(0.0, 0.16, 0.92, 0.68, 0.98)
+        grad_cta.add_color_stop_rgba(1.0, pr, pg, pb, 0.96)
+        ctx.set_source(grad_cta)
+        ctx.fill_preserve()
+        ctx.set_line_width(4.0)
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.92)
+        ctx.stroke()
+
+        arrow_dy = 8.0 * math.sin(global_t * 6.0)
+        ay0 = cy - r_portal * 0.32 + arrow_dy
+        ay1 = cy + r_portal * 0.30 + arrow_dy
+        ctx.move_to(cx, ay0)
+        ctx.line_to(cx, ay1)
+        ctx.move_to(cx - 26, ay1 - 24)
+        ctx.line_to(cx, ay1 + 4)
+        ctx.line_to(cx + 26, ay1 - 24)
+        ctx.set_line_width(9.0)
+        ctx.set_line_cap(cairo.LINE_CAP_ROUND)
+        ctx.set_line_join(cairo.LINE_JOIN_ROUND)
+        ctx.set_source_rgba(1.0, 1.0, 1.0, 0.98)
+        ctx.stroke()
+
+    return _v4_pil_from_cairo_surface(surface)
+
+
+def render_v4_editorial_headline(
+    canvas_rgba: Image.Image,
+    bbox: Tuple[int, int, int, int],
+    clause_text: str,
+    accent_word: str,
+    txt_rgb: Tuple[int, int, int],
+    sticker_bg_rgb: Tuple[int, int, int],
+    sticker_txt_rgb: Tuple[int, int, int],
+    progress_u: float,
+    get_font_fn: Callable,
+    draw_arabic_text_fn: Callable,
+    tilt_deg: float = -2.2,
+    use_sticker: bool = True,
+    draw_contained_text_fn: Optional[Callable] = None,
+) -> Image.Image:
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    w_box = max(160, x2 - x1)
+    h_box = max(80, y2 - y1)
+
+    cache_key = (
+        "hdr_v4", w_box, h_box, str(clause_text), str(accent_word),
+        tuple(txt_rgb[:3]), tuple(sticker_bg_rgb[:3]), round(float(tilt_deg), 1), bool(use_sticker)
+    )
+    hdr_sprite = _V4_SPRITE_CACHE.get(cache_key)
+    if hdr_sprite is None:
+        if len(_V4_SPRITE_CACHE) > 256:
+            _V4_SPRITE_CACHE.clear()
+        hdr_sprite = Image.new("RGBA", (w_box, h_box + 40), (0, 0, 0, 0))
+        cx_loc = w_box // 2
+        cy_loc = h_box // 2
+
+        if accent_word and _v4_clean_word(accent_word) not in FORBIDDEN_STICKER_WORDS and len(_v4_clean_word(accent_word)) >= 3:
+            main_line = str(clause_text or "").strip("،,. ")
+            focus_sticker = accent_word
+        else:
+            main_line, focus_sticker = select_semantic_focus_keyword(clause_text, fallback_accent=accent_word)
+
+        s_luma = 0.299 * sticker_bg_rgb[0] + 0.587 * sticker_bg_rgb[1] + 0.114 * sticker_bg_rgb[2]
+        safe_sticker_txt = (15, 23, 42) if s_luma > 145 else (255, 255, 255)
+
+        draw_loc = ImageDraw.Draw(hdr_sprite, "RGBA")
+        top_bbox = (16, 0, w_box - 16, cy_loc)
+        if callable(draw_contained_text_fn):
+            draw_contained_text_fn(
+                draw_loc, top_bbox, main_line,
+                initial_font_size=max(44, int(h_box * 0.42)), min_font_size=32, fill=(*txt_rgb[:3], 255)
+            )
+        else:
+            f_main = get_font_fn(max(40, int(h_box * 0.38)), bold=True)
+            draw_arabic_text_fn(draw_loc, (cx_loc, cy_loc // 2), main_line, font=f_main, fill=(*txt_rgb[:3], 255))
+
+        if use_sticker and focus_sticker:
+            st_w = min(int(w_box * 0.78), max(240, len(focus_sticker) * 28 + 90))
+            st_h = max(58, int(h_box * 0.48))
+            st_pil = Image.new("RGBA", (st_w + 28, st_h + 28), (0, 0, 0, 0))
+            st_d = ImageDraw.Draw(st_pil, "RGBA")
+            st_d.rounded_rectangle([(14, 18), (14 + st_w, 18 + st_h)], radius=18, fill=(8, 12, 24, 90))
+            st_d.rounded_rectangle(
+                [(10, 10), (10 + st_w, 10 + st_h)],
+                radius=18,
+                fill=(*sticker_bg_rgb[:3], 255),
+                outline=(255, 255, 255, 220) if s_luma <= 145 else (15, 23, 42, 220),
+                width=3,
+            )
+            if callable(draw_contained_text_fn):
+                draw_contained_text_fn(
+                    st_d, (26, 14, 10 + st_w - 16, 10 + st_h - 6), focus_sticker,
+                    initial_font_size=max(36, int(st_h * 0.58)), min_font_size=28, fill=(*safe_sticker_txt, 255)
+                )
+            else:
+                f_acc = get_font_fn(max(34, int(st_h * 0.54)), bold=True)
+                draw_arabic_text_fn(st_d, (10 + st_w // 2, 10 + st_h // 2), focus_sticker, font=f_acc, fill=(*safe_sticker_txt, 255))
+
+            if abs(tilt_deg) > 0.2:
+                st_pil = st_pil.rotate(tilt_deg, resample=Image.Resampling.BICUBIC, expand=True)
+            hdr_sprite.alpha_composite(st_pil, (cx_loc - st_pil.width // 2, cy_loc + int(h_box * 0.25) - st_pil.height // 2))
+        _V4_SPRITE_CACHE[cache_key] = hdr_sprite
+
+    sp1 = min(1.0, 0.85 + progress_u * 1.5)
+    dy1 = int(8 * (1.0 - sp1))
+    canvas_rgba.alpha_composite(hdr_sprite, (x1, y1 + dy1))
+    return canvas_rgba
+
+
+def render_v4_cinema_scene(
+    img: Image.Image,
+    visual_verb: str,
+    archetype: str,
+    stage_bbox: Tuple[int, int, int, int],
+    choreo_u: float,
+    global_t: float,
+    style_spec: Dict[str, Any],
+    scene_meta: Dict[str, Any],
+    sub_items: List[str],
+    kpi_val: str,
+    kpi_lbl: str,
+    concept_title: str,
+    draw_contained_text_fn: Callable,
+    draw_arabic_text_fn: Callable,
+    get_font_fn: Callable,
+    draw_cursor_fn: Callable,
+) -> Image.Image:
+    w, h = img.size
+    st_x1, st_y1, st_x2, st_y2 = [int(v) for v in stage_bbox]
+    st_w = max(240, st_x2 - st_x1)
+    st_h = max(300, st_y2 - st_y1)
+    cx = (st_x1 + st_x2) // 2
+
+    pal = style_spec.get("palette", {})
+    is_light_bg = bool(pal.get("is_light_bg", True))
+    primary_c = tuple(pal.get("primary", (16, 185, 129)))[:3]
+    secondary_c = tuple(pal.get("secondary", (56, 189, 248)))[:3]
+    accent_c = tuple(pal.get("accent", (250, 204, 21)))[:3]
+    sticker_bg = tuple(pal.get("sticker_bg", (16, 185, 129)))[:3]
+    sticker_txt = tuple(pal.get("sticker_txt", (255, 255, 255)))[:3]
+    txt_main = (15, 23, 42) if is_light_bg else (248, 250, 252)
+
+    raw_speech = str(scene_meta.get("text") or concept_title or "")
+    step_idx = int(scene_meta.get("index", int(scene_meta.get("step_number", 1)) - 1))
+    total_sc = max(1, int(scene_meta.get("total_scenes_count", 8)))
+
+    stage_plan = classify_scene_stage_architecture(raw_speech, step_idx, total_sc)
+    stage_type = stage_plan["stage_type"]
+    clause_a = stage_plan["clause_a"]
+    clause_b = stage_plan["clause_b"]
+    focus_sticker = stage_plan["focus_sticker"]
+    kpi_badge = kpi_val if (kpi_val and len(kpi_val) >= 4 and _v4_clean_word(kpi_val) not in FORBIDDEN_STICKER_WORDS) else stage_plan["kpi_badge"]
+    pivot_u = float(scene_meta.get("pivot_u", stage_plan["pivot_u"]))
+
+    distinct_cards = build_distinct_contextual_sub_items(raw_speech, stage_type, sub_items)
+    is_state_b = choreo_u >= pivot_u
+
+    hdr_bbox = (st_x1 + 8, int(h * 0.085), st_x2 - 8, int(h * 0.225))
+    active_headline = clause_b if is_state_b else clause_a
+    active_sticker = kpi_badge if is_state_b else focus_sticker
+    img = render_v4_editorial_headline(
+        canvas_rgba=img,
+        bbox=hdr_bbox,
+        clause_text=active_headline,
+        accent_word=active_sticker,
+        txt_rgb=txt_main,
+        sticker_bg_rgb=primary_c if is_state_b else sticker_bg,
+        sticker_txt_rgb=sticker_txt,
+        progress_u=choreo_u,
+        get_font_fn=get_font_fn,
+        draw_arabic_text_fn=draw_arabic_text_fn,
+        tilt_deg=-2.0 if not is_state_b else 1.8,
+        use_sticker=True,
+        draw_contained_text_fn=draw_contained_text_fn,
+    )
+
+    if stage_type == "ai_platform_prompt_sim":
+        deck_w = int(st_w * 0.92)
+        deck_h = int(st_h * 0.56)
+        dx1 = cx - deck_w // 2
+        dy1 = int(h * 0.245)
+        dx2, dy2 = dx1 + deck_w, dy1 + deck_h
+
+        card_fill = (255, 255, 255, 248) if is_light_bg else (16, 24, 42, 246)
+        border_c = (*primary_c, 235) if is_state_b else (239, 68, 68, 210)
+        img = _v4_draw_glass_card(img, (dx1, dy1, dx2, dy2), radius=30, fill_rgba=card_fill, border_rgba=border_c, border_width=3)
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        status_txt = "ريلز احترافي جاهز للنشر" if is_state_b else "فيديو خام بصمت وأخطاء"
+        status_col = (16, 185, 129) if is_state_b else (239, 68, 68)
+        draw.rounded_rectangle([(dx1 + 22, dy1 + 18), (dx2 - 22, dy1 + 70)], radius=16, fill=(*status_col, 245))
+        _v4_paste_cached_contained_text(img, (dx1 + 32, dy1 + 22, dx2 - 32, dy1 + 66), status_txt, 32, 24, (255, 255, 255, 255), draw_contained_text_fn)
+
+        hero_w, hero_h = int(deck_w * 0.86), int(deck_h * 0.62)
+        hero_ic = _v4_render_cairo_hero_graphic(
+            stage_type="nle_waveform_laser_scissors" if not is_state_b else "ai_chip_free_100",
+            width=hero_w,
+            height=hero_h,
+            choreo_u=choreo_u,
+            global_t=global_t,
+            primary_rgb=primary_c,
+            secondary_rgb=secondary_c,
+            accent_rgb=accent_c,
+            is_light_bg=is_light_bg,
+        )
+        img.alpha_composite(hero_ic, (cx - hero_w // 2, dy1 + 82))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        bar_y1 = dy2 + 22
+        bar_y2 = bar_y1 + 84
+        img = _v4_draw_glass_card(
+            img,
+            (dx1, bar_y1, dx2, bar_y2),
+            radius=24,
+            fill_rgba=(255, 255, 255, 252) if is_light_bg else (22, 32, 54, 248),
+            border_rgba=(*primary_c, 220),
+            border_width=3,
+        )
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        btn_w = int(deck_w * 0.30)
+        bx1, by1, bx2, by2 = dx2 - btn_w - 12, bar_y1 + 12, dx2 - 12, bar_y2 - 12
+        btn_col = (16, 185, 129) if is_state_b else primary_c
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=16, fill=(*btn_col, 255))
+        btn_lbl = "تم التوليد" if is_state_b else "توليد ذكي"
+        _v4_paste_cached_contained_text(img, (bx1 + 10, by1 + 6, bx2 - 10, by2 - 6), btn_lbl, 28, 22, (255, 255, 255, 255), draw_contained_text_fn)
+
+        prompt_cmd = "قص الصمت + إضافة موشن جرافيك"
+        _v4_paste_cached_contained_text(img, (dx1 + 20, bar_y1 + 14, bx1 - 14, bar_y2 - 14), prompt_cmd, 30, 24, (*txt_main, 255), draw_contained_text_fn)
+
+        draw_cursor_fn(draw, (bx2 + 16, by2 + 28), ((bx1 + bx2) // 2, (by1 + by2) // 2), min(1.0, choreo_u * 1.35), accent_rgb=primary_c)
+        return img
+
+    hero_w = int(st_w * 0.90)
+    hero_h = int(st_h * 0.46)
+    hero_y1 = int(h * 0.240)
+    hero_ic = _v4_render_cairo_hero_graphic(
+        stage_type=stage_type,
+        width=hero_w,
+        height=hero_h,
+        choreo_u=choreo_u,
+        global_t=global_t,
+        primary_rgb=primary_c,
+        secondary_rgb=secondary_c,
+        accent_rgb=accent_c,
+        is_light_bg=is_light_bg,
+    )
+    img.alpha_composite(hero_ic, (cx - hero_w // 2, hero_y1))
+
+    cards_top = hero_y1 + hero_h + 16
+    card_h = 74
+    card_gap = 14
+    card_w = int(st_w * 0.92)
+    cx1 = cx - card_w // 2
+    cx2 = cx1 + card_w
+
+    badge_colors = [primary_c, (245, 158, 11), (16, 185, 129)]
+    if stage_type in ("chrono_time_drain", "social_account_decline"):
+        badge_colors = [(239, 68, 68), (245, 158, 11), primary_c]
+
+    for idx_c, card_text in enumerate(distinct_cards[:3]):
+        entry_u = min(1.0, max(0.35, (choreo_u + 0.18 - idx_c * 0.08) * 2.8))
+        slide_dy = int(16 * (1.0 - entry_u))
+        cy1 = cards_top + idx_c * (card_h + card_gap) + slide_dy
+        b_col = badge_colors[idx_c % len(badge_colors)]
+        is_active_row = (idx_c == (2 if is_state_b else 0))
+        card_key = ("card_v4", card_w, card_h, idx_c, str(card_text), is_light_bg, tuple(b_col[:3]), is_active_row)
+        card_spr = _V4_SPRITE_CACHE.get(card_key)
+        if card_spr is None:
+            card_spr = Image.new("RGBA", (card_w + 24, card_h + 24), (0, 0, 0, 0))
+            c_fill = (255, 255, 255, 248) if is_light_bg else (20, 29, 49, 244)
+            border_w = 3 if is_active_row else 2
+            card_spr = _v4_draw_glass_card(
+                card_spr, (12, 6, 12 + card_w, 6 + card_h),
+                radius=20, fill_rgba=c_fill, border_rgba=(*b_col, 235 if is_active_row else 150),
+                border_width=border_w, shadow_alpha=55
+            )
+            cdraw = ImageDraw.Draw(card_spr, "RGBA")
+            pill_w = 54
+            px1, py1, px2, py2 = 12 + card_w - pill_w - 14, 6 + 12, 12 + card_w - 14, 6 + card_h - 12
+            cdraw.rounded_rectangle([(px1, py1), (px2, py2)], radius=14, fill=(*b_col, 255))
+            f_num = get_font_fn(26, bold=True)
+            draw_arabic_text_fn(cdraw, ((px1 + px2) // 2, (py1 + py2) // 2), f"0{idx_c + 1}", font=f_num, fill=(255, 255, 255, 255))
+            draw_contained_text_fn(
+                cdraw, (12 + 20, 6 + 10, px1 - 14, 6 + card_h - 10),
+                card_text, initial_font_size=34, min_font_size=26, fill=(*txt_main, 255)
+            )
+            _V4_SPRITE_CACHE[card_key] = card_spr
+        img.alpha_composite(card_spr, (cx1 - 12, cy1 - 6))
+
+    if stage_type == "cta_interactive_lockup":
+        draw = ImageDraw.Draw(img, "RGBA")
+        draw_cursor_fn(draw, (cx + 140, hero_y1 + hero_h - 10), (cx + 28, hero_y1 + hero_h // 2 + 24), min(1.0, choreo_u * 1.4), accent_rgb=primary_c)
+
+    return img
+
+
 def _draw_mixed_editorial_headline(
     canvas_rgba: Image.Image,
     bbox: Tuple[int, int, int, int],
@@ -615,6 +1452,15 @@ def _draw_mixed_editorial_headline(
     if not words:
         return canvas_rgba
 
+    try:
+        return render_v4_editorial_headline(
+            canvas_rgba=canvas_rgba, bbox=bbox, clause_text=clause_text, accent_word=accent_word,
+            txt_rgb=txt_rgb, sticker_bg_rgb=sticker_bg_rgb, sticker_txt_rgb=sticker_txt_rgb,
+            progress_u=progress_u, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn,
+            tilt_deg=tilt_deg, use_sticker=use_sticker, draw_contained_text_fn=draw_contained_text_fn
+        )
+    except Exception:
+        pass
     draw = ImageDraw.Draw(canvas_rgba, "RGBA")
     main_line = " ".join(words[:-1]) if len(words) >= 2 else words[0]
     last_word = words[-1] if len(words) >= 2 else (accent_word or "")
@@ -687,6 +1533,16 @@ def render_reference_multi_state_choreography(
     4. `camera_25d_pan_right` (VIDEO_03 Morningstar 3D Acid-Yellow Sphere + 2.5D Horizontal Camera Pan)
     5. `minimalist_climax_reset` (VIDEO_01 Brain Soul & VIDEO_03 Heart Feeling >78% Negative Space Reset)
     """
+    try:
+        return render_v4_cinema_scene(
+            img=img, visual_verb=visual_verb, archetype=archetype, stage_bbox=stage_bbox,
+            choreo_u=choreo_u, global_t=global_t, style_spec=style_spec, scene_meta=scene_meta,
+            sub_items=sub_items, kpi_val=kpi_val, kpi_lbl=kpi_lbl, concept_title=concept_title,
+            draw_contained_text_fn=draw_contained_text_fn, draw_arabic_text_fn=draw_arabic_text_fn,
+            get_font_fn=get_font_fn, draw_cursor_fn=draw_cursor_fn
+        )
+    except Exception:
+        pass
     w, h = img.size
     st_x1, st_y1, st_x2, st_y2 = stage_bbox
     st_w = max(200, st_x2 - st_x1)

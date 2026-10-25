@@ -4,6 +4,7 @@ test_suite_all.py — حزمة الاختبارات الشاملة في الجذ
 """
 import os
 import sys
+import shutil
 import unittest
 import numpy as np
 
@@ -110,6 +111,42 @@ class TestReferenceDirectingIntegration(unittest.TestCase):
         ensure_builtin_sfx_pack(tmp_sfx, sr=24000)
         self.assertTrue(os.path.isdir(os.path.join(tmp_sfx, "1_click")))
         self.assertTrue(os.path.isdir(os.path.join(tmp_sfx, "6_whooch")))
+
+
+    def test_06_arabic_darija_semantic_clause_splitting(self):
+        from transcriber import (
+            split_words_into_micro_scenes,
+            FORBIDDEN_SCENE_END_WORDS,
+            FORBIDDEN_SCENE_START_WORDS,
+        )
+        sample_text = (
+            "السلام عليكم على بالي بلي راك تعاني من مشكل تاع الوقت "
+            "وما عندكش الوقت باش تمونتي لي فيديو وتطلعهم في السوشيال "
+            "ومخلي الحساب تاعك في انستغرام والسوشيال ميديا عموما يموتوا "
+            "وانت ما على بالكش بلي كاين منصة اسمها فيديو ايديتينغ "
+            "تقدر تمونتي لك لي فيديو تاعك بالموشن جرافيك "
+            "وبالمونتاج العادي وتنقي الصوت "
+            "وتمونتي الصمت من الفيديو وهذا بشكل مجاني وبالاي أي "
+            "التسجيل في أسفل الفيديو"
+        )
+        words = []
+        t = 0.0
+        for tok in sample_text.split():
+            words.append({"word": tok, "start": round(t, 3), "end": round(t + 0.40, 3), "probability": 0.95})
+            t += 0.43
+
+        scenes = split_words_into_micro_scenes(words, max_words_per_scene=6, max_duration_per_scene=2.8)
+        self.assertGreaterEqual(len(scenes), 5)
+        # الجملة الافتتاحية يجب أن تبقى جملة دلالية متكاملة ولا تنقطع عند "على" أو "تاع"
+        self.assertIn("على بالي بلي راك تعاني من مشكل تاع الوقت", scenes[0]["text"])
+        for sc in scenes:
+            w_list = sc.get("words", [])
+            self.assertTrue(len(w_list) >= 2, f"Scene too short: {sc['text']}")
+            first_w = w_list[0]["word"].strip("،,.!؟?")
+            last_w = w_list[-1]["word"].strip("،,.!؟?")
+            if not (last_w in {"أي", "اي"} and len(w_list) >= 2 and w_list[-2]["word"] in {"وبالاي", "بالاي"}):
+                self.assertNotIn(last_w, FORBIDDEN_SCENE_END_WORDS, f"Forbidden end word '{last_w}' in scene: {sc['text']}")
+            self.assertNotIn(first_w, FORBIDDEN_SCENE_START_WORDS, f"Forbidden start word '{first_w}' in scene: {sc['text']}")
 
 
 if __name__ == "__main__":

@@ -728,15 +728,21 @@ import math
 def enforce_fast_hormozi_scene_pacing(
     planned_scenes: List[Dict[str, Any]],
     min_scene_sec: float = 1.6,
-    max_scene_sec: float = 2.85
+    max_scene_sec: float = 4.5
 ) -> List[Dict[str, Any]]:
     """
-    يضمن تغيير المشهد أو الزاوية البصرية كل `2.5` إلى `3.0` ثوانٍ كحد أقصى لكسر الملل والاحتفاظ بانتباه المشاهد (High Retention):
-    إذا كان أي مشهد أطول من `max_scene_sec` (~2.85s)، يتم تقسيمه تلقائياً إلى لقطتين بصريتين متتاليتين
-    مع تبديل زاوية الكاميرا/وضع العرض (`full_screen` <-> `stock_broll` / `split_screen_stage`) وتنويع الرسم التعبيري.
+    يضمن إيقاعاً بصرياً متوازناً مع الحفاظ الصارم على اكتمال الجملة الدلالية العربية (Semantic Clauses):
+    لا يقسم أي مشهد إلا إذا تجاوز `max_scene_sec` (~4.5s) وكان هناك حد نحوي/دلالي سليم للفصل
+    (يُمنع منعاً باتاً الفصل بعد حروف الجر أو أدوات الربط أو المضاف).
     """
     if not planned_scenes:
         return []
+
+    try:
+        from transcriber import can_split_between_arabic_words, is_semantic_clause_starter
+    except ImportError:
+        can_split_between_arabic_words = lambda p, n, pp="": True
+        is_semantic_clause_starter = lambda w, p="", pp="": False
 
     paced_scenes: List[Dict[str, Any]] = []
     layout_cycle = ["full_screen", "stock_broll", "split_screen_stage"]
@@ -749,38 +755,54 @@ def enforce_fast_hormozi_scene_pacing(
         s_start = float(sc.get("start", 0.0))
         s_end = float(sc.get("end", s_start + 2.5))
         dur = s_end - s_start
+        words_list = list(sc.get("words") or [])
 
-        if dur <= max_scene_sec or dur < (min_scene_sec * 1.75):
+        if dur <= max_scene_sec or len(words_list) < 6:
             sc_copy = dict(sc)
             sc_copy["scene_index"] = len(paced_scenes)
             paced_scenes.append(sc_copy)
             continue
 
-        # تقسيم المشهد الطويل إلى لقطات سريعة كل 2.5 - 2.8 ثانية
-        num_parts = max(2, int(math.ceil(dur / 2.65)))
-        part_dur = dur / float(num_parts)
-        words_list = list(sc.get("words") or [])
-        text_tokens = str(sc.get("text", "")).split()
+        # البحث عن نقطة فصل دلالية ونحوية آمنة قرب المنتصف
+        mid_idx = len(words_list) // 2
+        best_split = None
+        for offset in range(0, len(words_list) // 2):
+            for cand in (mid_idx + offset, mid_idx - offset):
+                if 2 <= cand <= len(words_list) - 2:
+                    prev_w = str(words_list[cand - 1].get("word", ""))
+                    next_w = str(words_list[cand].get("word", ""))
+                    pp_w = str(words_list[cand - 2].get("word", "")) if cand >= 2 else ""
+                    if can_split_between_arabic_words(prev_w, next_w, pp_w):
+                        if is_semantic_clause_starter(next_w, prev_w, pp_w) or best_split is None:
+                            best_split = cand
+                        if is_semantic_clause_starter(next_w, prev_w, pp_w):
+                            break
+            if best_split is not None and is_semantic_clause_starter(
+                str(words_list[best_split].get("word", "")),
+                str(words_list[best_split - 1].get("word", "")),
+                str(words_list[best_split - 2].get("word", "")) if best_split >= 2 else ""
+            ):
+                break
 
-        for p_i in range(num_parts):
-            p_start = round(s_start + p_i * part_dur, 3)
-            p_end = round(s_end if p_i == num_parts - 1 else (s_start + (p_i + 1) * part_dur), 3)
+        if best_split is None:
+            sc_copy = dict(sc)
+            sc_copy["scene_index"] = len(paced_scenes)
+            paced_scenes.append(sc_copy)
+            continue
+
+        parts_words = [words_list[:best_split], words_list[best_split:]]
+        for p_i, sub_words in enumerate(parts_words):
+            if not sub_words:
+                continue
+            p_start = round(float(sub_words[0].get("start", s_start)), 3)
+            p_end = round(float(sub_words[-1].get("end", s_end)), 3)
             sub_sc = dict(sc)
             sub_sc["start"] = p_start
             sub_sc["end"] = p_end
             sub_sc["duration"] = round(p_end - p_start, 3)
             sub_sc["scene_index"] = len(paced_scenes)
-
-            if words_list:
-                sub_words = [w for w in words_list if float(w.get("start", 0.0)) >= p_start - 0.08 and float(w.get("start", 0.0)) < p_end + 0.05]
-                if sub_words:
-                    sub_sc["words"] = sub_words
-                    sub_sc["text"] = " ".join(str(w.get("word", "")).strip() for w in sub_words if str(w.get("word", "")).strip())
-            elif text_tokens:
-                chunk_sz = max(1, int(math.ceil(len(text_tokens) / float(num_parts))))
-                tok_slice = text_tokens[p_i * chunk_sz:(p_i + 1) * chunk_sz]
-                if tok_slice:
-                    sub_sc["text"] = " ".join(tok_slice)
+            sub_sc["words"] = sub_words
+            sub_sc["text"] = " ".join(str(w.get("word", "")).strip() for w in sub_words if str(w.get("word", "")).strip())
 
             if p_i > 0 and not sc.get("user_override_archetype"):
                 cur_layout = str(sc.get("layout_mode", "full_screen"))
