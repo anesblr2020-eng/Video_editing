@@ -227,6 +227,80 @@ def draw_contextual_icon(
         draw.polygon(bolt, fill=(*accent_rgb, 255))
 
 
+def _draw_kinetic_motion_overlays(
+    draw: ImageDraw.ImageDraw,
+    cw: int,
+    ch: int,
+    animation_t: float,
+    template: str,
+    visual_query: str,
+    accent_rgb: Tuple[int, int, int],
+    secondary_rgb: Tuple[int, int, int],
+    success_rgb: Tuple[int, int, int],
+) -> None:
+    """Add restrained, continuously changing motion-design layers to every scene.
+
+    This is deliberately procedural and topic-neutral: the semantic illustration remains
+    selected by the director, while these layers give it ongoing motion instead of leaving
+    one static icon on screen for several seconds. All coordinates stay inside the stage.
+    """
+    t = max(0.0, float(animation_t))
+    q = (visual_query or "").lower()
+    # Keep the focal orbit near the semantic visual, not over the headline zone.
+    if template == "big_number":
+        cx, cy, base_r = cw // 2, 165, 116
+    elif template == "phone_reel_mockup":
+        cx, cy, base_r = cw // 2, 355, 255
+    elif template == "before_after":
+        cx, cy, base_r = cw // 2, 280, 170
+    elif template in {"versus", "checklist", "steps_flow"}:
+        cx, cy, base_r = cw // 2, 300, 190
+    else:
+        cx, cy, base_r = cw // 2, 305, 174
+
+    # Two rotating arc segments make movement readable even when the main vector is simple.
+    spin = (t * 118.0) % 360.0
+    pulse = 0.5 + 0.5 * math.sin(t * 3.1)
+    for i, (r_mul, col, width, span) in enumerate((
+        (1.00, accent_rgb, 5, 76.0),
+        (1.16, secondary_rgb, 3, 48.0),
+    )):
+        r = int(base_r * r_mul)
+        start = spin * (1 if i == 0 else -0.72) + i * 135.0
+        box = [cx-r, cy-r, cx+r, cy+r]
+        draw.arc(box, start=start, end=start+span, fill=(*col, int(95 + 115*pulse)), width=width)
+
+    # Three orbiting nodes with short trails. Motion is staggered, not random.
+    for i, col in enumerate((accent_rgb, secondary_rgb, success_rgb)):
+        angle = math.radians((spin + i * 120.0) % 360.0)
+        orbit_r = base_r * (0.82 + 0.05 * math.sin(t * 2.2 + i))
+        x = int(cx + math.cos(angle) * orbit_r)
+        y = int(cy + math.sin(angle) * orbit_r)
+        trail_angle = angle - 0.24
+        tx = int(cx + math.cos(trail_angle) * orbit_r)
+        ty = int(cy + math.sin(trail_angle) * orbit_r)
+        rr = 7 + int(3 * (0.5 + 0.5 * math.sin(t * 5.0 + i)))
+        draw.line((tx, ty, x, y), fill=(*col, 150), width=4)
+        draw.ellipse((x-rr, y-rr, x+rr, y+rr), fill=(*col, 235))
+
+    # A pair of moving side streaks gives a second motion rhythm without covering copy.
+    travel = (t * 250.0) % (cw + 240.0)
+    y1 = 92 + int(14 * math.sin(t * 2.0))
+    x1 = int(travel - 120)
+    x2 = int(cw - ((travel * 0.73) % (cw + 160.0)))
+    streak_col = success_rgb if any(k in q for k in ("silence", "wave", "audio", "scissor")) else secondary_rgb
+    draw.line((x1, y1, x1 + 66, y1 - 13), fill=(*accent_rgb, 175), width=5)
+    draw.line((x2, ch - 94, x2 + 48, ch - 106), fill=(*streak_col, 150), width=4)
+
+    # A small pulsing locator/cue changes phase every ~1.1 s, creating a subtle beat.
+    beat = (t % 1.1) / 1.1
+    cue_x = 74 + int((cw - 148) * beat)
+    cue_y = 42
+    cue_r = 5 + int(5 * (1.0 - beat))
+    draw.ellipse((cue_x-cue_r, cue_y-cue_r, cue_x+cue_r, cue_y+cue_r),
+                 outline=(*accent_rgb, 220), width=3)
+
+
 def render_scene_card_and_measure_dom(
     sc: Dict[str, Any],
     theme: Dict[str, Any],
@@ -480,6 +554,12 @@ def render_scene_card_and_measure_dom(
         ax, ay0, ay1 = cw // 2, 600, 775
         draw.line([ax, ay0, ax, ay1], fill=(*accent, 255), width=16)
         draw.line([ax - 55, ay1 - 55, ax, ay1 + 8, ax + 55, ay1 - 55], fill=(*accent, 255), width=16)
+
+    _draw_kinetic_motion_overlays(
+        draw=draw, cw=cw, ch=ch, animation_t=animation_t, template=tpl,
+        visual_query=str(visual_query), accent_rgb=accent, secondary_rgb=secondary,
+        success_rgb=success,
+    )
 
     rgb_arr = np.array(img.convert("RGB"), dtype=np.uint8)
     return rgb_arr, {

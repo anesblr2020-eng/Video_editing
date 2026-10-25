@@ -1,9 +1,9 @@
 {
   "project": "منصة مونتاج بالذكاء الاصطناعي",
-  "repair_track": "repair-pass-5",
-  "current_phase": 5,
-  "phase_status": "pass_5_code_complete_25_tests_passed; full_end_to_end_render_still_unverified_in_test_environment",
-  "last_completed_action": "Audited user output 7584.mp4; fixed context-aware segmentation, Arabic clitic normalization, grounded contiguous titles, CTA isolation, optional guarded Gemini semantic planning, ASR key/model/dialect propagation, and safe headline wrapping.",
+  "repair_track": "repair-pass-6",
+  "current_phase": 6,
+  "phase_status": "pass_6_motion_layers_code_complete_26_tests_passed; hosted_end_to_end_render_pending",
+  "last_completed_action": "Added common kinetic motion overlays to the scene renderer and a regression test proving frames change over time without external SVG assets; kept 6fps cached stage frames to avoid memory regression.",
   "source_archive": "1 editing v3.zip",
   "baseline_file_count": 37,
   "baseline_sha256": {
@@ -47,6 +47,7 @@
   },
   "changed_existing_files": [
     "app.py",
+    "tests/test_repair_regressions.py",
     "v2_director.py",
     "v2_renderer.py",
     "v2_run.py",
@@ -56,6 +57,7 @@
   "new_files": [
     "REPAIR_LOG.md",
     "REPAIR_PASS_5_REPORT.md",
+    "REPAIR_PASS_6_REPORT.md",
     "REPAIR_STATE.json",
     "tests/test_repair_regressions.py"
   ],
