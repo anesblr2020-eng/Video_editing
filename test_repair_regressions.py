@@ -102,28 +102,71 @@ class RepairPass1Tests(unittest.TestCase):
             self.assertLess(report["cleaned_duration_seconds"], report["original_duration_seconds"])
 
 
-    def test_semantic_svg_motion_changes_between_animation_frames(self):
+    def test_semantic_storyboard_changes_between_animation_frames_without_orbit_decorations(self):
         import json
         import numpy as np
         import v2_renderer
-        if v2_renderer.search_and_fetch_web_vectors is None or v2_renderer.render_recolored_svg_motion_canvas is None:
-            self.skipTest("vector engine unavailable")
         with (BASE / "themes.json").open(encoding="utf-8") as handle:
             theme = json.load(handle)["themes"]["obsidian_gold"]
         scene = {
-            "template": "concept_icon", "speech": "وتنحي الصمت من الفيديو",
+            "template": "concept_icon", "intent": "audio_edit",
+            "speech": "وتنحي الصمت من الفيديو",
             "keywords": ["تنحي الصمت", "من الفيديو"],
-            "visual_query": "scissors waveform silence", "start": 0.0, "end": 2.0,
+            "visual_query": "waveform_scissors", "start": 0.0, "end": 3.0,
         }
-        svgs = v2_renderer.search_and_fetch_web_vectors(
-            scene_text_ar=scene["speech"], fallback_topic=scene["visual_query"],
-            max_assets=1, allow_network=False,
-        )
-        self.assertTrue(svgs)
-        frame_a, _ = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=0.0, motion_svg=svgs[0])
-        frame_b, _ = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=0.5, motion_svg=svgs[0])
-        self.assertGreater(int(np.abs(frame_a.astype("int16") - frame_b.astype("int16")).sum()), 1000)
+        frame_a, _ = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=0.1)
+        frame_b, _ = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=0.8)
+        frame_c, _ = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=1.6)
+        self.assertGreater(int(np.abs(frame_a.astype("int16") - frame_b.astype("int16")).sum()), 100000)
+        self.assertGreater(int(np.abs(frame_b.astype("int16") - frame_c.astype("int16")).sum()), 100000)
+        source = (BASE / "v2_renderer.py").read_text(encoding="utf-8")
+        self.assertNotIn("_draw_kinetic_motion_overlays", source)
+        self.assertNotIn("draw_contextual_icon", source)
+        self.assertNotIn("breath_y", source)
+        self.assertNotIn("breath_scale", source)
+        self.assertIn("gap visibly collapses", source)
+        self.assertIn("moving playhead", source)
+        self.assertIn("Deliberate cinematic push-in", source)
 
+    def test_motion_is_sampled_at_15fps_and_cached_one_scene_at_a_time(self):
+        source = (BASE / "v2_renderer.py").read_text(encoding="utf-8")
+        self.assertIn("motion_fps = 15.0", source)
+        self.assertIn("Drop the previous scene's cached frames", source)
+        self.assertNotIn("scene_stage_frames: List[List[np.ndarray]]", source)
+
+    def test_different_intents_use_distinct_semantic_compositions(self):
+        import json
+        import numpy as np
+        import v2_renderer
+        with (BASE / "themes.json").open(encoding="utf-8") as handle:
+            theme = json.load(handle)["themes"]["obsidian_gold"]
+        fixtures = [
+            {"template":"concept_icon", "intent":"audio_edit", "speech":"قص الصمت من الصوت", "keywords":["قص الصمت","الصوت"], "visual_query":"waveform_scissors", "start":0.0,"end":2.7},
+            {"template":"concept_icon", "intent":"social_media", "speech":"السوشيال ميديا والتفاعل", "keywords":["السوشيال ميديا","التفاعل"], "visual_query":"instagram_decline", "start":0.0,"end":2.7},
+            {"template":"concept_icon", "intent":"ai", "speech":"الذكاء الاصطناعي يحول الكلام", "keywords":["الذكاء الاصطناعي","الكلام"], "visual_query":"ai_neural_chip", "start":0.0,"end":2.7},
+        ]
+        frames = [v2_renderer.render_scene_card_and_measure_dom(sc,theme,animation_t=0.9)[0] for sc in fixtures]
+        d01 = int(np.abs(frames[0].astype("int16")-frames[1].astype("int16")).sum())
+        d12 = int(np.abs(frames[1].astype("int16")-frames[2].astype("int16")).sum())
+        self.assertGreater(d01, 1000000)
+        self.assertGreater(d12, 1000000)
+
+
+    def test_delivery_security_and_success_use_functional_scenes(self):
+        import json
+        import numpy as np
+        import v2_renderer
+        with (BASE / "themes.json").open(encoding="utf-8") as handle:
+            theme = json.load(handle)["themes"]["obsidian_gold"]
+        fixtures = [
+            {"template":"concept_icon", "intent":"explanation", "speech":"توصيل الطلب للعنوان", "keywords":["توصيل الطلب","العنوان"], "visual_query":"delivery_map_58", "start":0.0,"end":3.0},
+            {"template":"concept_icon", "intent":"explanation", "speech":"حماية الحساب والثقة", "keywords":["حماية الحساب","الثقة"], "visual_query":"shield_guarantee", "start":0.0,"end":3.0},
+            {"template":"concept_icon", "intent":"explanation", "speech":"الوصول إلى النجاح", "keywords":["الوصول","النجاح"], "visual_query":"trophy_success", "start":0.0,"end":3.0},
+        ]
+        frames = [v2_renderer.render_scene_card_and_measure_dom(sc, theme, animation_t=0.9)[0] for sc in fixtures]
+        self.assertGreater(int(np.abs(frames[0].astype("int16")-frames[1].astype("int16")).sum()), 1000000)
+        self.assertGreater(int(np.abs(frames[1].astype("int16")-frames[2].astype("int16")).sum()), 1000000)
+        self.assertGreater(int(np.abs(frames[0].astype("int16")-frames[2].astype("int16")).sum()), 1000000)
 
     def test_non_cta_final_scene_does_not_invent_call_to_action(self):
         words = [

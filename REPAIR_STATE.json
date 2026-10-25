@@ -1,9 +1,9 @@
 {
   "project": "منصة مونتاج بالذكاء الاصطناعي",
-  "repair_track": "repair-pass-6",
-  "current_phase": 6,
-  "phase_status": "pass_6_motion_layers_code_complete_26_tests_passed; hosted_end_to_end_render_pending",
-  "last_completed_action": "Added common kinetic motion overlays to the scene renderer and a regression test proving frames change over time without external SVG assets; kept 6fps cached stage frames to avoid memory regression.",
+  "repair_track": "repair-pass-7",
+  "current_phase": 7,
+  "phase_status": "pass_7_semantic_choreography_28_tests_passed_and_6s_smoke_render_passed; real_user_video_review_pending",
+  "last_completed_action": "Removed generic orbiting decorations and sine-wave floating; added intent-specific functional scene choreography; sampled motion at 15fps and cached one scene at a time; verified 28 regression tests, 27 Python compile checks, and a 6-second synthetic FFmpeg smoke render.",
   "source_archive": "1 editing v3.zip",
   "baseline_file_count": 37,
   "baseline_sha256": {
@@ -46,6 +46,9 @@
     "v2_audio.py": "c568055f8ad6b6c78cb84ea4f72e0102841c9443badc052896a22a08bb039847"
   },
   "changed_existing_files": [
+    "CHANGES.md",
+    "REPAIR_LOG.md",
+    "REPAIR_STATE.json",
     "app.py",
     "tests/test_repair_regressions.py",
     "v2_director.py",
@@ -58,21 +61,30 @@
     "REPAIR_LOG.md",
     "REPAIR_PASS_5_REPORT.md",
     "REPAIR_PASS_6_REPORT.md",
+    "REPAIR_PASS_7_REPORT.md",
     "REPAIR_STATE.json",
+    "assets/custom_motion_pack/.gitkeep",
+    "assets/lottie_cache/.gitkeep",
+    "assets/web_motion_cache/.gitkeep",
     "tests/test_repair_regressions.py"
   ],
   "deleted_files": [],
   "current_sha256_for_changed_files": {
+    "CHANGES.md": "8f5542047b4be7c9efa6ce846db8e9038f1852f427921f4549758a9779adc23f",
+    "REPAIR_LOG.md": "21ea1b84d7fbee8eb09ee7346ca9b4d3cd397d2a73583f4a43cdd75328cef706",
+    "REPAIR_PASS_5_REPORT.md": "e8194e551ef38382ee392258843ffc54ef91cd48d53680bbd6448a10cc489c55",
+    "REPAIR_PASS_6_REPORT.md": "3e3d6140247008b7fd20d5ad9e3cdd4e8b25374f6cf7308ebafaa06c5e2acaa3",
+    "REPAIR_PASS_7_REPORT.md": "5e0d7d3d87d05d63604cff708fcca6d6304914e57c243c69f1e0b428314aace0",
     "app.py": "3a71545d07cb38a92329810bbe9366cf74fb9f80e28579e67eebafa85fbaa79e",
+    "assets/custom_motion_pack/.gitkeep": "2b8330beee766abce995a1306df42d21a00940c8231f500d03bb791196200fed",
+    "assets/lottie_cache/.gitkeep": "149bed2a8fd38204e5eb0a52180938c04431864b15f53c7bd22323a186f79b7e",
+    "assets/web_motion_cache/.gitkeep": "aa185cda7446c82d93f16105bab96a1a788a45f2ff3b0b81d5ddf4a20871d858",
+    "tests/test_repair_regressions.py": "91da784ca05d1ed55d1460c58847c82c65a758a1dc97f7c669fb9040c92a658b",
     "v2_director.py": "eb1d4c48c92bd4ee139c3a2da4982f29d3e6b0d80ed098ee0ace20c8040d6d79",
-    "v2_renderer.py": "46afd2da8b39678535baf23e42b102ebe74d6e892c467aff0e6476b174bc6b55",
+    "v2_renderer.py": "380cd21115a00523de2440e4cd0b4bf6892935aac7e4c8634330bbc446953151",
     "v2_run.py": "769752c7ba05410c2a0ffad55f5d052125d7181da4e0993f5d0f2d5724ccb288",
     "v2_transcribe.py": "a9e1d480aa0b7dd3fa74ecc547e2fbfd2b72b0c2a9c0eb6a8c8af7a3d3e5af75",
-    "REPAIR_LOG.md": "2cd703ba39886ac914c9ddaad84233c242602a6714ed03283a100b7372c89682",
-    "tests/test_repair_regressions.py": "11a630ba0701b54784157175022ab48bf4bb6b20f58ecc6750dbb0ed3b2e988e",
-    "v2_validator.py": "cce6dcbe73a0da32e61bce481577754cf8b3d001287b64be66a46a81d5be5fc1",
-    "CHANGES.md": "a2d01c5c71c5f36a6ec9bb26f3314ae93100c526f39683274bb9b952140b6580",
-    "REPAIR_PASS_5_REPORT.md": "e8194e551ef38382ee392258843ffc54ef91cd48d53680bbd6448a10cc489c55"
+    "v2_validator.py": "cce6dcbe73a0da32e61bce481577754cf8b3d001287b64be66a46a81d5be5fc1"
   },
   "checks": {
     "python_compile": {
@@ -81,8 +93,8 @@
       "status": "PASS"
     },
     "regression_tests": {
-      "passed": 25,
-      "total": 25,
+      "passed": 28,
+      "total": 28,
       "status": "PASS"
     },
     "uploaded_video_7584_audio_audit": {
@@ -116,15 +128,33 @@
     "full_video_render": {
       "status": "BLOCKED",
       "reason": "faster_whisper is unavailable in the repair sandbox; a new full platform render must be run in deployment."
+    },
+    "pass_7_renderer_smoke_test": {
+      "duration_seconds": 6.0,
+      "render_seconds": 5.42,
+      "resolution": "1080x1920",
+      "fps": 30,
+      "video_codec": "H.264",
+      "audio_codec": "AAC",
+      "size_bytes": 3213732,
+      "safe_zone_violations": 0,
+      "overflow_violations": 0,
+      "word_collisions": 0,
+      "status": "PASS_SMOKE_TEST_ONLY",
+      "note": "Synthetic 6-second input using three semantic compositions. Proves the renderer can produce the expected technical format and pass layout checks; it does not validate a full user-uploaded video or guarantee a professional finished edit."
+    },
+    "full_user_video_render": {
+      "status": "PENDING_DEPLOYMENT_TEST",
+      "reason": "Must generate and visually inspect a fresh video in the user’s hosted environment."
     }
   },
-  "known_environment_note": "The Python test process emitted an unrelated spreadsheet runtime warmup warning from the environment; unittest returned 0 and all five tests passed.",
-  "next_phase": 6,
+  "known_environment_note": "The full user-input pipeline still requires deployment validation; no success is claimed for a fresh end-to-end transcription + directing + final render in the repair sandbox.",
+  "next_phase": 8,
   "next_phase_tasks": [
-    "Run a fresh end-to-end render from the actual platform using this exact pass-5 ZIP and available ASR provider.",
-    "Check scene_plan.json to confirm scenes are context-complete, CTA isolated, and labels copied from the spoken phrase.",
-    "Inspect the new contact sheet for title overflow, repeated compositions, irrelevant visuals, and visual timing.",
-    "Inspect final_audio_guard and use FFmpeg silence detection on the final output, not only the intermediate audio.",
-    "Re-run all 25 regression tests before accepting the next patch."
+    "Replace the root-level v2_renderer.py in the active GitHub main branch with the version from this archive; keep the existing app.py and v2_run.py unless a new error specifically implicates them.",
+    "Generate a fresh video with real user audio/video in the hosted platform and inspect multiple timestamps, not just one screenshot.",
+    "Check whether each scene has a meaning-specific action and a visible state change; flag any floating decorations, repeated static icons, generic headings, or action/speech mismatch.",
+    "Tie major visual state changes to aligned word timestamps or audio beats in the next phase; do not add generic decorative movement to compensate.",
+    "Re-run all 28 regression tests and the renderer smoke test after any code change."
   ]
 }
