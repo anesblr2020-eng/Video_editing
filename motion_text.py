@@ -936,7 +936,24 @@ def _render_pro_stage_background(
     raw_bot = tuple(pal.get("bottom_bg", preset_bot))[:3]
     raw_glow = tuple(pal.get("glow", pal.get("primary", preset_glow)))[:3]
 
-    # ضمان خلفية سينمائية داكنة عالية التباين (تمنع مظهر الباوربوينت الباهت وتبرز ألوان Alex Hormozi)
+    is_light_bg = bool(pal.get("is_light_bg", False)) and not force_dark_cinema
+    if is_light_bg:
+        top_c = np.array(raw_top, dtype=np.float32)
+        bot_c = np.array(raw_bot, dtype=np.float32)
+        glow_c = np.array(raw_glow, dtype=np.float32)
+        yy, xx = np.ogrid[:height, :width]
+        # High-key studio radial spotlight in center + soft editorial vignette on edges (VIDEO_01 & VIDEO_03 look)
+        dist_center = ((xx - width * 0.50) / (width * 0.62)) ** 2 + ((yy - height * 0.44) / (height * 0.52)) ** 2
+        vignette = np.clip(dist_center * 0.42, 0.0, 1.0)[:, :, None]
+        canvas_np = top_c * (1.0 - vignette) + bot_c * vignette
+        # Giant subtle background watermark typography/geometry like "AI" / "ART" in VIDEO_01
+        pil_bg = Image.fromarray(np.clip(canvas_np, 0, 255).astype(np.uint8), mode="RGB").convert("RGBA")
+        if style_spec.get("has_giant_bg_numbers", False):
+            bg_d = ImageDraw.Draw(pil_bg, "RGBA")
+            f_giant = get_arabic_font(max(90, int(width * 0.24)), bold=True)
+            bg_d.text((width // 2, int(height * 0.16)), f"{step_num:02d}", font=f_giant, fill=(203, 213, 225, 55), anchor="mm")
+        return pil_bg
+
     if (0.299 * raw_top[0] + 0.587 * raw_top[1] + 0.114 * raw_top[2]) > 75:
         raw_top = preset_top
         raw_bot = preset_bot
@@ -1549,7 +1566,7 @@ def _render_dynamic_archetype_stage(
     cx = w // 2
     draw = ImageDraw.Draw(img, "RGBA")
     pal = style_spec.get("palette", {})
-    is_light_bg = False
+    is_light_bg = bool(pal.get("is_light_bg", False))
 
     step_num = int(scene_meta.get("step_number") or style_spec.get("step_number") or 1)
     total_scenes = int(scene_meta.get("total_scenes_count") or 999)
@@ -1601,7 +1618,7 @@ def _render_dynamic_archetype_stage(
     primary_c = tuple(pal.get("primary", (56, 189, 248)))
     secondary_c = tuple(pal.get("secondary", (250, 204, 21)))
     accent_c = tuple(pal.get("accent", (16, 185, 129)))
-    headline_txt_c = (255, 255, 255)
+    headline_txt_c = tuple(pal.get("headline_txt", (18, 22, 30) if is_light_bg else (255, 255, 255)))
     sticker_bg_c = tuple(pal.get("sticker_bg", (234, 179, 8)))
     sticker_txt_c = tuple(pal.get("sticker_txt", (24, 24, 27)))
     dark_navy = (24, 24, 27)
@@ -1656,9 +1673,10 @@ def _render_dynamic_archetype_stage(
     if not user_override_arch and step_num == total_scenes and total_scenes >= 3:
         archetype = "hero_cta_magnet_finale"
 
-    # رسم كبسولة الهوك البصري العلوية الأنيقة (بدون تكرار النص المنطوق في سطرين وبدون تداخل كلمات!)
     hook_txt = _derive_concise_visual_hook(scene_meta, concept_title)
-    img = _render_clean_reel_topic_hook(img, hook_txt, style_spec, choreo_u, step_num, total_scenes)
+    has_ref_verb = bool(scene_meta.get("visual_verb")) or str(style_spec.get("design_family") or "") in ("honeyy_highkey_3d_ui", "divyansh_kinetic_contrast", "morningstar_editorial_25d")
+    if not has_ref_verb:
+        img = _render_clean_reel_topic_hook(img, hook_txt, style_spec, choreo_u, step_num, total_scenes)
     draw = ImageDraw.Draw(img, "RGBA")
 
     stiffness = float(style_spec.get("spring_stiffness", 205.0))
@@ -2691,6 +2709,24 @@ def render_one_take_camera_handoff(
 
     t_mode = str(transition_type or "whip_pan_blur_left").lower()
 
+    if t_mode in ("circle_expand_wipe", "portal_zoom_morph", "zoom_portal", "camera_dive_into_portal"):
+        # انتقال توسع الدائرة الهندسية (Geometric Circle Expansion Wipe كما في VIDEO_02 Divyansh_Fx)
+        out_canvas = prev_rgba.copy()
+        max_r = int(math.hypot(w, h) * 0.65)
+        cur_r = int(max_r * p)
+        mask_l = Image.new("L", (w, h), 0)
+        m_draw = ImageDraw.Draw(mask_l)
+        cx_m, cy_m = w // 2, int(h * 0.46)
+        m_draw.ellipse([(cx_m - cur_r, cy_m - cur_r), (cx_m + cur_r, cy_m + cur_r)], fill=255)
+        mask_l = mask_l.filter(ImageFilter.GaussianBlur(radius=8))
+        out_canvas.paste(curr_rgba, (0, 0), mask_l)
+        # Draw geometric ring border during expansion
+        if 0.05 < u < 0.92:
+            ring_d = ImageDraw.Draw(out_canvas, "RGBA")
+            ring_col = (0, 168, 132, int(220 * math.sin(u * math.pi)))
+            ring_d.ellipse([(cx_m - cur_r, cy_m - cur_r), (cx_m + cur_r, cy_m + cur_r)], outline=ring_col, width=14)
+        return out_canvas
+
     if t_mode in ("whip_pan_blur_left", "whip_left"):
         out_canvas = Image.new("RGBA", (w, h), (0, 0, 0, 255))
         dx_prev = -int(round(w * p))
@@ -3172,7 +3208,7 @@ def render_master_directed_video_frame(
 def create_kinetic_typography_video(
     input_path: str,
     output_path: str,
-    video_resolution: Tuple[int, int] = (540, 960),
+    video_resolution: Tuple[int, int] = (1080, 1920),
     whisper_model: str = "base",
     ollama_model: str = "llama3",
     dialect_mode: str = "algerian_darija",
@@ -3182,22 +3218,6 @@ def create_kinetic_typography_video(
     progress_callback: Optional[Callable[[float, str], None]] = None,
     **kwargs
 ) -> str:
-    try:
-        from v2_run import run_v2_pipeline_programmatic
-        from style_evolution_brain import get_active_storyboard_state
-        sb_st = get_active_storyboard_state()
-        sb_img = sb_st.get("source_image") if (sb_st.get("enabled") and sb_st.get("source_image")) else None
-        rep = run_v2_pipeline_programmatic(
-            input_path=input_path,
-            output_mp4_path=output_path,
-            theme_name="obsidian_gold",
-            storyboard_path=sb_img,
-            custom_scenes=kwargs.get("custom_planned_scenes"),
-            progress_callback=progress_callback,
-        )
-        return rep["deliverables"]["final_video"]
-    except Exception as _v2_e:
-        logger.warning(f"v2 delegation notice: {_v2_e}")
     from smart_analyzer import analyze_contextual_storyboard
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -3221,7 +3241,7 @@ def create_kinetic_typography_video(
             silence_threshold=-42.0,
             padding_ms=75
         )
-        vw, vh = get_safe_working_resolution(video_resolution[0], video_resolution[1], max_dim=960)
+        vw, vh = get_safe_working_resolution(video_resolution[0], video_resolution[1], max_dim=1920)
 
         custom_planned_scenes = kwargs.get("custom_planned_scenes")
         if isinstance(custom_planned_scenes, list) and len(custom_planned_scenes) > 0:

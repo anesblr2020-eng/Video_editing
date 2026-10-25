@@ -94,13 +94,15 @@ def render_template_stage_html(scene: Dict[str, Any], theme: Dict[str, Any], loc
     danger = theme["danger"]
     success = theme["success"]
 
-    # حساب منحنى الدخول (أول 0.38s) ومنحنى الخروج (آخر 0.22s) + حركة التنفس المستمرة
-    in_p = spring_ease(min(1.0, local_t / 0.38))
-    out_p = exit_ease(max(0.0, (local_t - (scene_dur - 0.22)) / 0.22)) if local_t > (scene_dur - 0.22) else 1.0
+    # حساب منحنى الدخول (أول 0.32s) والتحول الداخلي الهادف (State A -> State B عند منتصف الجملة) ومنحنى الخروج (آخر 0.18s) بدون تذبذب زخرفي
+    in_p = spring_ease(min(1.0, local_t / 0.32))
+    out_p = exit_ease(max(0.0, (local_t - (scene_dur - 0.18)) / 0.18)) if local_t > (scene_dur - 0.18) else 1.0
     env = in_p * out_p
-    breath_y = round(math.sin(local_t * 3.4) * 9.0, 2)
-    breath_scale = round(1.0 + 0.025 * math.sin(local_t * 2.8), 4)
-    translate_y = round((1.0 - env) * 48.0 + breath_y, 2)
+    pivot_rel = max(0.35, min(0.65, (float(scene.get("pivot_time", float(scene.get("start", 0.0)) + scene_dur * 0.5)) - float(scene.get("start", 0.0))) / max(0.5, scene_dur))) * scene_dur
+    state_b_prog = spring_ease(min(1.0, max(0.0, (local_t - pivot_rel) / 0.34)), overshoot=0.03)
+    breath_y = round(-14.0 * state_b_prog, 2)
+    breath_scale = round(1.0 + 0.03 * state_b_prog, 4)
+    translate_y = round((1.0 - env) * 42.0 + breath_y, 2)
     opacity = round(max(0.08, min(1.0, env)), 3)
 
     kw0 = keywords[0] if len(keywords) > 0 else ""
@@ -263,6 +265,76 @@ def render_template_stage_html(scene: Dict[str, Any], theme: Dict[str, Any], loc
             {img_tag}
           </div>
           <div class="headline-text" style="font-size:76px;font-weight:800;color:#FFFFFF;">{kw0}</div>
+        </div>
+        """
+
+    if tpl == "anchor_expand":
+        svg_icon = get_contextual_svg_icon(visual_query, accent, secondary, danger, local_t)
+        anchor_shift_y = round(state_b_prog * 85.0, 1)
+        anchor_sc = round(1.0 - 0.18 * state_b_prog, 3)
+        return f"""
+        <div class="stage-card" style="opacity:{opacity}; transform: translateY({translate_y}px); width:880px; margin:0 auto;">
+          <div style="opacity:{round(max(0.0, state_b_prog), 2)}; transform: translateY({round((1.0-state_b_prog)*35.0, 1)}px); margin-bottom:24px; background:{surface}; border:4px solid {accent}; border-radius:32px; padding:28px;">
+            <div class="headline-text" style="font-size:78px;font-weight:800;color:{accent};">{kw1 or kw0}</div>
+          </div>
+          <div style="transform: translateY({anchor_shift_y}px) scale({anchor_sc}); background:rgba(15,23,42,0.85); border:3px solid {border}; border-radius:32px; padding:26px;">
+            <div style="display:flex;justify-content:center;align-items:center;margin-bottom:18px;">{svg_icon}</div>
+            <div class="headline-text" style="font-size:74px;font-weight:800;color:#FFFFFF;">{kw0}</div>
+          </div>
+        </div>
+        """
+
+    if tpl == "process_simulation":
+        card_border = success if state_b_prog > 0.5 else danger
+        status_label = "الحالة بعد التحول الفوري ✓" if state_b_prog > 0.5 else "الحالة قبل المعالجة..."
+        active_kw = (kw1 or kw0) if state_b_prog > 0.5 else kw0
+        prompt_fill = int(min(100, (local_t / max(0.3, pivot_rel)) * 100))
+        return f"""
+        <div class="stage-card" style="opacity:{opacity}; transform: translateY({translate_y}px); width:880px; margin:0 auto;">
+          <div style="font-size:48px;font-weight:800;color:{card_border};margin-bottom:16px;">{status_label}</div>
+          <div style="background:{surface};border:5px solid {card_border};border-radius:36px;padding:44px 36px;margin-bottom:24px;transform:scale({breath_scale});">
+            <div class="headline-text" style="font-size:80px;font-weight:800;color:#FFFFFF;">{active_kw}</div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;background:#0F172A;border:3px solid {border};border-radius:99px;padding:18px 32px;">
+            <div style="font-size:44px;font-weight:700;color:#CBD5E1;">أمر التشغيل ({prompt_fill}%)</div>
+            <div style="background:{accent};color:#090D16;font-size:44px;font-weight:800;padding:10px 28px;border-radius:99px;">Generate ⚡</div>
+          </div>
+        </div>
+        """
+
+    if tpl == "dual_layer_proof":
+        return f"""
+        <div class="stage-card" style="opacity:{opacity}; transform: translateY({translate_y}px); width:880px; margin:0 auto;">
+          <div style="background:{surface};border:4px solid {secondary};border-radius:36px;overflow:hidden;">
+            <div style="padding:32px;background:rgba(16,185,129,0.16);border-bottom:3px solid {border};opacity:{round(max(0.15, state_b_prog), 2)};">
+              <div class="headline-text" style="font-size:74px;font-weight:800;color:{accent};">{kw1 or kw0}</div>
+            </div>
+            <div style="padding:36px;background:rgba(15,23,42,0.92);">
+              <div class="headline-text" style="font-size:74px;font-weight:800;color:#FFFFFF;">{kw0}</div>
+            </div>
+          </div>
+        </div>
+        """
+
+    if tpl == "editorial_proof_card":
+        hl_w = int(min(100, state_b_prog * 100))
+        return f"""
+        <div class="stage-card" style="opacity:{opacity}; transform: translateY({translate_y}px); width:880px; margin:0 auto;">
+          <div style="background:#1E293B;border:4px solid {accent};border-radius:34px;padding:38px;text-align:right;">
+            <div style="font-size:44px;font-weight:800;color:{secondary};margin-bottom:18px;">RESEARCH & EVIDENCE • دليل موثق</div>
+            <div class="headline-text" style="font-size:76px;font-weight:800;color:#FFFFFF;margin-bottom:20px;">{kw0}</div>
+            <div style="display:inline-block;background:linear-gradient(90deg, {accent} {hl_w}%, transparent {hl_w}%);padding:8px 18px;border-radius:14px;">
+              <div class="headline-text" style="font-size:72px;font-weight:800;color:#090D16;">{kw1 or kw0}</div>
+            </div>
+          </div>
+        </div>
+        """
+
+    if tpl == "minimalist_reset":
+        return f"""
+        <div class="stage-card" style="opacity:{opacity}; transform: translateY({translate_y}px); width:860px; margin:0 auto; padding:60px 20px;">
+          <div class="headline-text" style="font-size:78px;font-weight:800;color:#FFFFFF;margin-bottom:22px;letter-spacing:1px;">{kw0}</div>
+          {f'<div class="headline-text" style="font-size:72px;font-weight:800;color:#CBD5E1;opacity:{round(max(0.2, state_b_prog), 2)};">{kw1}</div>' if kw1 else ''}
         </div>
         """
 

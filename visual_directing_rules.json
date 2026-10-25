@@ -1,0 +1,359 @@
+{
+  "schema_version": "2.0.0",
+  "description": "منطق اتخاذ القرار لدى المخرج (Director's Decision Tree & Conditional Rules) المستخلص من الفيديوهات الثلاثة، مع فصل المبادئ الدلالية عن القرارات الجمالية.",
+  "decision_rules": [
+    {
+      "rule_id": "DIR_RULE_001_INTRA_SCENE_CAUSAL_EXPANSION",
+      "category": "semantic_motion",
+      "classification": "مبدأ دلالي + قاعدة إخراج",
+      "description": "إذا كانت الجملة الثانية تشرح سبب أو محرك أو صفة الكيان المقدم في الجملة الأولى، لا تقطع المشهد إلى شاشة جديدة؛ احتفظ بالكيان الأول كمرساة سياقية (Anchor) عبر إزاحته إلى هامش الشاشة، واكشف عنصر السبب/المحرك في المساحة المتحررة.",
+      "conditions": [
+        "semantic_relation(unit_i, unit_i+1) IN ['ATTRIBUTE_OF', 'POWERED_BY', 'ELABORATION', 'QUESTION_TO_ANSWER']",
+        "combined_duration(unit_i, unit_i+1) <= 4.0 seconds"
+      ],
+      "required_information": [
+        "الكيان الأساسي في الجملة الأولى",
+        "العنصر المفسر في الجملة الثانية",
+        "نقطة الفصل الصوتي بينهما"
+      ],
+      "action": {
+        "verb_id": "VERB_01_ANCHOR_AND_EXPAND",
+        "camera_or_layout_op": "DISPLACE_ANCHOR_AND_REVEAL",
+        "anchor_retention_ratio": {
+          "min": 0.2,
+          "max": 0.45
+        },
+        "displacement_vectors": [
+          "DOWN (y: 0.52 -> 0.82)",
+          "LEFT (x: 0.50 -> 0.18)"
+        ]
+      },
+      "why_it_fits": "يمنع تشتت المشاهد بالقطع المتكرر ويبني علاقة بصرية سببية مباشرة بين الشيء ومحركه أو بين السؤال وجوابه.",
+      "avoid_when": [
+        "عندما ينتقل المتحدث إلى مجال أو مثال جديد تماماً (مثل الانتقال من Phone إلى Art أو من Art إلى Driving).",
+        "عندما تزيد العناصر المتراكبة في الشاشة عن 4 عناصر مستقلة."
+      ],
+      "alternatives": [
+        "تحريك الكاميرا أفقياً على لوحة عريضة 2.5D (Wide Canvas Pan) كما في VIDEO_03.",
+        "فتح نافذة منبثقة فوق الكيان الأصلي مع تغبيش الخلفية (Depth-of-Field Overlay)."
+      ],
+      "quality_checks": [
+        "QC_SEM_002_CAUSAL_CONTINUITY",
+        "QC_COMP_003_ANCHOR_VISIBILITY"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 2.1,
+          "end_time": 4.5,
+          "observation": "عند قول 'Your phone' يظهر الهاتف في المركز، وعند قول 'AI powered' ينزل الهاتف للأسفل (y=0.82) وينبثق الروبوت فوقه دون قطع المشهد."
+        },
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 12.9,
+          "end_time": 16.15,
+          "observation": "عند قول 'Healthcare?' يظهر الملف الطبي في المركز، وعند قول 'AI saves lives' ينزاح الملف الطبي يساراً وتنزلق قصاصة خبر ZME Science والطبيب الآلي من اليمين فوق نفس المشهد."
+        },
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 4.37,
+          "end_time": 7.04,
+          "observation": "عند قول 'Every frame' يظهر الرجل ذو رأس التلفاز في الوسط، وعند قول 'tells a story' تنزاح الكاميرا يميناً ليبقى الرجل في اليسار ويظهر النص في اليمين."
+        }
+      ],
+      "confidence": 0.98,
+      "generalization_status": "confirmed_multi_video"
+    },
+    {
+      "rule_id": "DIR_RULE_002_PROCESS_SIMULATION_OVER_STATIC_ICON",
+      "category": "semantic_motion",
+      "classification": "مبدأ دلالي + استراتيجية حركة",
+      "description": "عندما يدعي النص قدرة تقنية على التحويل أو السرعة أو الإنجاز، يُمنع عرض أيقونة ثابتة (مثل ساعة توقيت أو رمز برق)؛ يجب بناء محاكاة مصغرة (Micro-Simulation) تعرض: [الحالة الأولية + فعل الإدخال] -> [زر/حدث التشغيل] -> [الحالة المتحولة النهائية].",
+      "conditions": [
+        "semantic_intent IN ['DEMONSTRATE_CAPABILITY', 'SPEED_CLAIM', 'TRANSFORMATION_PROCESS']",
+        "segment_duration >= 2.0 seconds"
+      ],
+      "required_information": [
+        "وصف الحالة قبل",
+        "وصف أداة/أمر التغيير",
+        "وصف الحالة بعد",
+        "توقيت كلمة النتيجة/الذروة"
+      ],
+      "action": {
+        "verb_id": "VERB_02_SIMULATE_PROCESS_TRANSFORM",
+        "phases": [
+          {
+            "phase": "INPUT_BUILD",
+            "time_share": 0.55,
+            "motion": "typewriter_or_slider_action"
+          },
+          {
+            "phase": "TRIGGER_PULSE",
+            "time_share": 0.1,
+            "motion": "button_click_scale_bounce"
+          },
+          {
+            "phase": "RESULT_MORPH",
+            "time_share": 0.35,
+            "motion": "instant_asset_swap_with_flash"
+          }
+        ]
+      },
+      "why_it_fits": "يحول الادعاء المجرد ('الذكاء الاصطناعي يصنع هذا في ثوانٍ') إلى تجربة بصرية يختبرها المشاهد بعينيه في اللحظة نفسها.",
+      "avoid_when": [
+        "عندما تكون الجملة فلسفية أو شعورية بحتة (مثل 'Editing is a feeling') حيث تكون المحاكاة التقنية باردة وغير ملائمة."
+      ],
+      "alternatives": [
+        "عرض شاشة منقسمة قبل/بعد مع خط مسح متحرك (Wipe Comparator)."
+      ],
+      "quality_checks": [
+        "QC_SEM_001_NO_GENERIC_ICON",
+        "QC_TIM_002_CLIMAX_WORD_SYNC"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 6.0,
+          "end_time": 8.6,
+          "observation": "في جملة 'AI creates this in seconds'، عرض المخرج كيس شيبس أزرق (BLT) مع شريط Prompt يكتب أمر التعديل ثم ضغط Generate فتحول الكيس إلى البنفسجي (Balsamic Sweet Onion) بالضبط عند نطق كلمة 'seconds' (7.44s)."
+        }
+      ],
+      "confidence": 0.95,
+      "generalization_status": "confirmed_single_video_strong_principle"
+    },
+    {
+      "rule_id": "DIR_RULE_003_DUAL_REALITY_COMPARISON",
+      "category": "scene_composition",
+      "classification": "مبدأ دلالي + استراتيجية تكوين",
+      "description": "إذا تضمن الكلام مفاضلة أو مقارنة بين نظامين (مثل رؤية الآلة مقابل رؤية الإنسان، أو النظرية مقابل التطبيق)، ابدأ بعرض منظور الطرف الأول منفرداً، ثم عند نطق أداة المقارنة افتح الكادر عمودياً أو أفقياً لدمج منظور الطرف الثاني في نفس الحاوية.",
+      "conditions": [
+        "linguistic_pattern CONTAINS ['better than', 'more than', 'unlike', 'versus', 'أفضل من', 'أكثر من']"
+      ],
+      "required_information": [
+        "تمثيل الطرف الأول (Subject A)",
+        "تمثيل الطرف الثاني (Subject B)",
+        "توقيت أداة المقارنة"
+      ],
+      "action": {
+        "verb_id": "VERB_03_DUAL_LAYER_COMPARISON_REVEAL",
+        "initial_framing": "tight_crop_on_subject_A",
+        "comparison_framing": "expand_or_pan_to_include_subject_B"
+      },
+      "why_it_fits": "المقارنة لا تتحقق في ذهن المشاهد إذا اختفى الطرف الأول قبل ظهور الثاني؛ جمعهما في كادر واحد بعد التمهيد يجعل الفرق بديهياً.",
+      "avoid_when": [
+        "إذا كان الطرفان مفهومين نصيين طويلين يتطلبان قراءة معقدة."
+      ],
+      "alternatives": [
+        "إزاحة الطرف الأول لليسار وإدخال الطرف الثاني في اليمين (كما في VIDEO_03: Editing is more -> than a SKILL)."
+      ],
+      "quality_checks": [
+        "QC_COMP_002_NO_TEXT_OCCLUSION"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 9.95,
+          "end_time": 12.9,
+          "observation": "عند قول 'AI sees roads' تظهر شاشة رادار تسلا الرقمية فقط (10.0s-11.1s)، وعند قول 'better than humans' (11.2s) ينزلق المحتوى ليكشف الطريق الحقيقي الممطر من الزجاج الأمامي فوق الشاشة الرقمية."
+        },
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 7.04,
+          "end_time": 9.01,
+          "observation": "عند قول 'Editing is more' يظهر الحاسوب القديم في المركز، وعند قول 'than a skill' تتحرك الكاميرا يميناً ليبقى الحاسوب في اليسار وتظهر 'than a SKILL' في اليمين."
+        }
+      ],
+      "confidence": 0.96,
+      "generalization_status": "confirmed_multi_video"
+    },
+    {
+      "rule_id": "DIR_RULE_004_GEOMETRIC_THREAD_CONTINUITY",
+      "category": "transitions",
+      "classification": "استراتيجية حركة + استراتيجية تكوين",
+      "description": "في سلاسل الجمل المترابطة فكرياً، استخدم عنصراً هندسياً بلون الهوية (دائرة، مربع، شريط) يستمر عبر المشاهد ويتحول في دوره المكاني (من خلفية ثانوية -> إلى مسح شاشة كامل -> إلى هالة بؤرية أو كرة ثلاثية الأبعاد) لربط الأفكار بصرياً.",
+      "conditions": [
+        "consecutive_related_sentences >= 2",
+        "pacing_mode IN ['HIGH_ENERGY_BUILD', 'EDITORIAL_FLOW']"
+      ],
+      "required_information": [
+        "لون الهوية الأساسي (Accent Color)",
+        "الشكل الهندسي المعتمد في المشهد السابق"
+      ],
+      "action": {
+        "verb_id": "VERB_04_GEOMETRIC_CONTINUITY_MORPH",
+        "preserve_color_hex": true,
+        "state_transitions": [
+          "BACKGROUND_CARD -> FULLSCREEN_WIPE -> FOCAL_HALO",
+          "TILTED_SQUARE -> 3D_SPHERE",
+          "VERTICAL_STRIPE -> HORIZONTAL_BAR"
+        ]
+      },
+      "why_it_fits": "يمنع شعور المشاهد بأن الفيديو مجرد شرائح منفصلة (Slide Deck) ويصنع تدفقاً سينمائياً متصلاً.",
+      "avoid_when": [
+        "عند الانتقال إلى فكرة مناقضة تماماً أو خاتمة تتطلب كسر النمط."
+      ],
+      "alternatives": [
+        "انتقال عبر تطابق الحركة الاتجاهية (Whip-Pan Match Cut)."
+      ],
+      "quality_checks": [
+        "QC_MOT_003_TRANSITION_CONTINUITY"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_02",
+          "start_time": 1.73,
+          "end_time": 6.6,
+          "observation": "الدائرة الخضراء خلف رجل الأعمال في المشهد 2 تتوسع عند 3.17s لتملأ الشاشة بالكامل في المشهد 3 ('power')، ثم تنكمش عند 4.00s لتصبح هالة خضراء خلف ظل الرأس في المشهد 4، ثم تتحول إلى شريط عمودي في المشهد 5 (5.60s) فـشريط أفقي تحت الدماغ في المشهد 6 (6.50s)."
+        },
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 0.2,
+          "end_time": 4.3,
+          "observation": "الشريط الأصفر في بداية الفيديو (0.20s) يتوسع لمربع أصفر خلف التمثال (0.60s)، ثم يتحول بتمويه ضبابي عند 2.20s إلى كرة صفراء ثلاثية الأبعاد يتكئ عليها الرجل في المشهد الثاني."
+        }
+      ],
+      "confidence": 0.99,
+      "generalization_status": "confirmed_multi_video"
+    },
+    {
+      "rule_id": "DIR_RULE_005_METAPHORIC_PUN_AND_COLLAGE",
+      "category": "asset_selection",
+      "classification": "مبدأ دلالي + قرار إبداعي",
+      "description": "عندما يحتوي النص على مصطلح فني أو استعارة (مثل 'Storytelling'، 'Cut'، 'Frame')، ادمج بين المعنى الحرفي والمعنى المجازي عبر أسلوب الكولاج أو التورية البصرية بدل الاكتفاء بصور حرفية تقليدية.",
+      "conditions": [
+        "word_has_dual_literal_and_domain_meaning == True OR sentence_is_metaphor == True",
+        "tone IN ['CREATIVE', 'EDITORIAL', 'INSPIRATIONAL']"
+      ],
+      "required_information": [
+        "المعنى الاصطلاحي للكلمة",
+        "المعنى الحرفي/المادي للكلمة",
+        "أسلوب الفيديو العام"
+      ],
+      "action": {
+        "verb_id": "VERB_05_VISUAL_PUN_JUXTAPOSITION",
+        "asset_pairing": "combine_classical_or_literal_object_with_modern_context"
+      },
+      "why_it_fits": "المفاجأة البصرية الذكية (مثل تمثال إغريقي يعمل على لابتوب، أو رجل ببدلة يحمل منشاراً عند كلمة Cut) ترفع معدل الاحتفاظ بالانتباه وتمنع الرتابة.",
+      "avoid_when": [
+        "في الشروحات الإجرائية الحرفية أو التحذيرات الطبية/الأمنية."
+      ],
+      "alternatives": [
+        "استخدام مجسم ثلاثي الأبعاد يمزج العنصرين (مثل دماغ بشري بهيكل سايبورغ في VIDEO_01)."
+      ],
+      "quality_checks": [
+        "QC_SEM_001_NO_GENERIC_ICON"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 0.4,
+          "end_time": 4.3,
+          "observation": "في 'Editing is like storytelling' وضع تمثال فيلسوف كلاسيكي أمام لابتوب حديث؛ وفي 'Every cut is a decision' أدخل رجلاً ببدلة رسمية يحمل منشاراً كهربائياً أصفراً كرمز طريف وحاد لكلمة Cut."
+        },
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 0.0,
+          "end_time": 2.0,
+          "observation": "تمثيل الذكاء الاصطناعي عبر رأس يجمع نصف دماغ بشري عضوي بنصف جمجمة آلية."
+        }
+      ],
+      "confidence": 0.96,
+      "generalization_status": "confirmed_multi_video"
+    },
+    {
+      "rule_id": "DIR_RULE_006_CLIMAX_CONTRAST_AND_DECELERATION",
+      "category": "pacing_and_tone",
+      "classification": "مبدأ دلالي + قرار توقيت وتكوين",
+      "description": "قبل أو عند الوصول إلى الرسالة الختامية أو الجملة الشعورية الأهم، اكسر إيقاع السرعة والكثافة السابق عبر: (1) زيادة المساحة السلبية إلى ≥75%، أو (2) سحب اللون الصارخ السائد، أو (3) قلب إضاءة المشهد بالكامل.",
+      "conditions": [
+        "narrative_stage IN ['EMOTIONAL_RESOLUTION', 'PHILOSOPHICAL_OUTRO', 'CLIMAX_REVEAL']"
+      ],
+      "required_information": [
+        "كثافة ولون المشاهد السابقة",
+        "النص الختامي أو العاطفي"
+      ],
+      "action": {
+        "verb_id": "VERB_06_CONTRAST_DECELERATION_RESET",
+        "negative_space_target": 0.8,
+        "remove_dominant_accent_color": true,
+        "motion_speed_multiplier": 0.35
+      },
+      "why_it_fits": "التباين الإيقاعي واللوني هو ما يمنح الخاتمة وزنها؛ إذا استمرت الخاتمة بنفس سرعة وزحام المشاهد السابقة سيمر عليها المشاهد دون تأثر.",
+      "avoid_when": [
+        "في منتصف تعداد أمثلة متوازية في الأهمية."
+      ],
+      "alternatives": [
+        "الانفجار البصري الكامل ثم التلاشي التدريجي إلى الأسود (كما في نهاية VIDEO_02 'wildfire')."
+      ],
+      "quality_checks": [
+        "QC_TIM_004_SETTLE_DURATION",
+        "QC_COMP_004_NEGATIVE_SPACE_RATIO"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 16.15,
+          "end_time": 18.0,
+          "observation": "بعد مشاهد مزدحمة ببطاقات الأخبار والفيديوهات، ينتقل الفيديو عند 'Are you ready for an AI future?' إلى شاشة بيضاء هادئة جداً يتوسطها نص صغير وتمثالان رماديان باهتان."
+        },
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 9.01,
+          "end_time": 10.35,
+          "observation": "بعد هيمنة اللون الأصفر الفاقع على المشاهد الأربعة الأولى، يختفي اللون الأصفر تماماً عند قول 'it's a feeling' ويظهر رسم قلب تشريحي بالأبيض والأسود في وسط مساحة رمادية صافية."
+        }
+      ],
+      "confidence": 0.99,
+      "generalization_status": "confirmed_multi_video"
+    },
+    {
+      "rule_id": "DIR_RULE_007_ANTI_DECORATIVE_MOTION_LAW",
+      "category": "anti_stagnation_and_anti_noise",
+      "classification": "قاعدة برمجية صارمة (Hard Engineering Constraint)",
+      "description": "يُمنع تحريك أي عنصر بحركة دورية مستمرة غير مبررة (مثل دوران لانهائي أو اهتزاز عشوائي)، كما يُمنع بقاء عنصر وحيد جامداً في وسط الشاشة لأكثر من 1.8 ثانية دون تغير في حالته المعنوية أو المكانية.",
+      "conditions": [
+        "applies_to_all_scenes == True"
+      ],
+      "required_information": [
+        "مصفوفة الحركة لكل عنصر",
+        "مدة بقاء العنصر على الشاشة"
+      ],
+      "action": {
+        "max_static_hold_without_state_change_sec": 1.8,
+        "forbid_unmotivated_oscillation": true,
+        "allowed_hold_justification": [
+          "READING_COMPLEX_EVIDENCE_TEXT",
+          "INTENTIONAL_MINIMALIST_OUTRO"
+        ],
+        "require_state_progression": "Every scene > 2.0s must contain at least 2 distinct visual states (State A -> Action -> State B)."
+      },
+      "why_it_fits": "الفيديوهات الثلاثة المرجعية لا تحتوي على أي مشهد يقف فيه أصل بصري جامداً لمدة 3 ثوانٍ؛ كل مشهد أطول من ثانيتين ينقسم داخلياً إلى حالة أولى وتحول وحالة ثانية.",
+      "avoid_when": [
+        "لا يوجد استثناء؛ حتى المشاهد الهادئة تحتوي على بناء تدريجي للنص أو حركة كاميرا بطيئة مدروسة."
+      ],
+      "alternatives": [
+        "تقسيم الجملة الطويلة إلى حالتين بصريتين داخل نفس المشهد (Intra-scene progression)."
+      ],
+      "quality_checks": [
+        "QC_MOT_001_STATE_PROGRESSION_INDEX",
+        "QC_MOT_002_DECORATIVE_NOISE_RATIO"
+      ],
+      "source_evidence": [
+        {
+          "video_id": "VIDEO_01",
+          "start_time": 0.0,
+          "end_time": 19.29,
+          "observation": "جميع المشاهد الـ 7 في VIDEO_01 التي تتجاوز ثانيتين (مثل مشهد الشيبس 2.60s ومشهد السيارة 2.95s) تحتوي على تحول داخلي كامل في منتصفها."
+        },
+        {
+          "video_id": "VIDEO_03",
+          "start_time": 2.17,
+          "end_time": 9.01,
+          "observation": "المشاهد 2 و3 و4 في VIDEO_03 (مدتها 2.0s-2.67s) تنقسم جميعها إلى شطرين حركيين متزامنين مع شطري الجملة."
+        }
+      ],
+      "confidence": 0.99,
+      "generalization_status": "confirmed_universal_law"
+    }
+  ]
+}

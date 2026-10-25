@@ -1,0 +1,290 @@
+{
+  "schema_version": "2.0.0",
+  "description": "قواعد التكوين المكاني والتسلسل الهرمي والمساحة السلبية وإحداثيات التوزيع الموحدة (Normalized 9:16 Vertical Canvas Coordinates) المستخلصة من الفيديوهات الثلاثة.",
+  "canvas_specification": {
+    "aspect_ratio": "9:16",
+    "reference_resolution": {
+      "width": 720,
+      "height": 1280
+    },
+    "coordinate_system": "Normalized [0.0 to 1.0] where (0.0, 0.0) is top-left and (0.5, 0.5) is center.",
+    "safe_zones": {
+      "top_margin": 0.1,
+      "bottom_margin": 0.12,
+      "left_margin": 0.08,
+      "right_margin": 0.08,
+      "creator_badge_reserved_zone": {
+        "x_range": [
+          0.04,
+          0.35
+        ],
+        "y_range": [
+          0.9,
+          0.96
+        ]
+      }
+    }
+  },
+  "spatial_archetypes": [
+    {
+      "layout_id": "COMP_01_VERTICAL_ANCHOR_STACK",
+      "name": "التكوين العمودي ذو المرساة السفلية والعنوان العلوي",
+      "when_to_use": "عند تقديم الفكرة الرئيسية في بداية الفيديو أو عرض شخصية/مجسم رئيسي مع عنوان واضح فوقه.",
+      "observed_in": [
+        "VIDEO_01 (V1_SCENE_01, V1_SCENE_02A)",
+        "VIDEO_02 (V2_SCENE_01, V2_SCENE_02, V2_SCENE_07)"
+      ],
+      "normalized_slots": [
+        {
+          "element": "primary_headline",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.24
+          },
+          "normalized_size": {
+            "width": 0.78,
+            "height": 0.14
+          },
+          "visual_priority": 1,
+          "z_index": 3
+        },
+        {
+          "element": "main_visual_subject",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.58
+          },
+          "normalized_size": {
+            "width": 0.68,
+            "height": 0.48
+          },
+          "visual_priority": 1,
+          "z_index": 4
+        },
+        {
+          "element": "background_geometric_anchor_or_giant_text",
+          "normalized_position": {
+            "x": 0.48,
+            "y": 0.52
+          },
+          "normalized_size": {
+            "width": 0.72,
+            "height": 0.42
+          },
+          "visual_priority": 3,
+          "z_index": 1
+        },
+        {
+          "element": "secondary_floating_accents_or_subtext",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.84
+          },
+          "normalized_size": {
+            "width": 0.7,
+            "height": 0.06
+          },
+          "visual_priority": 4,
+          "z_index": 2
+        }
+      ],
+      "eye_movement_path": "من العنوان العلوي (y=0.24) نزولاً إلى وجه/مركز المجسم الرئيسي (y=0.58) ثم قراءة النص الفرعي السفلي إن وجد (y=0.84)."
+    },
+    {
+      "layout_id": "COMP_02_THREE_TIER_SIMULATION_STAGE",
+      "name": "منصة المحاكاة ثلاثية الطبقات (العنوان - الحاوية - أداة التحكم)",
+      "when_to_use": "عند عرض تجربة تفاعلية، توليد بالذكاء الاصطناعي، أو مقارنة داخل إطار.",
+      "observed_in": [
+        "VIDEO_01 (V1_SCENE_03B Chips Prompt, V1_SCENE_04B Tesla Road)"
+      ],
+      "normalized_slots": [
+        {
+          "element": "top_claim_banner",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.17
+          },
+          "normalized_size": {
+            "width": 0.82,
+            "height": 0.1
+          },
+          "visual_priority": 2,
+          "z_index": 3
+        },
+        {
+          "element": "central_simulation_viewport",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.49
+          },
+          "normalized_size": {
+            "width": 0.84,
+            "height": 0.44
+          },
+          "visual_priority": 1,
+          "z_index": 2
+        },
+        {
+          "element": "bottom_control_bar_or_counter_claim",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.79
+          },
+          "normalized_size": {
+            "width": 0.84,
+            "height": 0.08
+          },
+          "visual_priority": 2,
+          "z_index": 4
+        }
+      ],
+      "eye_movement_path": "مسح ثلاثي متدرج: شريط التحكم السفلي أثناء الكتابة -> مركز الحاوية لحظة التحول -> العنوان العلوي عند ظهور كلمة الذروة."
+    },
+    {
+      "layout_id": "COMP_03_ASYMMETRIC_PAN_SPLIT",
+      "name": "التكوين غير المتماثل الناتج عن إزاحة الكاميرا (Left Subject / Right Typography)",
+      "when_to_use": "في الشطر الثاني من الجملة عندما ينزاح العنصر الرئيسي إلى أحد الجانبين لفتح مساحة نصية نظيفة في الجانب المقابل.",
+      "observed_in": [
+        "VIDEO_03 (V3_SCENE_03 'tells a Story', V3_SCENE_04 'than a SKILL')",
+        "VIDEO_01 (V1_SCENE_05B Healthcare -> News)"
+      ],
+      "normalized_slots": [
+        {
+          "element": "displaced_primary_subject",
+          "normalized_position": {
+            "x": 0.26,
+            "y": 0.56
+          },
+          "normalized_size": {
+            "width": 0.48,
+            "height": 0.65
+          },
+          "visual_priority": 2,
+          "z_index": 2
+        },
+        {
+          "element": "revealed_statement_text",
+          "normalized_position": {
+            "x": 0.68,
+            "y": 0.48
+          },
+          "normalized_size": {
+            "width": 0.44,
+            "height": 0.22
+          },
+          "visual_priority": 1,
+          "z_index": 3
+        }
+      ],
+      "eye_movement_path": "حركة أفقية من العنصر المزاح في اليسار (x=0.26) إلى النص الجديد المكتشف في اليمين (x=0.68)."
+    },
+    {
+      "layout_id": "COMP_04_DEPTH_OCCLUSION_COLLAGE",
+      "name": "التمركز البؤري مع التداخل الطبقي العمقي (Z-Depth Interleaved Collage)",
+      "when_to_use": "عند تقديم استعارة بصرية قوية أو تورية، حيث يتداخل العنصر البشري/الرمزي مع خلفية هندسية ونص يتقاطع خلفه أو أمامه.",
+      "observed_in": [
+        "VIDEO_03 (V3_SCENE_01, V3_SCENE_02, V3_SCENE_05)",
+        "VIDEO_02 (V2_SCENE_06, V2_SCENE_09B)"
+      ],
+      "normalized_slots": [
+        {
+          "element": "geometric_backdrop",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.52
+          },
+          "normalized_size": {
+            "width": 0.6,
+            "height": 0.36
+          },
+          "visual_priority": 3,
+          "z_index": 1
+        },
+        {
+          "element": "interleaved_typography",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.38
+          },
+          "normalized_size": {
+            "width": 0.72,
+            "height": 0.14
+          },
+          "visual_priority": 1,
+          "z_index": 2
+        },
+        {
+          "element": "foreground_cutout_subject",
+          "normalized_position": {
+            "x": 0.53,
+            "y": 0.55
+          },
+          "normalized_size": {
+            "width": 0.46,
+            "height": 0.58
+          },
+          "visual_priority": 1,
+          "z_index": 3
+        }
+      ],
+      "eye_movement_path": "بؤرة مركزية مدمجة تجمع الشكل الهندسي والشخصية والنص في نقطة تركيز واحدة دون تشتت."
+    },
+    {
+      "layout_id": "COMP_05_MINIMALIST_BREATHING_CANVAS",
+      "name": "لوحة الفراغ العالي للخاتمة والذروة (High-Negative-Space Focus)",
+      "when_to_use": "في الأسئلة الختامية، التحولات الشعورية، أو عزل كلمة قوّة وحيدة.",
+      "observed_in": [
+        "VIDEO_01 (V1_SCENE_06, V1_SCENE_07)",
+        "VIDEO_02 (V2_SCENE_03)",
+        "VIDEO_03 (V3_SCENE_05, V3_SCENE_06)"
+      ],
+      "normalized_slots": [
+        {
+          "element": "centered_minimal_statement",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.48
+          },
+          "normalized_size": {
+            "width": 0.66,
+            "height": 0.1
+          },
+          "visual_priority": 1,
+          "z_index": 3
+        },
+        {
+          "element": "framing_peripheral_sculptures_or_engraving",
+          "normalized_position": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "normalized_size": {
+            "width": 0.45,
+            "height": 0.45
+          },
+          "visual_priority": 2,
+          "z_index": 2
+        }
+      ],
+      "eye_movement_path": "استقرار فوري في المركز (x=0.50, y=0.48) بفضل المساحة الفارغة المحيطة."
+    }
+  ],
+  "composition_laws": [
+    {
+      "law_id": "COMP_LAW_01_NO_DEFAULT_CENTER_MONOTONY",
+      "rule": "لا تضع العنصر الرئيسي في المركز الهندسي المطلق (0.50, 0.50) في أكثر من مشهدين متتاليين؛ ناوب بين الارتكاز السفلي (y=0.58)، والتكوين المزاح أفقياً (x=0.26 / x=0.68)، والتكوين ثلاثي الطبقات."
+    },
+    {
+      "law_id": "COMP_LAW_02_CONTROLLED_Z_OCCLUSION",
+      "rule": "يُسمح بتداخل عنصر المقدمة (مثل رأس الشخصية) فوق جزء من النص الخلفي لإعطاء إحساس بالعمق (Depth Occlusion) بشرط ألا تتجاوز نسبة التغطية 12% من مساحة الكلمة، وألا تغطي الحرف الأول من الكلمة أبداً."
+    },
+    {
+      "law_id": "COMP_LAW_03_TYPOGRAPHIC_CONTRAST_PAIRING",
+      "rule": "في كل عنوان مكون من 3 كلمات فأكثر، ميّز الكلمة الحاملة للمعنى الأساسي عبر تغيير واحد على الأقل من ثلاثة: (1) نوع الخط (Sans-serif عريض مقابل Serif مائل/خط يد)، أو (2) اللون/الخلفية (شريط ملون خلف الكلمة)، أو (3) الحجم (1.4x إلى 1.8x من حجم الكلمات المجاورة)."
+    },
+    {
+      "law_id": "COMP_LAW_04_NEGATIVE_SPACE_FLOOR",
+      "rule": "في الفيديو العمودي 9:16، يجب ألا تقل المساحة السلبية (الخلفية الصافية أو ذات التدرج الناعم الخالية من النصوص والمجسمات) عن 38% في المشاهد الغنية بالمعلومات، وعن 72% في مشاهد التهدئة والتركيز."
+    }
+  ]
+}

@@ -912,6 +912,19 @@ def build_frame_accurate_sfx_timeline(
                 scene_idx=idx
             )
 
+        # 3.4 نبضة نقطة التحول الدلالي داخل المشهد (Intra-Scene Pivot Action Cue: State A -> State B)
+        pivot_u = float(sc.get("pivot_u", 0.48))
+        visual_verb = str(sc.get("visual_verb", "")).strip()
+        if visual_verb and sc_dur >= 1.2:
+            t_pivot = sc_start + sc_dur * pivot_u
+            if visual_verb == "prompt_to_result_sim":
+                _add_cue(t_pivot - 0.04, "1_click", -8.5, variant=idx, reason="نقرة زر Generate لتحويل المشهد (Prompt-to-Result)", scene_idx=idx)
+                _add_cue(t_pivot + 0.03, "3_ui_style", -7.5, variant=idx + 1, reason="انبثاق النتيجة المولدة بفيزياء النابض (State B Morph)", scene_idx=idx)
+            elif visual_verb in ("camera_25d_pan_right", "anchor_and_displace"):
+                _add_cue(t_pivot, "6_whooch", -8.0, variant=idx + 2, reason="حركة كاميرا 2.5D أو إزاحة العنصر للكشف عن State B", scene_idx=idx)
+            elif visual_verb == "dual_viewport_reveal":
+                _add_cue(t_pivot, "3_ui_style", -7.8, variant=idx + 3, reason="انقسام النافذة المزدوجة للمقارنة (Dual Viewport Reveal)", scene_idx=idx)
+
         # 3.5 قاعدة (Alex Hormozi Important Word Pop): صوت Pop خفيف جداً عند نطق الكلمات المفتاحية المهمة
         sc_words = sc.get("words") or []
         if not sc_words and words_data:

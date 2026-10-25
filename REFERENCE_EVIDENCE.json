@@ -1,0 +1,193 @@
+{
+  "schema_version": "2.0.0",
+  "description": "سجل الأدلة المرجعية الموثقة إطاراً بإطار وثانية بثانية من الفيديوهات الثلاثة في مجلد Google Drive، مع ربط كل دليل بالقواعد المستخلصة ودرجة الثقة.",
+  "reference_videos_metadata": [
+    {
+      "video_id": "VIDEO_01",
+      "original_filename": "Honeyycomps___Video_Editor.mp4",
+      "drive_file_id": "1MxpUhqlJGtoOM5oQ-g3e2dggm3tcxv6c",
+      "duration_sec": 19.286,
+      "audio_duration_sec": 19.306,
+      "resolution": "720x1280",
+      "aspect_ratio": "9:16 (Vertical)",
+      "frame_rate_fps": 59.94,
+      "total_frames": 1156,
+      "video_codec": "H.264 (High Profile)",
+      "audio_codec": "AAC (HE-AACv2, 44100 Hz, Stereo)",
+      "visual_style_summary": "موشن غرافيك ثلاثي الأبعاد نظيف ومشرق (Clean 3D & UI Motion Graphics on High-Key White/Grey Canvas) مع محاكاة واجهات تفاعلية ولقطات فيديو مضمنة.",
+      "spoken_transcript_full": "AI is everywhere. Your phone, AI powered. Art, AI creates this in seconds. Driving, AI sees roads better than humans. Healthcare? AI saves lives. Are you ready for an AI future? Follow for more."
+    },
+    {
+      "video_id": "VIDEO_02",
+      "original_filename": "Divyansh_Fx.mp4",
+      "drive_file_id": "1fptZHvjiT4-gzO0I-va5SAeV4tQrPnpK",
+      "duration_sec": 15.367,
+      "audio_duration_sec": 15.381,
+      "resolution": "720x1280",
+      "aspect_ratio": "9:16 (Vertical)",
+      "frame_rate_fps": 30.0,
+      "total_frames": 461,
+      "video_codec": "H.264 (High Profile, bt709)",
+      "audio_codec": "AAC (HE-AACv2, 44100 Hz, Stereo)",
+      "visual_style_summary": "موشن غرافيك سينمائي عالي الطاقة (High-Energy Kinetic Typography & Mixed-Media Visual Metaphors) يبدأ بهوية بيضاء وخضراء زمردية ثم يتحول في النصف الثاني إلى مشاهد فضائية وكونية ونيرانية مظلمة.",
+      "spoken_transcript_full": "Ideas aren't just created, they're born with potential. They have the power to change the way people think. So in the future, if you ever have an idea, take it seriously. Because the cosmos chose you to give the world a new identity. Let this spark turn into a wildfire."
+    },
+    {
+      "video_id": "VIDEO_03",
+      "original_filename": "MORNINGSTAR.mp4",
+      "drive_file_id": "1M7jr6YzqjiDy0Vw8LuRd5Twe1uVbOOZL",
+      "duration_sec": 11.912,
+      "audio_duration_sec": 11.925,
+      "resolution": "720x1280",
+      "aspect_ratio": "9:16 (Vertical)",
+      "frame_rate_fps": 29.97,
+      "total_frames": 357,
+      "video_codec": "H.264 (High Profile)",
+      "audio_codec": "AAC (HE-AACv2, 44100 Hz, Stereo)",
+      "visual_style_summary": "أسلوب ملصقات كولاج سريالية وتحريرية (Editorial Surrealist Cutout Collage & 2.5D Camera Panning) على خلفية ورقية رمادية مع لون تمييز أصفر فسفوري حاد يختفي عمداً في مشهد الذروة الشعورية.",
+      "spoken_transcript_full": "Editing is like storytelling. Every cut is a decision. Every frame tells a story. Editing is more than a skill, it's a feeling."
+    }
+  ],
+  "evidence_log": [
+    {
+      "evidence_id": "EVID_001",
+      "video_id": "VIDEO_01",
+      "start_time": 0.0,
+      "end_time": 2.1,
+      "frames_inspected": "f=0 to f=126 (59.94fps)",
+      "direct_observation": "يظهر رأس سايبورغ ثلاثي الأبعاد في النصف السفلي، وخلفه نص 'AI' رمادي عملاق، بينما تظهر كلمات 'AI' (f=12, 0.20s) ثم 'IS' (f=24, 0.40s) ثم 'EVERYWHERE' (f=36, 0.60s) بالتزامن مع النطق، مع طفو أيقونتي ChatGPT في الزاويتين.",
+      "derived_interpretation": "تأسيس الموضوع عبر دمج الرمز المفهومي (الدماغ الآلي) والرمز التطبيقي المألوف (ChatGPT) مع كشف نصي تتابعي يمنع التشتت.",
+      "supported_rules": [
+        "MOTION_001",
+        "COMP_01_VERTICAL_ANCHOR_STACK"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_002",
+      "video_id": "VIDEO_01",
+      "start_time": 2.1,
+      "end_time": 4.5,
+      "frames_inspected": "f=126 to f=270 (peak transition at f=192, t=3.203s, diff=40.52)",
+      "direct_observation": "يد تمسك بهاتف وتنبثق 3 بطاقات إشعارات من شاشته (f=132-168). عند الثانية 3.17 (f=190) لا يُقطع المشهد، بل ينزل الهاتف إلى أسفل الشاشة (y=0.82) وينبثق روبوت أبيض يغمز ويلوح فوقه مع نص 'AI Powered'.",
+      "derived_interpretation": "استخدام الاستمرارية المكانية داخل المشهد الواحد (Intra-scene spatial continuity) لربط الأداة (الهاتف) بمحركها (الذكاء الاصطناعي).",
+      "supported_rules": [
+        "DIR_RULE_001_INTRA_SCENE_CAUSAL_EXPANSION",
+        "VERB_01_ANCHOR_AND_EXPAND",
+        "MOTION_002",
+        "MOTION_003"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_003",
+      "video_id": "VIDEO_01",
+      "start_time": 6.0,
+      "end_time": 8.6,
+      "frames_inspected": "f=360 to f=515 (morph peak at f=446, t=7.441s, diff=24.95)",
+      "direct_observation": "بطاقة كيس شيبس أزرق بنكهة BLT وتحتها شريط Prompt يكتب تدريجياً 'Keep Chips, Replace BLT with Balsamic Sweet Onion' (f=370-435). عند f=445-450 (t=7.42s-7.51s) يُضغط زر Generate فيتحول الكيس فوراً إلى اللون البنفسجي بنكهة البصل وتظهر كلمة 'SECONDS' في الأعلى.",
+      "derived_interpretation": "إثبات ادعاء السرعة والقدرة عبر محاكاة العملية (الإدخال -> التشغيل -> التحويل) ومزامنة لحظة التحول البصري مع كلمة الذروة 'seconds'.",
+      "supported_rules": [
+        "DIR_RULE_002_PROCESS_SIMULATION_OVER_STATIC_ICON",
+        "VERB_02_SIMULATE_PROCESS_TRANSFORM",
+        "MOTION_004",
+        "COMP_02_THREE_TIER_SIMULATION_STAGE"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_004",
+      "video_id": "VIDEO_01",
+      "start_time": 8.67,
+      "end_time": 12.88,
+      "frames_inspected": "f=520 to f=772 (car exit f=594 t=9.910s; road tilt f=672-696 t=11.21s-11.61s)",
+      "direct_observation": "سيارة بيضاء أمام مستطيل 'DRIVING' تنطلق بسرعة لليسار (9.80s)، فيتحول المستطيل إلى شاشة رادار تسلا الرقمية تحت نص 'AI sees roads'. عند t=11.21s ينزلق الفيديو داخل الحاوية للأسفل ليكشف الطريق الحقيقي الممطر فوق شاشة الرادار مع ظهور 'BETTER THAN HUMANS' بالأسفل.",
+      "derived_interpretation": "استخدام الكشف ثنائي الطبقة داخل نفس الحاوية لتمكين المشاهد من مقارنة رؤية الآلة برؤية الإنسان في آن واحد.",
+      "supported_rules": [
+        "DIR_RULE_003_DUAL_REALITY_COMPARISON",
+        "VERB_03_DUAL_LAYER_COMPARISON_REVEAL",
+        "MOTION_005"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_005",
+      "video_id": "VIDEO_01",
+      "start_time": 12.9,
+      "end_time": 18.0,
+      "frames_inspected": "f=772 to f=1080 (news slide-in f=852-894 t=14.21s-14.91s; white outro f=968 t=16.15s)",
+      "direct_observation": "ملف طبي ثلاثي الأبعاد مع 'HEALTHCARE?' (13.0s-14.1s)، ثم ينزاح لليسار وتدخل بطاقة خبر من موقع ZME Science مع تظليل 'AI saved' وطبيب روبوت (14.2s-16.1s). بعدها عند 16.15s تتحول الشاشة إلى مساحة بيضاء هادئة جداً مع تمثالين رماديين ونص صغير 'ARE YOU READY... FOR AN AI FUTURE?'.",
+      "derived_interpretation": "الجمع بين إزاحة المشهد السابق لإدخال الدليل الإخباري، متبوعاً بكسر الإيقاع وتفريغ الشاشة في الخاتمة الفلسفية.",
+      "supported_rules": [
+        "DIR_RULE_001_INTRA_SCENE_CAUSAL_EXPANSION",
+        "DIR_RULE_006_CLIMAX_CONTRAST_AND_DECELERATION",
+        "MOTION_006"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_006",
+      "video_id": "VIDEO_02",
+      "start_time": 0.0,
+      "end_time": 6.6,
+      "frames_inspected": "f=0 to f=198 (30.0fps; circle wipe f=94-97 t=3.13s-3.23s; iris wipe f=160-164 t=5.33s-5.47s)",
+      "direct_observation": "اللون الأخضر الزمردي يبدأ كمربع خلف الشاب الجالس (0.4s-1.7s)، ثم نصف دائرة خلف رجل الأعمال المتحمس (2.0s-3.1s)، ثم تتوسع الدائرة لتملأ الشاشة بالكامل عند كلمة 'power' (3.2s-3.9s)، ثم تنكمش في خلفية سوداء لتصبح هالة خلف ظل الرأس عند 'people think' (4.2s-5.2s)، ثم تتحول لشريط عمودي في مشهد المستقبل (5.6s) فـشريط أفقي تحت الدماغ (6.6s).",
+      "derived_interpretation": "خيط هندسي لوني متصل (Geometric Thread Continuity) يربط 6 مشاهد متتالية عبر تحويل دور الشكل الهندسي نفسه دون انقطاع.",
+      "supported_rules": [
+        "DIR_RULE_004_GEOMETRIC_THREAD_CONTINUITY",
+        "VERB_04_GEOMETRIC_CONTINUITY_MORPH",
+        "MOTION_007",
+        "MOTION_008"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_007",
+      "video_id": "VIDEO_02",
+      "start_time": 6.43,
+      "end_time": 15.37,
+      "frames_inspected": "f=193 to f=461 (yellow flash f=270-272 t=9.00s; spark streaks f=378-387 t=12.60s-12.90s; wildfire f=412-432 t=13.73s-14.40s)",
+      "direct_observation": "دماغ ثلاثي الأبعاد يدور 90 درجة ليواجه المشاهد عند كلمة 'idea' (6.6s-7.4s)، يليه بورتريه جاد لـ Tony Stark عند 'take it seriously' (8.0s-8.9s). عند 9.00s يحدث وميض أصفر ينقلنا لفضاء كوني مظلم ('cosmos chose you to give the world a new identity'). في النهاية يظهر ظل رجل معتم تنطلق منه شرارات بيضاء عند 'spark' (12.6s) فيتحول لرجل أبيض مشع يمشي وسط نيران تلتهم الشاشة عند 'wildfire' (13.8s-15.0s).",
+      "derived_interpretation": "تصعيد الطاقة البصرية عبر تغيير عالم المشهد (من التصميم المسطح إلى الفضاء الكوني ثم التحول الضوئي والنيراني) مع تزامن حرفي بين الكلمات المحفزة ('spark', 'wildfire') والمؤثرات البصرية.",
+      "supported_rules": [
+        "MOTION_009",
+        "MOTION_010",
+        "QC_TIM_001_AUDIO_VISUAL_SYNC_TOLERANCE"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_008",
+      "video_id": "VIDEO_03",
+      "start_time": 0.0,
+      "end_time": 4.37,
+      "frames_inspected": "f=0 to f=131 (29.97fps; morph to sphere f=64-70 t=2.13s-2.33s; chainsaw man entry f=82-90 t=2.73s-3.00s)",
+      "direct_observation": "مربع أصفر يضم تمثال فيلسوف إغريقي يعمل على لابتوب حديث مع نص 'STORYTELLING' مكرر (0.4s-2.0s). يتحول المربع الأصفر بتمويه ضبابي إلى كرة صفراء ثلاثية الأبعاد (2.2s) مع نص 'every cut'. في الوقفة الصوتية عند t=2.73s يدخل رجل ببدلة رسمية يحمل منشاراً كهربائياً أصفراً ويتكئ على الكرة، ثم يتحول النص إلى 'is a Decision' خلف رأسه (3.6s).",
+      "derived_interpretation": "توظيف التورية البصرية الذكية (Cut = منشار قطع) والكولاج التاريخي-الحديث، مع استخدام الوقفة الصوتية لإدخال عنصر المفاجأة، واستمرار اللون/الشكل الأصفر بين المشهدين.",
+      "supported_rules": [
+        "DIR_RULE_004_GEOMETRIC_THREAD_CONTINUITY",
+        "DIR_RULE_005_METAPHORIC_PUN_AND_COLLAGE",
+        "VERB_05_VISUAL_PUN_JUXTAPOSITION",
+        "MOTION_011"
+      ],
+      "confidence": 0.99
+    },
+    {
+      "evidence_id": "EVID_009",
+      "video_id": "VIDEO_03",
+      "start_time": 4.37,
+      "end_time": 11.91,
+      "frames_inspected": "f=132 to f=357 (pan right 1 at f=162-166 t=5.40s-5.54s; pan right 2 at f=240-252 t=8.01s-8.41s; heart reveal f=273-293 t=9.11s-9.78s)",
+      "direct_observation": "في المشهد 3 ('Every frame tells a story') والمشهد 4 ('Editing is more than a skill')، يستخدم المخرج حركة كاميرا أفقية لليمين في منتصف الجملة لإزاحة العنصر الرئيسي (الرجل ذو رأس التلفاز، ثم الحاسوب القديم) إلى اليسار وكشف بقية الجملة في اليمين. ثم عند 9.01s ('it's a feeling') يختفي اللون الأصفر تماماً ويظهر قلب تشريحي مرسوم باليد في وسط خلفية رمادية صافية، يليه توقيع 'edit by Morningstar' بخط يدوي.",
+      "derived_interpretation": "استخدام حركة الكاميرا الأفقية داخل اللوحة الواحدة (2.5D Canvas Pan) لتقسيم الجملة إلى شطرين دون قطع، ثم كسر النمط اللوني بالكامل (إزالة الأصفر) عند الوصول للذروة العاطفية ('feeling').",
+      "supported_rules": [
+        "DIR_RULE_001_INTRA_SCENE_CAUSAL_EXPANSION",
+        "DIR_RULE_006_CLIMAX_CONTRAST_AND_DECELERATION",
+        "VERB_06_CONTRAST_DECELERATION_RESET",
+        "MOTION_012",
+        "MOTION_013"
+      ],
+      "confidence": 0.99
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "schema_version": "2.0.0",
+  "description": "نظام ضمان الجودة الآلي وشبه الآلي (QA Gatekeeper) لاكتشاف أخطاء المعنى والحركة والتكوين والتوقيت والرندر قبل تسليم الفيديو النهائي، مع تحديد آلية الإصلاح التلقائي (Auto-Replan Triggers).",
+  "check_categories": {
+    "A_semantic_validity": [
+      {
+        "check_id": "QC_SEM_001_NO_GENERIC_ICON",
+        "name": "فحص منع الأيقونات السطحية العامة في الجمل الإجرائية أو السببية",
+        "question": "هل يستخدم المشهد أيقونة ثابتة عامة (مثل مصباح أو ترس) لشرح عملية أو علاقة سببية؟",
+        "evaluation_type": "AI_VLM_OR_LLM_PLAN_AUDITOR",
+        "measurement_method": "فحص خطة المشهد (Scene Plan JSON): إذا كان semantic_role == 'PROCESS' أو 'CAUSE_EFFECT' وكان عدد حالات التحول state_transitions == 0 ونوع الأصل asset_type == 'static_2d_icon'.",
+        "pass_threshold": "state_transitions >= 1 AND verb_id != 'STATIC_DISPLAY'",
+        "fail_condition": "استخدام عنصر واحد ثابت بدون تغير حالة في جملة تصف تحولاً أو آلية عمل.",
+        "remediation_action": "إعادة استدعاء مخطط المشاهد (Scene Planner) واستبدال الأيقونة بالفعل البصري VERB_02_SIMULATE_PROCESS_TRANSFORM أو VERB_01_ANCHOR_AND_EXPAND."
+      },
+      {
+        "check_id": "QC_SEM_002_CAUSAL_CONTINUITY",
+        "name": "فحص الترابط السياقي بين الجمل المتفرعة",
+        "question": "عندما تكون الجملة الثانية مكملة للأولى (مثل: الهاتف -> مدعوم بالذكاء الاصطناعي)، هل تم الحفاظ على رابط بصري بينهما؟",
+        "evaluation_type": "DETERMINISTIC_GRAPH_CHECK",
+        "measurement_method": "التحقق من وجود shared_element_id أو geometric_bridge_id مشترك بين المشهد N والمشهد N+1 عندما تكون علاقة الوحدتين الدلاليتين 'ELABORATION' أو 'ATTRIBUTE_OF'.",
+        "pass_threshold": "shared_anchors_count >= 1",
+        "fail_condition": "قطع كامل (Hard Cut) يمسح جميع عناصر الجملة الأولى ويستبدلها بعناصر منفصلة تماماً.",
+        "remediation_action": "تطبيق قاعدة DIR_RULE_001 (إزاحة العنصر الأول إلى الهامش كمرساة وإدخال العنصر الثاني)."
+      },
+      {
+        "check_id": "QC_SEM_003_CLAIM_TO_EVIDENCE_GROUNDING",
+        "name": "فحص مطابقة الصورة للادعاء المنطوق وعدم إسقاط الكلمات المفتاحية",
+        "question": "هل يتضمن المشهد تمثيلاً بصرياً ونصياً للكلمات الحاملة للمعنى الأساسي دون إضافة تفاصيل مضللة؟",
+        "evaluation_type": "AI_MULTIMODAL_CRITIC",
+        "measurement_method": "تقييم تطابق الإطارات المولدة (Start/Peak/End keyframes) مع النص المنطوق عبر نموذج متعدد الوسائط على مقياس من 0.0 إلى 1.0.",
+        "pass_threshold": "semantic_alignment_score >= 0.85",
+        "fail_condition": "semantic_alignment_score < 0.85 أو غياب الكلمة المفتاحية الأساسية من نص الشاشة.",
+        "remediation_action": "إعادة توليد الأصل البصري أو تعديل النص المعروض ليطابق الكلمة المفتاحية."
+      }
+    ],
+    "B_motion_quality": [
+      {
+        "check_id": "QC_MOT_001_STATE_PROGRESSION_INDEX",
+        "name": "مؤشر تطور الحالة البصرية ومنع الجمود (Anti-Stagnation Check)",
+        "question": "هل تطورت الحالة البصرية للمشهد خلال الزمن أم بقي العنصر جامداً في وسط الشاشة؟",
+        "evaluation_type": "DETERMINISTIC_PROGRAMMATIC",
+        "measurement_method": "حساب أطول فترة زمنية متصلة داخل المشهد يكون فيها متوسط تغير البكسلات (Mean Frame Diff) أقل من 1.5 مع عدم تغير في إحداثيات العناصر أو النصوص.",
+        "pass_threshold": "max_stagnant_interval_sec <= 1.80 (أو <= 2.20 فقط إذا كان المشهد يحتوي على نص طويل للقراءة > 12 كلمة)",
+        "fail_condition": "بقاء الشاشة ثابتة أو شبه ثابتة لأكثر من 1.80 ثانية دون مبرر قرائي.",
+        "remediation_action": "تقسيم المشهد إلى حالتين داخليتين (State A -> State B) عبر حركة كاميرا 2.5D أو كشف متدرج للعناصر."
+      },
+      {
+        "check_id": "QC_MOT_002_DECORATIVE_NOISE_RATIO",
+        "name": "فحص منع الحركة الزخرفية المتكررة (Anti-Oscillation / Anti-Noise Check)",
+        "question": "هل هناك عناصر تدور أو تهتز أو تطفو بشكل متكرر ومزعج دون أن تغير حالة المشهد؟",
+        "evaluation_type": "DETERMINISTIC_PROGRAMMATIC",
+        "measurement_method": "تحليل مسار حركة كل عنصر (x(t), y(t), scale(t), rot(t))؛ حساب نسبة المسافة الكلية المقطوعة إلى الإزاحة الصافية (Path Tortuosity = Total_Path_Length / Net_Displacement) وعدد دورات التكرار (Cycles).",
+        "pass_threshold": "oscillation_cycles <= 1.5 OR amplitude_normalized <= 0.02 (حركة تنفس خفيفة جداً للخلفية فقط)",
+        "fail_condition": "عنصر أساسي يكرر نفس الحركة الترددية أكثر من مرتين (> 2 cycles) بحجم كبير دون تغير في الحالة المنطقية.",
+        "remediation_action": "إلغاء دالة التكرار (Loop/Sine wave) وتحويل الحركة إلى انتقال هادف (Ease-out) ينتهي بالاستقرار."
+      },
+      {
+        "check_id": "QC_MOT_003_EASING_AND_JITTER_CHECK",
+        "name": "فحص سلاسة التسارع والتباطؤ وخلو الحركة من القفزات",
+        "question": "هل تتبع جميع الحركات منحنيات تسارع وتباطؤ طبيعية أم توجد قفزات غير مقصودة؟",
+        "evaluation_type": "DETERMINISTIC_PROGRAMMATIC",
+        "measurement_method": "التحقق من أن جميع انتقالات الموقع والحجم تستخدم دوال Easing غير خطية (مثل cubic-bezier) باستثناء كتابة الحروف (Typewriter)، وفحص المشتقة الثانية للموقع لكشف القفزات المفاجئة.",
+        "pass_threshold": "zero_unintended_position_jumps == True AND linear_spatial_motions_count == 0",
+        "fail_condition": "حركة مكانية خطية صماء (Linear interpolation) أو قفزة في الإحداثيات بين إطارين متتاليين دون قطع مشهد.",
+        "remediation_action": "تطبيق منحنى cubic-bezier(0.22, 1, 0.36, 1) تلقائياً على المسار المكاني."
+      }
+    ],
+    "C_composition_quality": [
+      {
+        "check_id": "QC_COMP_001_SAFE_ZONE_AND_BOUNDS",
+        "name": "فحص بقاء النصوص والعناصر الأساسية داخل المنطقة الآمنة",
+        "question": "هل جميع النصوص والعناصر المهمة داخل حدود الشاشة العمودية (9:16) وبعيدة عن حواف القص؟",
+        "evaluation_type": "DETERMINISTIC_BOUNDING_BOX",
+        "measurement_method": "فحص صناديق الإحاطة (Bounding Boxes) لجميع عناصر النصوص في حالة الاستقرار النهائي: يجب أن تقع ضمن x ∈ [0.06, 0.94] و y ∈ [0.08, 0.90].",
+        "pass_threshold": "100% من الحروف المقروءة داخل حدود المنطقة الآمنة.",
+        "fail_condition": "خروج أي حرف من النص الرئيسي خارج الإطار أو تداخله مع شارة الحساب في الزاوية السفلية.",
+        "remediation_action": "إعادة تحجيم النص (Auto-scale font size) أو تعديل نقطة الارتكاز."
+      },
+      {
+        "check_id": "QC_COMP_002_NO_TEXT_OCCLUSION",
+        "name": "فحص عدم تغطية النص الأساسي بعناصر ثانوية",
+        "question": "هل يغطي عنصر بصري على النص الرئيسي بشكل يعيق قراءته؟",
+        "evaluation_type": "DETERMINISTIC_BOUNDING_BOX_AND_ALPHA_MASK",
+        "measurement_method": "حساب نسبة تقاطع قناع ألفا (Alpha Mask Intersection) للعناصر ذات z_index الأعلى من طبقة النص فوق صندوق إحاطة النص.",
+        "pass_threshold": "text_occlusion_ratio <= 0.12 AND first_letter_occluded == False",
+        "fail_condition": "تغطية أكثر من 12% من مساحة النص أو تغطية الحرف الأول من أي كلمة.",
+        "remediation_action": "رفع z_index لطبقة النص أو إزاحة العنصر المتداخل بمقدار Δy أو Δx."
+      },
+      {
+        "check_id": "QC_COMP_003_CONTRAST_AND_READABILITY",
+        "name": "فحص التباين اللوني ومقروئية النص (WCAG Readability)",
+        "question": "هل النص مقروء بوضوح فوق الخلفية؟",
+        "evaluation_type": "DETERMINISTIC_PIXEL_LUMINANCE",
+        "measurement_method": "حساب نسبة التباين (Luminance Contrast Ratio) بين بكسلات النص والمنطقة المحيطة به مباشرة في الخلفية.",
+        "pass_threshold": "contrast_ratio >= 4.5 (أو >= 3.5 للنصوص العملاقة التي يتجاوز ارتفاعها 8% من ارتفاع الشاشة مع وجود ظل أو شريط خلفية).",
+        "fail_condition": "نص فاتح فوق خلفية فاتحة أو نص داكن فوق خلفية داكنة دون شريط عازل (Pill/Highlight).",
+        "remediation_action": "إضافة شريط خلفية ملون عالي التباين خلف الكلمة (مثل شريط 'potential' في VIDEO_02) أو تفعيل ظل خلفي ناعم."
+      },
+      {
+        "check_id": "QC_COMP_004_NEGATIVE_SPACE_RATIO",
+        "name": "فحص توازن المساحة السلبية ومنع ازدحام الشاشة",
+        "question": "هل الشاشة مزدحمة بعناصر متكدسة أم تحتفظ بمساحة سلبية كافية للتركيز؟",
+        "evaluation_type": "DETERMINISTIC_PROGRAMMATIC",
+        "measurement_method": "حساب نسبة مساحة الشاشة غير المشغولة بصناديق إحاطة العناصر الأمامية (1 - Union_of_Foreground_BBoxes / Canvas_Area).",
+        "pass_threshold": "negative_space_ratio >= 0.35 في المشاهد العادية، و >= 0.70 في مشاهد التهدئة والخاتمة.",
+        "fail_condition": "انخفاض المساحة السلبية عن 0.35 أو وجود أكثر من 4 مجموعات بصرية مستقلة في اللحظة نفسها.",
+        "remediation_action": "تقليص حجم العناصر الثانوية أو تحويل العرض المتزامن إلى عرض تتابعي على مرحلتين."
+      }
+    ],
+    "D_timing_quality": [
+      {
+        "check_id": "QC_TIM_001_AUDIO_VISUAL_SYNC_TOLERANCE",
+        "name": "فحص دقة تزامن الحدث البصري مع الكلمة المنطوقة",
+        "question": "هل يبدأ ظهور النص أو التحول البصري في التوقيت الصحيح بالنسبة للكلمة المفتاحية؟",
+        "evaluation_type": "DETERMINISTIC_TIMESTAMP_DIFF",
+        "measurement_method": "حساب الفرق الزمني |t_visual_event - t_audio_anchor| لكل نقطة تزامن مسجلة في audio_sync_points.",
+        "pass_threshold": "|Δt| <= 0.080 seconds للتحولات اللحظية، و Δt ∈ [-0.250, -0.050] للانتقالات التمهيدية.",
+        "fail_condition": "تأخر ظهور الكلمة النصية عن نطقها الصوتي بأكثر من 100 مللي ثانية.",
+        "remediation_action": "إزاحة إطارات بداية الحركة (Keyframes) لتنطبق مع طابع التوقيت الصوتي (Word-level timestamp)."
+      },
+      {
+        "check_id": "QC_TIM_002_SETTLE_AND_READING_HOLD",
+        "name": "فحص كفاية مدة استقرار العناصر للقراءة والفهم قبل الانتقال",
+        "question": "هل تبقى العناصر والنصوص المكتملة على الشاشة مدة كافية قبل أن يمسحها الانتقال التالي؟",
+        "evaluation_type": "DETERMINISTIC_TIMESTAMP_DIFF",
+        "measurement_method": "حساب (t_transition_out_start - t_last_word_or_transform_complete).",
+        "pass_threshold": "settle_duration >= max(0.35, word_count * 0.12) seconds",
+        "fail_condition": "اختفاء النص أو الصورة الجديدة بعد أقل من 0.35 ثانية من اكتمال ظهورها (كما لوحظ كحد حرج في التحولات السريعة).",
+        "remediation_action": "تبكير حركة الدخول بمقدار 0.15 ثانية أو تأخير بداية انتقال الخروج."
+      }
+    ],
+    "E_final_video_integrity": [
+      {
+        "check_id": "QC_VID_001_STREAM_AND_FRAME_INTEGRITY",
+        "name": "فحص سلامة الرندر، الصوت، معدل الإطارات، والإطارات السوداء",
+        "question": "هل ملف الفيديو النهائي سليم تقنياً وخالٍ من الفجوات السوداء أو انقطاع الصوت؟",
+        "evaluation_type": "DETERMINISTIC_FFPROBE_AND_OPENCV",
+        "measurement_method": "فحص المخرج عبر ffprobe و OpenCV: التحقق من تطابق مدة الصوت والصورة (|D_video - D_audio| <= 0.05s)، ثبات FPS، وعدم وجود إطارات سوداء غير مقصودة (mean_luminance < 5.0) في غير الخاتمة.",
+        "pass_threshold": "audio_present == True AND unexpected_black_frames == 0 AND frozen_frame_streaks_gt_2s == 0",
+        "fail_condition": "وجود إطارات سوداء في وسط الفيديو أو اختلاف مدة الفيديو عن الخطة الزمنية بأكثر من 0.1 ثانية.",
+        "remediation_action": "إعادة رندر المقطع المتضرر والتحقق من تحميل جميع الأصول البصرية قبل الدمج."
+      }
+    ]
+  }
+}

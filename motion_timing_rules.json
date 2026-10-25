@@ -1,0 +1,117 @@
+{
+  "schema_version": "2.0.0",
+  "description": "قواعد التوقيت والإيقاع ومزامنة الصوت والصورة المستخرجة من القياسات الزمنية الدقيقة للفيديوهات الثلاثة.",
+  "empirical_benchmarks": {
+    "VIDEO_01": {
+      "total_duration_sec": 19.286,
+      "fps": 59.94,
+      "narrative_macro_scenes": 7,
+      "visual_sub_states": 11,
+      "mean_macro_scene_duration_sec": 2.75,
+      "mean_visual_state_duration_sec": 1.75,
+      "transition_duration_sec": {
+        "min": 0.1,
+        "median": 0.18,
+        "max": 0.35
+      }
+    },
+    "VIDEO_02": {
+      "total_duration_sec": 15.367,
+      "fps": 30.0,
+      "narrative_macro_scenes": 9,
+      "visual_sub_states": 12,
+      "mean_macro_scene_duration_sec": 1.71,
+      "mean_visual_state_duration_sec": 1.28,
+      "transition_duration_sec": {
+        "min": 0.07,
+        "median": 0.2,
+        "max": 0.33
+      }
+    },
+    "VIDEO_03": {
+      "total_duration_sec": 11.912,
+      "fps": 29.97,
+      "narrative_macro_scenes": 6,
+      "visual_sub_states": 9,
+      "mean_macro_scene_duration_sec": 1.98,
+      "mean_visual_state_duration_sec": 1.32,
+      "transition_duration_sec": {
+        "min": 0.13,
+        "median": 0.24,
+        "max": 0.4
+      }
+    }
+  },
+  "audio_visual_sync_taxonomy": [
+    {
+      "sync_mode": "ANTICIPATORY_VISUAL_LEAD",
+      "name": "ظهور الصورة قبل الكلمة (Visual Lead-In)",
+      "offset_range_sec": [
+        -0.25,
+        -0.08
+      ],
+      "when_to_use": "عند الانتقال إلى مشهد جديد كلياً أو بيئة مكانية جديدة؛ تبدأ حركة الانتقال أو ظهور الحاوية قبل نطق الكلمة الأولى بـ 100 إلى 200 مللي ثانية لتهيئة عين المشاهد.",
+      "evidence": "في VIDEO_01 يبدأ ظهور مستطيل القيادة والسيارة عند t=8.67s قبل نطق كلمة 'Driving' (8.80s)؛ وفي VIDEO_03 يبدأ تشكل المربع الأصفر عند t=0.20s قبل بداية الجملة."
+    },
+    {
+      "sync_mode": "ON_SYLLABLE_KEY_WORD_LOCK",
+      "name": "التزامن اللحظي مع المقطع الصوتي الأول للكلمة المفتاحية (Exact Syllable Lock)",
+      "offset_range_sec": [
+        -0.04,
+        0.06
+      ],
+      "when_to_use": "عند ظهور الكلمات النصية على الشاشة، أو عند انفجار التحول البصري في كلمة الذروة (Climax Word).",
+      "evidence": "في VIDEO_01 يتحول كيس الشيبس وتظهر كلمة SECONDS عند t=7.44s-7.55s بالتزامن الدقيق مع نطق 'seconds'؛ وفي VIDEO_02 تنطلق الشرارات عند t=12.60s مع نطق 'spark' وتندلع النيران عند t=13.73s مع نطق 'wildfire'."
+    },
+    {
+      "sync_mode": "POST_UTTERANCE_PAUSE_BEAT",
+      "name": "الفعل البصري خلال الوقفة الصوتية بعد الكلمة (Pause-Driven Visual Punchline)",
+      "offset_range_sec": [
+        0.08,
+        0.35
+      ],
+      "when_to_use": "عندما يطرح المتحدث كلمة مفتاحية ثم يتوقف لجزء من الثانية؛ يُستغل هذا الصمت القصير لإدخال العنصر التفاعلي أو المفاجأة البصرية دون مزاحمة الصوت.",
+      "evidence": "في VIDEO_03 ينطق المتحدث 'Every cut' (تنتهي عند 2.67s)، وخلال الوقفة الصوتية (2.73s-3.00s) يدخل الرجل الحامل للمنشار الكهربائي ويتكئ على الكرة الصفراء قبل أن يبدأ نطق 'is a decision' (3.35s)."
+    },
+    {
+      "sync_mode": "MID_SENTENCE_CAMERA_SHIFT",
+      "name": "تحول المشهد أو الكاميرا في منتصف الجملة (Mid-Sentence Pivot)",
+      "offset_range_sec": [
+        -0.05,
+        0.1
+      ],
+      "when_to_use": "عندما تتكون الجملة من (مبتدأ + خبر) أو (ادعاء + مقارنة)؛ يحدث التحول البصري عند نقطة المفصل النحوي (Clause Boundary).",
+      "evidence": "في VIDEO_03 تتحرك الكاميرا أفقياً عند t=5.40s بين 'Every frame' و 'tells a story'، وعند t=8.00s بين 'Editing is more' و 'than a skill'."
+    }
+  ],
+  "timing_formulas": {
+    "scene_duration_calculation": {
+      "description": "لا توجد مدة ثابتة للمشهد؛ تُحسب مدة المشهد من زمن الوحدة الدلالية المنطوقة مضافاً إليه وقت الاستيعاب البصري.",
+      "formula": "T_scene = T_spoken_unit + T_visual_comprehension_buffer",
+      "comprehension_buffer_rules": [
+        {
+          "visual_complexity": "LOW (1 text + 1 simple icon/shape)",
+          "min_settle_hold_sec": 0.4
+        },
+        {
+          "visual_complexity": "MEDIUM (character + 3-5 words + motion)",
+          "min_settle_hold_sec": 0.65
+        },
+        {
+          "visual_complexity": "HIGH (UI simulation, news article excerpt, dual-layer video)",
+          "min_settle_hold_sec": 0.9
+        }
+      ]
+    },
+    "motion_envelope_proportions": {
+      "description": "توزيع مراحل الحركة داخل الحدث البصري الواحد:",
+      "entry_or_initiation_phase": "15% - 25% من مدة الحدث (انطلاق سريع)",
+      "peak_transformation_phase": "10% - 15% من مدة الحدث (أعلى سرعة وتغير بكسلات)",
+      "deceleration_and_settle_phase": "20% - 25% من مدة الحدث (Ease-out ناعم للاستقرار)",
+      "comprehension_hold_phase": "40% - 50% من مدة الحدث (ثبات حيوي مع حركة ثانوية طفيفة جداً للقراءة والفهم)"
+    },
+    "pacing_wave_modulation": {
+      "rule": "منع رتابة الإيقاع: بعد كل 2 إلى 3 مشاهد سريعة عالية الكثافة (مدة 1.0s - 1.5s)، يجب إدراج مشهد أطول نسبياً (2.2s - 2.9s) يحتوي على تطور داخلي أو مساحة هادئة لاستيعاب الفكرة."
+    }
+  }
+}

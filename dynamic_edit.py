@@ -201,7 +201,7 @@ def _zoom_frame_numpy(frame_rgb: np.ndarray, zoom_factor: float, target_w: int, 
 
 
 def _probe_video_dimensions_and_duration(video_path: str) -> Tuple[int, int, float]:
-    w, h, dur = 540, 960, 10.0
+    w, h, dur = 1080, 1920, 10.0
     try:
         res = subprocess.run(
             ["ffmpeg", "-threads", "1", "-i", video_path],
@@ -221,7 +221,7 @@ def _probe_video_dimensions_and_duration(video_path: str) -> Tuple[int, int, flo
             dur = round(int(m_dur.group(1)) * 3600 + int(m_dur.group(2)) * 60 + float(m_dur.group(3)), 3)
     except Exception:
         pass
-    w, h = get_safe_working_resolution(w, h, max_dim=960)
+    w, h = get_safe_working_resolution(w, h, max_dim=1920)
     return w, h, max(0.2, dur)
 
 

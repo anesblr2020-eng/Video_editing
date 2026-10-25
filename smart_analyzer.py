@@ -376,6 +376,90 @@ ONE_TAKE_HANDOFF_MODES = [
 GENOME_STORAGE_PATH = os.path.join(_CURRENT_DIR, "outputs", "learned_motion_genome.json")
 
 
+
+def decompose_scene_clauses_and_verb(
+    scene_text: str,
+    scene_index: int,
+    total_scenes: int,
+    words: Optional[List[Dict[str, Any]]] = None
+) -> Dict[str, Any]:
+    """
+    يفكك جملة المشهد إلى حالتين بصريتين متتاليتين (State A -> Pivot -> State B)
+    تماماً مثل منطق المخرج في الفيديوهات المرجعية الثلاثة:
+    - VIDEO_01: (Your Phone -> AI Robot Displace) / (Keep Chips Prompt -> Generate -> Sweet Onion Result) / (AI sees roads -> Better than Humans)
+    - VIDEO_02: (Ideas aren't just created -> They're born with potential -> Green Circle Wipe -> Power)
+    - VIDEO_03: (Every cut -> is a decision 2.5D Pan Right) / (Editing is more than a skill -> It's a feeling Minimalist Reset)
+    """
+    raw = re.sub(r"\s+", " ", str(scene_text or "")).strip()
+    tokens = [w for w in raw.split() if w.strip()]
+    n_tok = len(tokens)
+
+    # البحث عن نقطة التحول الدلالي (Causal / Contrast / Action Pivot)
+    pivot_markers = {
+        "لكن", "بل", "بينما", "بدل", "مقابل", "أفضل", "افضل", "أسرع", "اسرع",
+        "حتى", "ليحول", "تتحول", "يحول", "ويكشف", "ويولد", "بضغطة", "فوراً",
+        "فورا", "تلقائياً", "تلقائيا", "بدون", "بفضل", "عبر", "داخل", "تحت"
+    }
+    pivot_tok_idx = max(1, n_tok // 2)
+    for ti, tok in enumerate(tokens):
+        clean_t = re.sub(r"[،,.!؟?:؛]", "", tok)
+        if 1 <= ti <= n_tok - 2 and (clean_t in pivot_markers or tok.endswith("،") or tok.endswith(",")):
+            pivot_tok_idx = ti + (1 if tok.endswith(("،", ",")) else 0)
+            break
+
+    clause_a_tokens = tokens[:pivot_tok_idx] if tokens else ["الفكرة", "الأولى"]
+    clause_b_tokens = tokens[pivot_tok_idx:] if len(tokens) > pivot_tok_idx else tokens[-2:]
+
+    clause_a = " ".join(clause_a_tokens[:4])
+    clause_b = " ".join(clause_b_tokens[:5])
+
+    pivot_u = round(min(0.62, max(0.38, pivot_tok_idx / float(max(2, n_tok)))), 3)
+    if words and len(words) >= 2:
+        try:
+            s0 = float(words[0].get("start", 0.0))
+            s1 = float(words[-1].get("end", s0 + 2.5))
+            dur = max(0.4, s1 - s0)
+            p_w = words[min(len(words) - 1, pivot_tok_idx)]
+            w_t = float(p_w.get("start", s0 + dur * 0.5))
+            pivot_u = round(min(0.66, max(0.35, (w_t - s0) / dur)), 3)
+        except Exception:
+            pass
+
+    t_low = raw.lower()
+    # اختيار الفعل البصري الحركي (Visual Choreography Verb) بدون تكرار رتيب
+    if scene_index == total_scenes - 1 and total_scenes >= 3:
+        visual_verb = "minimalist_climax_reset"
+    elif any(k in t_low for k in ["أفضل", "افضل", "مقابل", "الفرق", "بينما", "أضعاف", "اضعاف", "مرات", "تتفوق", "أدق", "ادق"]):
+        visual_verb = "dual_viewport_reveal"
+    elif any(k in t_low for k in ["أمر", "اكتب", "ضغطة", "توليد", "تحويل", "برومبت", "تعدل", "تحول", "ينشئ", "تلقائياً", "ثوان"]):
+        visual_verb = "prompt_to_result_sim"
+    elif any(k in t_low for k in ["دراسة", "أثبتت", "اثبتت", "تقرير", "علم", "مستشفى", "نتائج", "إحصائيات", "احصائيات", "دليل", "برهان", "أبحاث", "ابحاث"]):
+        visual_verb = "editorial_proof_slide"
+    elif scene_index % 3 == 1:
+        visual_verb = "camera_25d_pan_right"
+    elif scene_index % 3 == 2:
+        visual_verb = "prompt_to_result_sim"
+    else:
+        visual_verb = "anchor_and_displace"
+
+    bridge_cycle = [
+        "3d_specular_sphere",
+        "emerald_circle_wipe",
+        "acid_yellow_split_pillar",
+        "floating_3d_glass_portal",
+        "minimalist_engraving_emblem"
+    ]
+    bridge_shape = bridge_cycle[scene_index % len(bridge_cycle)]
+
+    return {
+        "clause_a": clause_a,
+        "clause_b": clause_b,
+        "pivot_u": pivot_u,
+        "visual_verb": visual_verb,
+        "bridge_shape": bridge_shape,
+    }
+
+
 class WebMotionLearner:
     """
     يتعلم تلقائياً من الإنترنت ومن الفيديوهات المرجعية لبناء كوريغرافيا بصرية متكاملة وفريدة لكل مشهد
@@ -687,9 +771,15 @@ class WebMotionLearner:
 
         first_sub = sub_items[0] if sub_items else concept_title
         second_sub = sub_items[1] if len(sub_items) > 1 else kpi_label
+        clause_info = decompose_scene_clauses_and_verb(scene_text, scene_index, total_scenes)
         return {
             "archetype": arch,
             "visual_subject": vis_subj,
+            "clause_a": clause_info["clause_a"],
+            "clause_b": clause_info["clause_b"],
+            "pivot_u": clause_info["pivot_u"],
+            "visual_verb": clause_info["visual_verb"],
+            "bridge_shape": clause_info["bridge_shape"],
             "scene_type": scene_type,
             "badge_label": badge_label,
             "concept_title": concept_title,

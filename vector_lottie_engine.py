@@ -497,6 +497,577 @@ def render_radial_ambient_glow(
 # 4. محرك الرسومات التعبيرية والمجسمات المتجهية المتوافقة 100% مع الكلام المنطوق
 #    (16 Bespoke Speech-Matched Open-Canvas Vector Hero Illustrations)
 # ==============================================================================
+
+# ==============================================================================
+# 3.9 محرك الكوريغرافيا البصرية متعدد الحالات المستخلص من الفيديوهات المرجعية الثلاثة
+#     (Reference-Grade Multi-State Studio Choreography Engine: State A -> Action -> State B)
+# ==============================================================================
+def _draw_3d_shaded_sphere(
+    canvas_rgba: Image.Image,
+    cx: int,
+    cy: int,
+    radius: int,
+    base_rgb: Tuple[int, int, int] = (221, 248, 0),
+    shadow_offset: Tuple[int, int] = (14, 22),
+    shadow_blur: int = 18
+) -> Image.Image:
+    """
+    يرسم كرة ثلاثية الأبعاد فائقة الواقعية مع تظليل كروي وإضاءة Specular وظل ناعم
+    (مطابقة تماماً للكرة الصفراء الثلاثية الأبعاد في VIDEO_03 MORNINGSTAR و VIDEO_01).
+    """
+    if radius < 8:
+        return canvas_rgba
+    w, h = canvas_rgba.size
+    # 1. Drop shadow
+    sh_layer = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sh_d = ImageDraw.Draw(sh_layer, "RGBA")
+    sx, sy = cx + shadow_offset[0], cy + shadow_offset[1]
+    sh_d.ellipse([(sx - radius, sy - radius), (sx + radius, sy + radius)], fill=(18, 20, 26, 72))
+    sh_layer = sh_layer.filter(ImageFilter.GaussianBlur(radius=max(4, shadow_blur)))
+    canvas_rgba = Image.alpha_composite(canvas_rgba, sh_layer)
+
+    # 2. 3D Radial Sphere Shading using numpy
+    x1, y1 = max(0, cx - radius), max(0, cy - radius)
+    x2, y2 = min(w, cx + radius), min(h, cy + radius)
+    sw, sh = x2 - x1, y2 - y1
+    if sw < 4 or sh < 4:
+        return canvas_rgba
+
+    yy, xx = np.ogrid[y1:y2, x1:x2]
+    nx = (xx - cx) / float(radius)
+    ny = (yy - cy) / float(radius)
+    dist_sq = nx * nx + ny * ny
+    inside = dist_sq <= 1.0
+    nz = np.sqrt(np.maximum(0.0, 1.0 - dist_sq))
+
+    # Light source at top-left (-0.38, -0.42, 0.82)
+    lx, ly, lz = -0.38, -0.42, 0.82
+    diffuse = np.clip(nx * lx + ny * ly + nz * lz, 0.0, 1.0)
+    ambient = 0.36
+    spec = np.power(np.clip(diffuse, 0.0, 1.0), 14.0) * 0.42
+    rim = np.power(1.0 - nz, 2.4) * 0.22
+
+    shade = np.clip(ambient + 0.68 * diffuse - rim, 0.18, 1.15)
+    patch = np.zeros((sh, sw, 4), dtype=np.uint8)
+    for c_i in range(3):
+        val = base_rgb[c_i] * shade + 255.0 * spec
+        patch[:, :, c_i] = np.clip(val, 0, 255).astype(np.uint8)
+
+    # Anti-aliased edge
+    dist = np.sqrt(dist_sq)
+    alpha_edge = np.clip((1.0 - dist) * radius * 0.85, 0.0, 1.0) * 255.0
+    patch[:, :, 3] = np.where(dist <= 1.0, alpha_edge, 0).astype(np.uint8)
+
+    sph_pil = Image.fromarray(patch, mode="RGBA")
+    canvas_rgba.alpha_composite(sph_pil, (x1, y1))
+    return canvas_rgba
+
+
+def _draw_editorial_viewfinder_brackets(
+    draw: ImageDraw.ImageDraw,
+    bbox: Tuple[int, int, int, int],
+    color_rgba: Tuple[int, int, int, int] = (30, 30, 34, 175),
+    arm_len: int = 38,
+    width: int = 2
+) -> None:
+    """يرسم أقواس الكاميرا التحريرية (Viewfinder Corner Brackets) كما في VIDEO_03 MORNINGSTAR."""
+    x1, y1, x2, y2 = bbox
+    # Top-left
+    draw.line([(x1, y1), (x1 + arm_len, y1)], fill=color_rgba, width=width)
+    draw.line([(x1, y1), (x1, y1 + arm_len)], fill=color_rgba, width=width)
+    # Top-right
+    draw.line([(x2 - arm_len, y1), (x2, y1)], fill=color_rgba, width=width)
+    draw.line([(x2, y1), (x2, y1 + arm_len)], fill=color_rgba, width=width)
+    # Bottom-left
+    draw.line([(x1, y2 - arm_len), (x1, y2)], fill=color_rgba, width=width)
+    draw.line([(x1, y2), (x1 + arm_len, y2)], fill=color_rgba, width=width)
+    # Bottom-right
+    draw.line([(x2 - arm_len, y2), (x2, y2)], fill=color_rgba, width=width)
+    draw.line([(x2, y2 - arm_len), (x2, y2)], fill=color_rgba, width=width)
+
+
+def _draw_mixed_editorial_headline(
+    canvas_rgba: Image.Image,
+    bbox: Tuple[int, int, int, int],
+    clause_text: str,
+    accent_word: str,
+    txt_rgb: Tuple[int, int, int],
+    sticker_bg_rgb: Tuple[int, int, int],
+    sticker_txt_rgb: Tuple[int, int, int],
+    progress_u: float,
+    get_font_fn,
+    draw_arabic_text_fn,
+    tilt_deg: float = -3.0,
+    use_sticker: bool = True,
+    draw_contained_text_fn=None
+) -> Image.Image:
+    """
+    يرسم عنواناً حركياً مزدوج التباين (Bold Sans + Tilted Accent Sticker / Highlight)
+    مع احتواء تلقائي كامل داخل الـ bbox لمنع خروج أي حرف خارج الإطار.
+    """
+    x1, y1, x2, y2 = bbox
+    w_box = max(120, x2 - x1)
+    h_box = max(60, y2 - y1)
+    cx = (x1 + x2) // 2
+    cy = (y1 + y2) // 2
+
+    words = [w.strip() for w in str(clause_text or "").split() if w.strip()]
+    if not words:
+        return canvas_rgba
+
+    draw = ImageDraw.Draw(canvas_rgba, "RGBA")
+    main_line = " ".join(words[:-1]) if len(words) >= 2 else words[0]
+    last_word = words[-1] if len(words) >= 2 else (accent_word or "")
+
+    sp1 = min(1.0, max(0.0, progress_u * 2.6))
+    dy1 = int(18 * (1.0 - sp1))
+    alpha1 = int(255 * sp1)
+
+    if last_word and len(words) >= 2:
+        top_half_bbox = (x1 + 16, y1 + dy1, x2 - 16, cy + dy1)
+        if callable(draw_contained_text_fn):
+            draw_contained_text_fn(draw, top_half_bbox, main_line, initial_font_size=max(32, int(h_box * 0.36)), min_font_size=20, fill=(*txt_rgb, alpha1))
+        else:
+            f_main = get_font_fn(max(28, int(h_box * 0.32)), bold=True)
+            draw_arabic_text_fn(draw, (cx, (y1 + cy) // 2 + dy1), main_line, font=f_main, fill=(*txt_rgb, alpha1))
+
+        sp2 = min(1.0, max(0.0, (progress_u - 0.12) * 2.8))
+        if sp2 > 0.04:
+            dy2 = int(20 * (1.0 - sp2))
+            alpha2 = int(255 * sp2)
+            if use_sticker:
+                st_w = min(int(w_box * 0.68), max(160, len(last_word) * 28 + 64))
+                st_h = max(48, int(h_box * 0.44))
+                st_pil = Image.new("RGBA", (st_w + 24, st_h + 24), (0, 0, 0, 0))
+                st_d = ImageDraw.Draw(st_pil, "RGBA")
+                st_d.rounded_rectangle([(12, 16), (12 + st_w, 16 + st_h)], radius=14, fill=(0, 0, 0, int(48 * sp2)))
+                st_d.rounded_rectangle([(10, 10), (10 + st_w, 10 + st_h)], radius=14, fill=(*sticker_bg_rgb, alpha2), outline=(18, 18, 22, alpha2), width=2)
+                if callable(draw_contained_text_fn):
+                    draw_contained_text_fn(st_d, (22, 14, 10 + st_w - 12, 10 + st_h - 4), last_word, initial_font_size=max(28, int(st_h * 0.56)), min_font_size=18, fill=(*sticker_txt_rgb, alpha2))
+                else:
+                    f_acc = get_font_fn(max(28, int(st_h * 0.54)), bold=True)
+                    draw_arabic_text_fn(st_d, (10 + st_w // 2, 10 + st_h // 2), last_word, font=f_acc, fill=(*sticker_txt_rgb, alpha2))
+                if abs(tilt_deg) > 0.3:
+                    st_pil = st_pil.rotate(tilt_deg, resample=Image.Resampling.BICUBIC, expand=True)
+                canvas_rgba.alpha_composite(st_pil, (cx - st_pil.width // 2, cy + int(h_box * 0.24) - st_pil.height // 2 + dy2))
+            else:
+                bot_half_bbox = (x1 + 16, cy + dy2, x2 - 16, y2 + dy2)
+                if callable(draw_contained_text_fn):
+                    draw_contained_text_fn(draw, bot_half_bbox, last_word, initial_font_size=max(32, int(h_box * 0.38)), min_font_size=20, fill=(*sticker_bg_rgb, alpha2))
+    else:
+        if callable(draw_contained_text_fn):
+            draw_contained_text_fn(draw, (x1 + 16, y1 + dy1, x2 - 16, y2 + dy1), main_line, initial_font_size=max(34, int(h_box * 0.42)), min_font_size=20, fill=(*txt_rgb, alpha1))
+
+    return canvas_rgba
+
+
+def render_reference_multi_state_choreography(
+    img: Image.Image,
+    visual_verb: str,
+    archetype: str,
+    stage_bbox: Tuple[int, int, int, int],
+    choreo_u: float,
+    global_t: float,
+    style_spec: Dict[str, Any],
+    scene_meta: Dict[str, Any],
+    sub_items: List[str],
+    kpi_val: str,
+    kpi_lbl: str,
+    concept_title: str,
+    draw_contained_text_fn,
+    draw_arabic_text_fn,
+    get_font_fn,
+    draw_cursor_fn
+) -> Image.Image:
+    """
+    ينفذ القواعد الإخراجية الخمس المستخلصة من الفيديوهات المرجعية الثلاثة:
+    1. `anchor_and_displace` (VIDEO_01 Phone -> AI Robot / Healthcare -> News Proof)
+    2. `prompt_to_result_sim` (VIDEO_01 Art Chips Prompt -> Click Generate -> Scale Bounce Morph)
+    3. `dual_viewport_reveal` (VIDEO_01 Tesla Road Split Viewport + Bottom Comparison Typography)
+    4. `camera_25d_pan_right` (VIDEO_03 Morningstar 3D Acid-Yellow Sphere + 2.5D Horizontal Camera Pan)
+    5. `minimalist_climax_reset` (VIDEO_01 Brain Soul & VIDEO_03 Heart Feeling >78% Negative Space Reset)
+    """
+    w, h = img.size
+    st_x1, st_y1, st_x2, st_y2 = stage_bbox
+    st_w = max(200, st_x2 - st_x1)
+    st_h = max(240, st_y2 - st_y1)
+    cx = (st_x1 + st_x2) // 2
+    cy = (st_y1 + st_y2) // 2
+
+    pal = style_spec.get("palette", {})
+    is_light_bg = bool(pal.get("is_light_bg", True))
+    primary_c = tuple(pal.get("primary", (16, 185, 129)))[:3]
+    secondary_c = tuple(pal.get("secondary", (15, 23, 42)))[:3]
+    accent_c = tuple(pal.get("accent", (250, 204, 21)))[:3]
+    sticker_bg = tuple(pal.get("sticker_bg", (250, 204, 21)))[:3]
+    sticker_txt = tuple(pal.get("sticker_txt", (17, 24, 39)))[:3]
+    txt_main = (18, 22, 30) if is_light_bg else (248, 250, 252)
+    txt_muted = (71, 85, 105) if is_light_bg else (180, 195, 215)
+    card_bg = (255, 255, 255, 252) if is_light_bg else (20, 28, 46, 246)
+
+    clause_a = str(scene_meta.get("clause_a") or concept_title or "الفكرة الأساسية").strip()
+    clause_b = str(scene_meta.get("clause_b") or kpi_val or (sub_items[0] if sub_items else "النتيجة الذكية")).strip()
+    pivot_u = float(scene_meta.get("pivot_u", 0.48))
+
+    raw_speech = str(scene_meta.get("text") or concept_title or "")
+    fallback_topic = str(scene_meta.get("visual_subject") or archetype or "")
+    svgs = search_and_fetch_web_vectors(raw_speech, fallback_topic=fallback_topic, max_assets=3)
+
+    # -------------------------------------------------------------------------
+    # VERB 1: Prompt-to-Result Interactive Simulation (VIDEO_01 Art Chips Pattern)
+    # -------------------------------------------------------------------------
+    if visual_verb == "prompt_to_result_sim":
+        is_morphed = (choreo_u >= pivot_u)
+        morph_p = min(1.0, max(0.0, (choreo_u - pivot_u) / max(0.12, 1.0 - pivot_u)))
+        bounce_scale = 1.0 + 0.11 * math.sin(min(1.0, morph_p * 2.4) * math.pi) if is_morphed else min(1.0, choreo_u * 3.0)
+
+        # 1. Top Kinetic Mixed Headline ("AI create this in" -> "SECONDS" italic/sticker)
+        hdr_bbox = (st_x1 + 12, int(h * 0.095), st_x2 - 12, int(h * 0.225))
+        active_hdr_txt = clause_b if is_morphed else clause_a
+        img = _draw_mixed_editorial_headline(
+            img, hdr_bbox, active_hdr_txt, clause_b, txt_main,
+            sticker_bg_rgb=primary_c, sticker_txt_rgb=(255, 255, 255),
+            progress_u=choreo_u, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn, draw_contained_text_fn=draw_contained_text_fn,
+            tilt_deg=-2.0, use_sticker=is_morphed
+        )
+
+        # 2. Central Square Rounded Studio Showcase Card (State A -> State B transformation)
+        card_sz = int(min(st_w * 0.80, st_h * 0.54) * max(0.82, bounce_scale))
+        kx1, ky1 = cx - card_sz // 2, cy - card_sz // 2 - int(st_h * 0.04)
+        kx2, ky2 = kx1 + card_sz, ky1 + card_sz
+
+        sh_l = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(sh_l, "RGBA").rounded_rectangle([(kx1 + 6, ky1 + 18), (kx2 + 6, ky2 + 22)], radius=32, fill=(15, 23, 42, 65 if is_light_bg else 120))
+        img = Image.alpha_composite(img, sh_l.filter(ImageFilter.GaussianBlur(radius=18)))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        bg_card_col = (242, 232, 212, 255) if not is_morphed else (232, 245, 238, 255)
+        if not is_light_bg:
+            bg_card_col = (26, 34, 54, 250) if not is_morphed else (18, 46, 42, 252)
+        border_col = secondary_c if not is_morphed else primary_c
+        draw.rounded_rectangle([(kx1, ky1), (kx2, ky2)], radius=30, fill=bg_card_col, outline=(*border_col, 235), width=3)
+
+        # Concentric target circles inside the showcase card (like the BLT / Sweet Onion target rings in VIDEO_01)
+        for ri in range(3, 0, -1):
+            rr = int(card_sz * (0.14 * ri))
+            ring_col = (214, 140, 128, 95) if not is_morphed else (*primary_c, 85)
+            draw.ellipse([(cx - rr, (ky1 + ky2) // 2 - rr), (cx + rr, (ky1 + ky2) // 2 + rr)], fill=ring_col)
+
+        # 3D Shaded Product / Concept Core inside card
+        core_col = (59, 130, 246) if not is_morphed else primary_c
+        img = _draw_3d_shaded_sphere(img, cx, (ky1 + ky2) // 2 - 8, int(card_sz * 0.25), base_rgb=core_col)
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        if svgs:
+            svg_idx = 0 if not is_morphed else min(len(svgs) - 1, 1)
+            svg_sz = int(card_sz * 0.36)
+            svg_img = render_recolored_svg_motion_canvas(
+                svg_xml=svgs[svg_idx], width=svg_sz, height=svg_sz,
+                theme_palette={"primary": (255, 255, 255), "secondary": sticker_bg, "accent": primary_c},
+                choreo_u=choreo_u, global_t=global_t, stroke_scale=1.15
+            )
+            img.alpha_composite(svg_img, (cx - svg_sz // 2, (ky1 + ky2) // 2 - 8 - svg_sz // 2))
+            draw = ImageDraw.Draw(img, "RGBA")
+
+        # Tilted "NEW!" / State Badge in top-left corner of the card (just like "NEW!" in VIDEO_01)
+        badge_txt = "النتيجة الذكية ✨" if is_morphed else "الوضع الأولي"
+        badge_col = primary_c if is_morphed else (239, 68, 68)
+        draw.rounded_rectangle([(kx1 + 18, ky1 + 18), (kx1 + int(card_sz * 0.54), ky1 + 58)], radius=14, fill=(*badge_col, 255))
+        draw_contained_text_fn(draw, (kx1 + 24, ky1 + 20, kx1 + int(card_sz * 0.54) - 6, ky1 + 56), badge_txt, initial_font_size=22, fill=(255, 255, 255, 255))
+
+        # Bottom label inside card
+        state_lbl = clause_b if is_morphed else clause_a
+        draw.rounded_rectangle([(kx1 + 24, ky2 - 64), (kx2 - 24, ky2 - 18)], radius=16, fill=(255, 255, 255, 235) if is_light_bg else (15, 23, 42, 235))
+        draw_contained_text_fn(draw, (kx1 + 32, ky2 - 60, kx2 - 32, ky2 - 22), state_lbl, initial_font_size=26, fill=(*txt_main, 255))
+
+        # 3. Interactive Prompt Input Bar below card with "Generate" button & Typing Effect
+        bar_w = int(card_sz * 0.98)
+        bar_h = max(56, int(st_h * 0.085))
+        bx1, by1 = cx - bar_w // 2, ky2 + 24
+        bx2, by2 = bx1 + bar_w, by1 + bar_h
+        draw.rounded_rectangle([(bx1 + 3, by1 + 8), (bx2 + 3, by2 + 8)], radius=20, fill=(15, 23, 42, 42))
+        draw.rounded_rectangle([(bx1, by1), (bx2, by2)], radius=20, fill=(255, 255, 255, 252) if is_light_bg else (30, 41, 59, 250), outline=(203, 213, 225, 255), width=2)
+
+        # Generate button on right side of prompt bar
+        btn_w = int(bar_w * 0.28)
+        btn_x1, btn_y1, btn_x2, btn_y2 = bx2 - btn_w - 10, by1 + 9, bx2 - 10, by2 - 9
+        btn_fill = primary_c if is_morphed else (100, 116, 139)
+        draw.rounded_rectangle([(btn_x1, btn_y1), (btn_x2, btn_y2)], radius=14, fill=(*btn_fill, 255))
+        draw_contained_text_fn(draw, (btn_x1 + 8, btn_y1 + 2, btn_x2 - 8, btn_y2 - 2), "Generate ✨" if not is_morphed else "تم التوليد ✔", initial_font_size=20, fill=(255, 255, 255, 255))
+
+        # Typewriter text inside prompt bar
+        type_prog = min(1.0, choreo_u / max(0.20, pivot_u * 0.92))
+        full_prompt = f"تحويل إلى: {clause_b}"
+        typed_len = max(2, int(len(full_prompt) * type_prog))
+        draw_contained_text_fn(draw, (bx1 + 16, by1 + 8, btn_x1 - 12, by2 - 8), full_prompt[:typed_len], initial_font_size=22, fill=(*txt_muted, 255))
+
+        # Animated Cursor clicking Generate at pivot_u
+        draw_cursor_fn(draw, (btn_x2 + 18, btn_y2 + 32), ((btn_x1 + btn_x2) // 2, (btn_y1 + btn_y2) // 2), min(1.0, choreo_u * 1.35), accent_rgb=primary_c)
+        return img
+
+    # -------------------------------------------------------------------------
+    # VERB 2: Dual-Layer Comparison Viewport Reveal (VIDEO_01 Tesla Road Pattern)
+    # -------------------------------------------------------------------------
+    if visual_verb in ("dual_viewport_reveal", " editorial_proof_slide") or archetype == "hero_comparison_duel":
+        reveal_p = min(1.0, max(0.0, (choreo_u - pivot_u * 0.85) / max(0.15, 1.0 - pivot_u * 0.85)))
+        ease_rev = 1.0 - math.pow(1.0 - reveal_p, 3.0)
+
+        # Top Headline ("AI sees roads")
+        hdr_bbox = (st_x1 + 16, int(h * 0.095), st_x2 - 16, int(h * 0.195))
+        img = _draw_mixed_editorial_headline(
+            img, hdr_bbox, clause_a, "", txt_main,
+            sticker_bg_rgb=primary_c, sticker_txt_rgb=(255, 255, 255),
+            progress_u=choreo_u, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn, draw_contained_text_fn=draw_contained_text_fn,
+            use_sticker=False
+        )
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        # Central Rounded Viewport Container that expands vertically to show both layers
+        vp_w = int(st_w * 0.84)
+        base_vp_h = int(st_h * (0.42 + 0.24 * ease_rev))
+        vx1 = cx - vp_w // 2
+        vy1 = int(h * 0.215)
+        vx2, vy2 = vx1 + vp_w, vy1 + base_vp_h
+
+        sh_vp = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        ImageDraw.Draw(sh_vp, "RGBA").rounded_rectangle([(vx1 + 5, vy1 + 16), (vx2 + 5, vy2 + 20)], radius=32, fill=(15, 23, 42, 70))
+        img = Image.alpha_composite(img, sh_vp.filter(ImageFilter.GaussianBlur(radius=16)))
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        # Viewport background
+        draw.rounded_rectangle([(vx1, vy1), (vx2, vy2)], radius=28, fill=(15, 23, 42, 255), outline=(*primary_c, 230), width=3)
+
+        split_y = vy1 + int(base_vp_h * (0.48 * ease_rev))
+        # Upper Revealed Layer (Real-world Proof / Result Layer) when ease_rev > 0.08
+        if ease_rev > 0.08 and (split_y - vy1) > 45:
+            draw.rounded_rectangle([(vx1 + 6, vy1 + 6), (vx2 - 6, split_y)], radius=22, fill=(238, 244, 248, 255))
+            # Horizon & perspective lines inside upper viewport
+            mid_ux = (vx1 + vx2) // 2
+            hor_y = vy1 + int((split_y - vy1) * 0.38)
+            draw.line([(vx1 + 16, hor_y), (vx2 - 16, hor_y)], fill=(148, 163, 184, 180), width=2)
+            draw.line([(mid_ux - 20, hor_y), (vx1 + 30, split_y - 6)], fill=(*primary_c, 210), width=3)
+            draw.line([(mid_ux + 20, hor_y), (vx2 - 30, split_y - 6)], fill=(*primary_c, 210), width=3)
+            draw.rounded_rectangle([(vx1 + 20, vy1 + 16), (vx2 - 20, vy1 + 56)], radius=12, fill=(*primary_c, 245))
+            draw_contained_text_fn(draw, (vx1 + 28, vy1 + 18, vx2 - 28, vy1 + 54), f"✔ {clause_b}", initial_font_size=22, fill=(255, 255, 255, 255))
+
+        # Lower Digital Radar / Telemetry Layer (like the Tesla FSD telemetry screen in VIDEO_01)
+        low_y1 = max(vy1 + 8, split_y + 4)
+        draw.rounded_rectangle([(vx1 + 6, low_y1), (vx2 - 6, vy2 - 6)], radius=22, fill=(17, 24, 39, 255))
+        # Telemetry lane lines & HUD metrics
+        l_cx = (vx1 + vx2) // 2
+        l_top = low_y1 + int((vy2 - low_y1) * 0.25)
+        for li in (-1, 1):
+            draw.line([(l_cx + li * 28, l_top), (l_cx + li * int(vp_w * 0.36), vy2 - 14)], fill=(56, 189, 248, 195), width=3)
+        # Scanning radar pulse
+        rad_w = int(vp_w * 0.32)
+        draw.ellipse([(l_cx - rad_w // 2, l_top + 16), (l_cx + rad_w // 2, l_top + 16 + rad_w // 2)], outline=(*primary_c, 220), width=2)
+        f_hud = get_font_fn(22, bold=True)
+        hud_num = kpi_val if kpi_val else "99.4%"
+        draw_arabic_text_fn(draw, (l_cx, l_top + 28), hud_num, font=f_hud, fill=(56, 189, 248, 255))
+        draw_contained_text_fn(draw, (vx1 + 24, vy2 - 54, vx2 - 24, vy2 - 14), clause_a, initial_font_size=22, fill=(226, 232, 240, 255))
+
+        # Bottom Comparison Conclusion ("BETTER THAN HUMANS" in VIDEO_01)
+        if ease_rev > 0.15:
+            bot_bbox = (st_x1 + 16, vy2 + 16, st_x2 - 16, min(int(h * 0.79), vy2 + 115))
+            img = _draw_mixed_editorial_headline(
+                img, bot_bbox, clause_b, kpi_val, txt_main,
+                sticker_bg_rgb=sticker_bg, sticker_txt_rgb=sticker_txt,
+                progress_u=ease_rev, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn, draw_contained_text_fn=draw_contained_text_fn,
+                tilt_deg=-2.0, use_sticker=True
+            )
+        return img
+
+    # -------------------------------------------------------------------------
+    # VERB 3: 2.5D Camera Pan Right + 3D Acid-Yellow Sphere (VIDEO_03 Morningstar Pattern)
+    # -------------------------------------------------------------------------
+    if visual_verb == "camera_25d_pan_right":
+        pan_p = min(1.0, max(0.0, (choreo_u - pivot_u * 0.85) / max(0.18, 1.0 - pivot_u * 0.85)))
+        ease_pan = 1.0 - math.pow(1.0 - pan_p, 3.0)
+        pan_dx = -int(w * 0.20 * ease_pan)
+
+        draw = ImageDraw.Draw(img, "RGBA")
+        # Editorial Viewfinder Corner Brackets (like VIDEO_03 MORNINGSTAR)
+        _draw_editorial_viewfinder_brackets(
+            draw, (int(w * 0.07), int(h * 0.08), int(w * 0.93), int(h * 0.79)),
+            color_rgba=(*txt_main, 145), arm_len=42, width=2
+        )
+
+        # Giant 3D Shaded Sphere Anchor (Acid Yellow or Primary Studio Accent)
+        sph_r = int(min(st_w, st_h) * 0.34 * min(1.0, choreo_u * 2.8))
+        sph_cx = cx + pan_dx
+        sph_cy = cy + int(st_h * 0.04)
+        sphere_col = sticker_bg if sum(sticker_bg) > 380 else primary_c
+        img = _draw_3d_shaded_sphere(img, sph_cx, sph_cy, sph_r, base_rgb=sphere_col)
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        # Foreground High-Contrast Subject Card / Cutout overlapping the 3D sphere
+        fg_w, fg_h = int(sph_r * 1.15), int(sph_r * 1.38)
+        fx1, fy1 = sph_cx - fg_w // 2 + 14, sph_cy - fg_h // 2 + 10
+        fx2, fy2 = fx1 + fg_w, fy1 + fg_h
+        draw.rounded_rectangle([(fx1 + 6, fy1 + 14), (fx2 + 6, fy2 + 14)], radius=24, fill=(10, 12, 18, 85))
+        draw.rounded_rectangle([(fx1, fy1), (fx2, fy2)], radius=24, fill=(20, 24, 34, 252), outline=(255, 255, 255, 220), width=2)
+        if svgs:
+            svg_sz = int(min(fg_w, fg_h) * 0.68)
+            s_img = render_recolored_svg_motion_canvas(
+                svg_xml=svgs[0], width=svg_sz, height=svg_sz,
+                theme_palette={"primary": sphere_col, "secondary": (255, 255, 255), "accent": primary_c},
+                choreo_u=choreo_u, global_t=global_t, stroke_scale=1.15
+            )
+            img.alpha_composite(s_img, ((fx1 + fx2) // 2 - svg_sz // 2, (fy1 + fy2) // 2 - svg_sz // 2))
+            draw = ImageDraw.Draw(img, "RGBA")
+
+        # Top-left Clause A staggered typography ("every cut")
+        tl_x = int(w * 0.30) + pan_dx // 2
+        tl_y = int(h * 0.16)
+        f_top = get_font_fn(max(30, int(h * 0.032)), bold=True)
+        draw_arabic_text_fn(draw, (tl_x, tl_y), clause_a, font=f_top, fill=(*txt_main, 255))
+
+        # Right-side Revealed Clause B Typography when camera pans right ("is a decision" / "than a SKILL")
+        if ease_pan > 0.12:
+            rev_alpha = int(255 * min(1.0, (ease_pan - 0.12) * 1.6))
+            rx_center = int(w * 0.72)
+            ry_center = sph_cy - int(sph_r * 0.15)
+            card_rw = int(w * 0.42)
+            card_rh = int(h * 0.16)
+            rx1, ry1 = rx_center - card_rw // 2, ry_center - card_rh // 2
+            rx2, ry2 = rx1 + card_rw, ry1 + card_rh
+            draw.rounded_rectangle([(rx1 + 4, ry1 + 10), (rx2 + 4, ry2 + 10)], radius=20, fill=(15, 23, 42, int(55 * ease_pan)))
+            draw.rounded_rectangle([(rx1, ry1), (rx2, ry2)], radius=20, fill=(255, 255, 255, rev_alpha) if is_light_bg else (28, 36, 56, rev_alpha), outline=(*primary_c, rev_alpha), width=3)
+            draw_contained_text_fn(draw, (rx1 + 14, ry1 + 12, rx2 - 14, ry2 - 12), clause_b, initial_font_size=32, fill=(*txt_main, rev_alpha))
+        return img
+
+    # -------------------------------------------------------------------------
+    # VERB 4: Minimalist Pattern-Interrupt Climax Reset (VIDEO_01 Soul & VIDEO_03 Feeling)
+    # -------------------------------------------------------------------------
+    if visual_verb == "minimalist_climax_reset":
+        draw = ImageDraw.Draw(img, "RGBA")
+        # High negative space (>80% clean canvas) + Refined central anatomical/emblem engraving
+        emblem_r = int(min(st_w, st_h) * 0.22 * min(1.0, choreo_u * 2.5))
+        # Subtle concentric studio rings
+        for ri in (1, 2):
+            rr = emblem_r + ri * 24
+            draw.ellipse([(cx - rr, cy - rr), (cx + rr, cy + rr)], outline=(*txt_main, 28 // ri), width=2)
+
+        img = _draw_3d_shaded_sphere(img, cx, cy, emblem_r, base_rgb=(235, 238, 242) if is_light_bg else (38, 46, 68))
+        draw = ImageDraw.Draw(img, "RGBA")
+        draw.ellipse([(cx - emblem_r, cy - emblem_r), (cx + emblem_r, cy + emblem_r)], outline=(*txt_main, 210), width=3)
+
+        if svgs:
+            svg_sz = int(emblem_r * 1.35)
+            s_img = render_recolored_svg_motion_canvas(
+                svg_xml=svgs[0], width=svg_sz, height=svg_sz,
+                theme_palette={"primary": txt_main, "secondary": primary_c, "accent": secondary_c},
+                choreo_u=choreo_u, global_t=global_t, stroke_scale=1.1
+            )
+            img.alpha_composite(s_img, (cx - svg_sz // 2, cy - svg_sz // 2))
+            draw = ImageDraw.Draw(img, "RGBA")
+
+        # Typography split across / above the emblem ("It's a feeling" / "HAVE A SOUL")
+        f_clim = get_font_fn(max(32, int(h * 0.036)), bold=True)
+        draw_arabic_text_fn(draw, (cx, cy - emblem_r - 58), clause_a, font=f_clim, fill=(*txt_main, 255))
+
+        if choreo_u >= 0.30:
+            p2 = min(1.0, (choreo_u - 0.30) / 0.35)
+            ul_w = int(min(st_w * 0.65, max(160, len(clause_b) * 20)) * p2)
+            by_txt = cy + emblem_r + 54
+            draw_arabic_text_fn(draw, (cx, by_txt), clause_b, font=f_clim, fill=(*primary_c, int(255 * p2)))
+            draw.line([(cx - ul_w // 2, by_txt + 28), (cx + ul_w // 2, by_txt + 28)], fill=(*txt_main, int(255 * p2)), width=4)
+        return img
+
+    # -------------------------------------------------------------------------
+    # VERB 5 (Default): Anchor & Contextual Displace (VIDEO_01 Phone -> AI Robot / Healthcare -> News Proof)
+    # -------------------------------------------------------------------------
+    disp_p = min(1.0, max(0.0, (choreo_u - pivot_u) / max(0.16, 1.0 - pivot_u)))
+    ease_disp = 1.0 - math.pow(1.0 - disp_p, 3.0)
+
+    # State A Object starts in center, then smoothly shifts down (y + 220px) at pivot_u while remaining 40% visible as anchor!
+    anchor_cy = cy + int(st_h * 0.32 * ease_disp)
+    anchor_scale = 1.0 - 0.14 * ease_disp
+    card_w = int(st_w * 0.62 * anchor_scale)
+    card_h = int(st_h * 0.48 * anchor_scale)
+    ax1, ay1 = cx - card_w // 2, anchor_cy - card_h // 2
+    ax2, ay2 = ax1 + card_w, ay1 + card_h
+
+    # Soft studio background circles (like the grey circles in VIDEO_01 Phone & Robot scene)
+    draw = ImageDraw.Draw(img, "RGBA")
+    for ci_x, ci_y, ci_r in [(-int(st_w * 0.28), -int(st_h * 0.22), 75), (int(st_w * 0.30), int(st_h * 0.18), 95), (0, -int(st_h * 0.30), 42)]:
+        draw.ellipse([(cx + ci_x - ci_r, cy + ci_y - ci_r), (cx + ci_x + ci_r, cy + ci_y + ci_r)], fill=(148, 163, 184, 38 if is_light_bg else 24))
+
+    # State A Headline (fades/moves as State B arrives)
+    if ease_disp < 0.12:
+        hdr_a_bbox = (st_x1 + 16, int(h * 0.105), st_x2 - 16, int(h * 0.205))
+        img = _draw_mixed_editorial_headline(
+            img, hdr_a_bbox, clause_a, "", txt_main,
+            sticker_bg_rgb=sticker_bg, sticker_txt_rgb=sticker_txt,
+            progress_u=choreo_u, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn, draw_contained_text_fn=draw_contained_text_fn,
+            tilt_deg=-2.5, use_sticker=True
+        )
+        draw = ImageDraw.Draw(img, "RGBA")
+
+    # Render State A Anchor Device / Card with Staggered Pop-Up Notification Bars (VIDEO_01 Phone UI Bars)
+    sh_a = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(sh_a, "RGBA").rounded_rectangle([(ax1 + 6, ay1 + 16), (ax2 + 6, ay2 + 18)], radius=32, fill=(15, 23, 42, 68))
+    img = Image.alpha_composite(img, sh_a.filter(ImageFilter.GaussianBlur(radius=15)))
+    draw = ImageDraw.Draw(img, "RGBA")
+
+    draw.rounded_rectangle([(ax1, ay1), (ax2, ay2)], radius=30, fill=(15, 23, 42, 255), outline=(*primary_c, 240), width=4)
+    draw.rounded_rectangle([(ax1 + 10, ay1 + 12), (ax2 - 10, ay2 - 12)], radius=22, fill=(248, 250, 252, 255) if is_light_bg else (28, 38, 64, 255))
+
+    # 3 Staggered UI Notification Cards popping out horizontally across the phone frame (exact VIDEO_01 f144-f180 visual!)
+    n_notifs = 3
+    notif_h = max(42, int(card_h * 0.20))
+    for ni in range(n_notifs):
+        n_sp = min(1.0, max(0.0, (choreo_u - 0.08 - ni * 0.08) * 3.2))
+        if n_sp <= 0.05:
+            continue
+        ny1 = ay1 + int(card_h * 0.18) + ni * (notif_h + 12)
+        ny2 = ny1 + notif_h
+        nw_pop = int(card_w * 1.14 * n_sp)
+        nx1, nx2 = cx - nw_pop // 2, cx + nw_pop // 2
+        draw.rounded_rectangle([(nx1 + 3, ny1 + 6), (nx2 + 3, ny2 + 6)], radius=14, fill=(15, 23, 42, 42))
+        draw.rounded_rectangle([(nx1, ny1), (nx2, ny2)], radius=14, fill=(255, 255, 255, 252), outline=(226, 232, 240, 255), width=2)
+        # Avatar square + skeleton lines + text
+        av_sz = notif_h - 16
+        draw.rounded_rectangle([(nx2 - av_sz - 12, ny1 + 8), (nx2 - 12, ny2 - 8)], radius=8, fill=(*primary_c, 225))
+        lbl_n = sub_items[ni % len(sub_items)] if sub_items else (clause_a if ni == 0 else clause_b)
+        draw_contained_text_fn(draw, (nx1 + 14, ny1 + 6, nx2 - av_sz - 20, ny2 - 6), lbl_n, initial_font_size=24, fill=(17, 24, 39, 255))
+
+    # State B Causal Agent / 3D AI Character / Editorial Proof Card arriving in Upper-Center Stage at pivot_u!
+    if ease_disp > 0.06:
+        b_cy = int(h * 0.30) + int(45 * (1.0 - ease_disp))
+        b_r = int(min(st_w, st_h) * 0.22 * ease_disp)
+
+        # 3D Floating AI Robot / Editorial Agent Card (like the 3D white AI robot with glowing eyes in VIDEO_01 f192-f228)
+        img = _draw_3d_shaded_sphere(img, cx, b_cy, b_r, base_rgb=(245, 247, 250) if is_light_bg else primary_c)
+        draw = ImageDraw.Draw(img, "RGBA")
+
+        visor_w, visor_h = int(b_r * 1.25), int(b_r * 0.78)
+        vx1, vy1 = cx - visor_w // 2, b_cy - visor_h // 2
+        vx2, vy2 = vx1 + visor_w, vy1 + visor_h
+        draw.rounded_rectangle([(vx1, vy1), (vx2, vy2)], radius=22, fill=(17, 24, 39, 255), outline=(*primary_c, 255), width=3)
+
+        if svgs:
+            svg_sz = int(min(visor_w, visor_h) * 0.74)
+            s_img = render_recolored_svg_motion_canvas(
+                svg_xml=svgs[0], width=svg_sz, height=svg_sz,
+                theme_palette={"primary": primary_c, "secondary": sticker_bg, "accent": (255, 255, 255)},
+                choreo_u=choreo_u, global_t=global_t, stroke_scale=1.15
+            )
+            img.alpha_composite(s_img, (cx - svg_sz // 2, b_cy - svg_sz // 2))
+            draw = ImageDraw.Draw(img, "RGBA")
+
+        # State B Headline & Highlighted Proof Banner above the displaced anchor
+        hdr_b_bbox = (st_x1 + 16, int(h * 0.10), st_x2 - 16, int(h * 0.20))
+        img = _draw_mixed_editorial_headline(
+            img, hdr_b_bbox, clause_b, kpi_val, txt_main,
+            sticker_bg_rgb=primary_c, sticker_txt_rgb=(255, 255, 255),
+            progress_u=ease_disp, get_font_fn=get_font_fn, draw_arabic_text_fn=draw_arabic_text_fn, draw_contained_text_fn=draw_contained_text_fn,
+            tilt_deg=-2.0, use_sticker=True
+        )
+
+    return img
+
+
 def render_contextual_hero_illustration(
     img: Image.Image,
     archetype: str,
@@ -603,6 +1174,29 @@ def render_contextual_hero_illustration(
     sp_main = max(0.15, min(1.12, _spring(choreo_u, delay=0.04, dur=0.40)))
     float_dy = int(5.0 * math.sin(global_t * 2.8))
     cy += float_dy
+
+    visual_verb = str(scene_meta.get("visual_verb") or "").strip()
+    design_fam = str(style_spec.get("design_family") or style_spec.get("style_family_id") or "")
+    if visual_verb or design_fam in ("honeyy_highkey_3d_ui", "divyansh_kinetic_contrast", "morningstar_editorial_25d"):
+        active_verb = visual_verb or ("camera_25d_pan_right" if design_fam == "morningstar_editorial_25d" else ("prompt_to_result_sim" if step_num_v % 3 == 2 else "anchor_and_displace"))
+        return render_reference_multi_state_choreography(
+            img=img,
+            visual_verb=active_verb,
+            archetype=archetype,
+            stage_bbox=stage_bbox,
+            choreo_u=choreo_u,
+            global_t=global_t,
+            style_spec=style_spec,
+            scene_meta=scene_meta,
+            sub_items=sub_items,
+            kpi_val=kpi_val,
+            kpi_lbl=kpi_lbl,
+            concept_title=concept_title,
+            draw_contained_text_fn=draw_contained_text_fn,
+            draw_arabic_text_fn=draw_arabic_text_fn,
+            get_font_fn=get_font_fn,
+            draw_cursor_fn=draw_cursor_fn
+        )
 
     # -------------------------------------------------------------------------
     # 0. web_dynamic_scene: مشهد الفيكتور الحي المجلوب من الإنترنت والملون بثيم الفيديو
@@ -800,7 +1394,7 @@ def render_contextual_hero_illustration(
     # 5. hero_chrono_speedometer: 3 أشكال حركية متجددة للسرعة والزمن (Web Vector / Dual Rings / Turbo Gauge)
     # -------------------------------------------------------------------------
     if archetype == "hero_chrono_speedometer":
-        if False:
+        if variant_id == 2:
             return render_web_fetched_motion_scene(
                 img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
                 style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
@@ -1022,7 +1616,7 @@ def render_contextual_hero_illustration(
     # 13. hero_platform_workspace: واجهة الاستوديو الذكي متعددة الأنماط بدون تكرار العنوان
     # -------------------------------------------------------------------------
     if archetype == "hero_platform_workspace":
-        if False:
+        if variant_id == 2:
             return render_web_fetched_motion_scene(
                 img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
                 style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,
@@ -1102,7 +1696,7 @@ def render_contextual_hero_illustration(
     # -------------------------------------------------------------------------
     # 16. hero_cta_magnet_finale: خاتمة سينمائية متجددة (Web Vector / Crown Badge / Rocket Portal)
     # -------------------------------------------------------------------------
-    if False:
+    if variant_id == 2:
         return render_web_fetched_motion_scene(
             img=img, stage_bbox=stage_bbox, choreo_u=choreo_u, global_t=global_t,
             style_spec=style_spec, scene_meta=scene_meta, concept_title=concept_title,

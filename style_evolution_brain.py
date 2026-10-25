@@ -383,6 +383,159 @@ def match_speech_to_visual_archetype(
 
 
 PRO_STUDIO_STYLE_FAMILIES: Dict[str, Dict[str, Any]] = {
+    "honeyy_highkey_3d_ui": {
+        "style_id": "honeyy_highkey_3d_ui",
+        "label_ar": "✨ ستايل الاستوديو الأبيض الثلاثي الأبعاد والواجهات التفاعلية (VIDEO_01 High-Key 3D & UI Studio)",
+        "design_family": "honeyy_highkey_3d_ui",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": True,
+        "header_style": "none_clean",
+        "headline_style": "editorial_contrast_serif",
+        "card_tilt_deg": 0.0,
+        "preferred_archetypes": [
+            "hero_smartphone_reels", "hero_ai_neural_core", "hero_platform_workspace",
+            "hero_comparison_duel", "hero_problem_radar_fix", "hero_chrono_speedometer",
+            "hero_creative_palette_pen", "hero_waveform_scissors", "hero_viral_rocket_chart",
+            "hero_camera_production", "hero_sound_wave_mixer", "hero_shield_durability",
+            "hero_cta_magnet_finale", "web_dynamic_scene"
+        ],
+        "unified_palette": {
+            "top_bg": (250, 251, 253),
+            "bottom_bg": (232, 236, 244),
+            "glow": (148, 163, 184),
+            "primary": (16, 185, 129),
+            "secondary": (15, 23, 42),
+            "accent": (124, 58, 237),
+            "card_bg": (255, 255, 255),
+            "is_light_bg": True,
+            "sticker_bg": (16, 185, 129),
+            "sticker_txt": (255, 255, 255),
+            "headline_txt": (17, 24, 39)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (252, 253, 255), "bottom_bg": (236, 240, 248), "glow": (148, 163, 184),
+                "primary": (16, 185, 129), "secondary": (15, 23, 42), "accent": (124, 58, 237),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (16, 185, 129),
+                "sticker_txt": (255, 255, 255), "headline_txt": (17, 24, 39)
+            },
+            "body_steps": {
+                "top_bg": (248, 250, 252), "bottom_bg": (228, 234, 244), "glow": (148, 163, 184),
+                "primary": (16, 185, 129), "secondary": (15, 23, 42), "accent": (124, 58, 237),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (16, 185, 129),
+                "sticker_txt": (255, 255, 255), "headline_txt": (17, 24, 39)
+            },
+            "outro_finale": {
+                "top_bg": (252, 253, 255), "bottom_bg": (238, 242, 248), "glow": (203, 213, 225),
+                "primary": (15, 23, 42), "secondary": (16, 185, 129), "accent": (15, 23, 42),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (15, 23, 42),
+                "sticker_txt": (255, 255, 255), "headline_txt": (17, 24, 39)
+            }
+        }
+    },
+    "divyansh_kinetic_contrast": {
+        "style_id": "divyansh_kinetic_contrast",
+        "label_ar": "🟢 ستايل التباين الحركي الزمردي والملصقات المائلة (VIDEO_02 Kinetic Green & Contrast Act)",
+        "design_family": "divyansh_kinetic_contrast",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "none_clean",
+        "headline_style": "sticker_highlight",
+        "card_tilt_deg": -2.5,
+        "preferred_archetypes": [
+            "hero_problem_radar_fix", "hero_chrono_speedometer", "hero_smartphone_reels",
+            "hero_ai_neural_core", "hero_platform_workspace", "hero_creative_palette_pen",
+            "hero_waveform_scissors", "hero_viral_rocket_chart", "hero_camera_production",
+            "hero_sound_wave_mixer", "hero_shield_durability", "hero_cta_magnet_finale",
+            "web_dynamic_scene"
+        ],
+        "unified_palette": {
+            "top_bg": (252, 254, 253),
+            "bottom_bg": (232, 245, 241),
+            "glow": (0, 168, 132),
+            "primary": (0, 168, 132),
+            "secondary": (250, 204, 21),
+            "accent": (15, 23, 42),
+            "card_bg": (255, 255, 255),
+            "is_light_bg": True,
+            "sticker_bg": (250, 204, 21),
+            "sticker_txt": (17, 24, 39),
+            "headline_txt": (17, 24, 39)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (252, 254, 253), "bottom_bg": (235, 246, 242), "glow": (0, 168, 132),
+                "primary": (0, 168, 132), "secondary": (250, 204, 21), "accent": (17, 24, 39),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (250, 204, 21),
+                "sticker_txt": (17, 24, 39), "headline_txt": (17, 24, 39)
+            },
+            "body_steps": {
+                "top_bg": (8, 14, 18), "bottom_bg": (14, 28, 34), "glow": (0, 212, 164),
+                "primary": (0, 212, 164), "secondary": (250, 204, 21), "accent": (255, 107, 0),
+                "card_bg": (16, 26, 34), "is_light_bg": False, "sticker_bg": (0, 168, 132),
+                "sticker_txt": (255, 255, 255), "headline_txt": (255, 255, 255)
+            },
+            "outro_finale": {
+                "top_bg": (250, 252, 251), "bottom_bg": (232, 244, 239), "glow": (0, 168, 132),
+                "primary": (0, 168, 132), "secondary": (17, 24, 39), "accent": (250, 204, 21),
+                "card_bg": (255, 255, 255), "is_light_bg": True, "sticker_bg": (0, 168, 132),
+                "sticker_txt": (255, 255, 255), "headline_txt": (17, 24, 39)
+            }
+        }
+    },
+    "morningstar_editorial_25d": {
+        "style_id": "morningstar_editorial_25d",
+        "label_ar": "🍋 ستايل الكولاج التحريري الرمادي والأصفر الحمضي (VIDEO_03 Editorial 2.5D Collage & Sphere)",
+        "design_family": "morningstar_editorial_25d",
+        "has_grid": False,
+        "has_floating_diamonds": False,
+        "has_giant_bg_numbers": False,
+        "header_style": "editorial_viewfinder",
+        "headline_style": "editorial_contrast_serif",
+        "card_tilt_deg": 0.0,
+        "preferred_archetypes": [
+            "hero_camera_production", "hero_waveform_scissors", "hero_creative_palette_pen",
+            "hero_platform_workspace", "hero_smartphone_reels", "hero_ai_neural_core",
+            "hero_comparison_duel", "hero_problem_radar_fix", "hero_chrono_speedometer",
+            "hero_viral_rocket_chart", "hero_sound_wave_mixer", "hero_shield_durability",
+            "hero_cta_magnet_finale", "web_dynamic_scene"
+        ],
+        "unified_palette": {
+            "top_bg": (236, 236, 236),
+            "bottom_bg": (196, 198, 202),
+            "glow": (221, 248, 0),
+            "primary": (205, 232, 0),
+            "secondary": (20, 20, 22),
+            "accent": (24, 24, 27),
+            "card_bg": (248, 248, 248),
+            "is_light_bg": True,
+            "sticker_bg": (221, 248, 0),
+            "sticker_txt": (18, 18, 20),
+            "headline_txt": (18, 18, 20)
+        },
+        "acts": {
+            "hook_problem": {
+                "top_bg": (236, 236, 236), "bottom_bg": (196, 198, 202), "glow": (221, 248, 0),
+                "primary": (205, 232, 0), "secondary": (20, 20, 22), "accent": (24, 24, 27),
+                "card_bg": (248, 248, 248), "is_light_bg": True, "sticker_bg": (221, 248, 0),
+                "sticker_txt": (18, 18, 20), "headline_txt": (18, 18, 20)
+            },
+            "body_steps": {
+                "top_bg": (234, 234, 234), "bottom_bg": (192, 194, 198), "glow": (221, 248, 0),
+                "primary": (205, 232, 0), "secondary": (20, 20, 22), "accent": (24, 24, 27),
+                "card_bg": (248, 248, 248), "is_light_bg": True, "sticker_bg": (221, 248, 0),
+                "sticker_txt": (18, 18, 20), "headline_txt": (18, 18, 20)
+            },
+            "outro_finale": {
+                "top_bg": (242, 242, 242), "bottom_bg": (204, 206, 210), "glow": (180, 180, 185),
+                "primary": (24, 24, 27), "secondary": (205, 232, 0), "accent": (24, 24, 27),
+                "card_bg": (250, 250, 250), "is_light_bg": True, "sticker_bg": (24, 24, 27),
+                "sticker_txt": (255, 255, 255), "headline_txt": (18, 18, 20)
+            }
+        }
+    },
     "haamza_15s_cinema": {
         "style_id": "haamza_15s_cinema",
         "label_ar": "🌟 ستايل المونتاج السينمائي الفاخر 15s (تدرج كريمي دافئ ومخملي بدون مربعات • انتقالات سلسة وموشن ثلاثي الأبعاد)",
@@ -1343,7 +1496,7 @@ def build_dynamic_scene_style_assignment(
             "header_style": chosen_fam["header_style"],
             "headline_style": chosen_fam["headline_style"],
             "card_tilt_deg": float(chosen_fam.get("card_tilt_deg", 1.2)),
-            "palette": dict(unified_pal),
+            "palette": dict(chosen_fam.get("acts", {}).get(act_name, unified_pal)),
             "spring_stiffness": 215.0,
             "spring_damping": 13.5,
             "stagger_delay_sec": 0.042,
