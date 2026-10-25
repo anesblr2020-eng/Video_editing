@@ -82,3 +82,13 @@
 - Added server-font text sanitization to remove unsupported pictographs/control symbols that render as tofu squares.
 - Removed the false mapping from “مجاني” to `0 DA`; free is not a spoken numeric value.
 - Expanded regression suite to 19 tests. All pass; a full fresh render still requires the ASR dependency in the deployment environment.
+
+
+## الإصلاح الخامس — تقوية عامة للمخطط الدلالي وجودة النص
+- تقطيع المشاهد صار يعتمد على الوقفات والسياق ومدة المقطع، لا على ست كلمات ثابتة.
+- تطبيع العربية والبادئات المتصلة لتحسين فهم صيغ الدارجة مثل «للسوشيال» و«بالذكاء».
+- العناوين الاحتياطية مقتبسة من الكلام، مع فصل CTA عن الشرح ومنع العبارات العامة.
+- ربط مفتاح Gemini الاختياري بالمخطط الدلالي مع رفض العناوين/القوالب/الرسومات غير المدعومة من الكلام.
+- تمرير مفاتيح مزودي التفريغ ونموذج Whisper ونمط اللهجة من الواجهة إلى خط v2.
+- لفّ النصوص الطويلة داخل البطاقة ومنع تجاوز الحدود، وتحسين مشهد قبل/بعد لحذف الصمت.
+- اختبارات الإصدار: 27/27 فحص صياغة و25/25 اختبار انحدار ناجحة؛ إنتاج كامل جديد ما زال يحتاج اختباراً داخل بيئة المنصة.

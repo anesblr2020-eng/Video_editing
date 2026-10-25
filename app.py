@@ -583,6 +583,11 @@ def run_selected_pipeline(
             storyboard_path=sb_img,
             custom_scenes=custom_planned_scenes,
             progress_callback=progress_cb,
+            gemini_api_key=gemini_key or None,
+            groq_api_key=groq_key or None,
+            openai_api_key=openai_key or None,
+            whisper_model=eff_whisper_model,
+            dialect_mode=dialect,
         )
         # Advance the rotation only after the pipeline returns successfully.
         mem_st["style_rotation_counter"] = rot_c + 1

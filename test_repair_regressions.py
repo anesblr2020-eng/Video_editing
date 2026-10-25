@@ -236,6 +236,104 @@ class RepairPass1Tests(unittest.TestCase):
         self.assertIn("long_silences_after_render", source)
         self.assertIn("فشل فحص الصوت النهائي", source)
 
+    def test_arabic_clitic_normalization_recognizes_social_topic(self):
+        from v2_director import _template_for_clause
+        template, intent, confidence = _template_for_clause("وش ترفع للسوشيال ميديا عموما", [], 1)
+        self.assertEqual(template, "phone_reel_mockup")
+        self.assertEqual(intent, "social_media")
+
+    def test_headlines_are_contiguous_spoken_phrases_and_not_generic_filler(self):
+        from v2_director import generate_scene_plan
+        transcript = "راك تعاني من مشكل الوقت وتهدر على السوشيال ميديا ثم تنحي الصمت من الصوت"
+        words = []
+        t = 0.0
+        for token in transcript.split():
+            words.append({"word": token, "start": t, "end": t + 0.22})
+            t += 0.25
+        result = generate_scene_plan(words, duration=t)
+        generic = {"مشهد مختلف", "فكرة جديدة", "تفصيل مهم", "الفكرة الرئيسية", "ميديا عموما"}
+        self.assertTrue(result["scenes"])
+        for scene in result["scenes"]:
+            for headline in scene.get("keywords", []):
+                self.assertIn(headline, scene["speech"])
+                self.assertNotIn(headline, generic)
+        self.assertLessEqual(sum(1 for sc in result["scenes"] if sc["template"] == "phone_reel_mockup"), 1)
+
+    def test_gemini_semantic_output_is_rejected_when_unrelated_to_speech(self):
+        import json
+        from unittest.mock import patch
+        from v2_director import _apply_gemini_semantic_director
+        class FakeResponse:
+            def raise_for_status(self):
+                return None
+            def json(self):
+                return {"candidates": [{"content": {"parts": [{"text": json.dumps({"scenes": [{
+                    "index": 0,
+                    "headline": "اشترك الآن",
+                    "secondary": "رابط التسجيل",
+                    "template": "cta_end",
+                    "visual_query": "cta_arrow_down",
+                    "intent": "cta"
+                }]}, ensure_ascii=False)}]}}]}
+        source = [{"start": 0.0, "end": 2.0, "speech": "المنصة تعالج الصوت وتحذف الصمت", "template": "concept_icon",
+                   "keywords": ["تعالج الصوت"], "visual_query": "waveform_scissors", "numbers": []}]
+        with patch("requests.post", return_value=FakeResponse()):
+            result, audit = _apply_gemini_semantic_director(source, "test-key")
+        self.assertEqual(result[0]["start"], source[0]["start"])
+        self.assertEqual(result[0]["end"], source[0]["end"])
+        self.assertEqual(result[0]["keywords"], ["تعالج الصوت"])
+        self.assertEqual(result[0]["template"], "concept_icon")
+        self.assertEqual(result[0]["visual_query"], "waveform_scissors")
+        self.assertTrue(any("rejected" in item.lower() for item in audit))
+
+    def test_v2_pipeline_receives_optional_transcription_and_director_keys(self):
+        source = (BASE / "app.py").read_text(encoding="utf-8")
+        self.assertIn("gemini_api_key=gemini_key or None", source)
+        self.assertIn("groq_api_key=groq_key or None", source)
+        self.assertIn("openai_api_key=openai_key or None", source)
+        self.assertIn("whisper_model=eff_whisper_model", source)
+        self.assertIn("dialect_mode=dialect", source)
+
+    def test_scene_planner_keeps_context_and_separates_cta_from_feature_scene(self):
+        from v2_director import generate_scene_plan
+        transcript = "راك تعاني من مشكل الوقت عندكش الوقت باش تمونطي فيديو ووش ترفع للسوشيال ميديا عموما في انستغرام والسوشيال ميديا يموتوا بلاي كاين منصة اسمها إيديتينغ تنحي الصمت من الفيديو بالذكاء الاصطناعي بشكل مجاني رابط التسجيل في أسفل الفيديو"
+        words = []
+        t = 0.0
+        for token in transcript.split():
+            words.append({"word": token, "start": t, "end": t + 0.22})
+            t += 0.25
+        scenes = generate_scene_plan(words, duration=t)["scenes"]
+        cta_scenes = [scene for scene in scenes if scene["template"] == "cta_end"]
+        self.assertEqual(len(cta_scenes), 1)
+        self.assertTrue(cta_scenes[0]["speech"].startswith("رابط"))
+        self.assertNotIn("الاصطناعي", cta_scenes[0]["speech"])
+        audio_scenes = [scene for scene in scenes if scene.get("intent") == "audio_edit"]
+        self.assertTrue(audio_scenes)
+        self.assertTrue(any("الصمت" in " ".join(scene["keywords"]) for scene in audio_scenes))
+        self.assertLessEqual(sum(1 for scene in scenes if scene["template"] == "phone_reel_mockup"), 1)
+        for scene in scenes:
+            for title in scene.get("keywords", []):
+                self.assertIn(title, scene["speech"])
+
+    def test_long_scene_headline_wraps_inside_safe_card_bounds(self):
+        import json
+        import v2_renderer
+        with (BASE / "themes.json").open(encoding="utf-8") as handle:
+            theme = json.load(handle)["themes"]["obsidian_gold"]
+        scene = {
+            "template": "kinetic_hook",
+            "speech": "هذا مثال طويل لاختبار العنوان حتى لا يخرج خارج حدود البطاقة",
+            "keywords": ["هذا مثال طويل لاختبار العنوان حتى لا يخرج خارج حدود البطاقة"],
+            "visual_query": "camera_clapperboard", "start": 0.0, "end": 3.0,
+        }
+        _, report = v2_renderer.render_scene_card_and_measure_dom(scene, theme, animation_t=0.5)
+        self.assertTrue(report["headlines"])
+        for headline in report["headlines"]:
+            rect = headline["rect"]
+            self.assertGreaterEqual(rect["left"], 60)
+            self.assertLessEqual(rect["right"], 1020)
+            self.assertLessEqual(rect["width"], 880)
+
 
 if __name__ == "__main__":
     unittest.main()

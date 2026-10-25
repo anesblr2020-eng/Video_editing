@@ -1,9 +1,9 @@
 {
   "project": "منصة مونتاج بالذكاء الاصطناعي",
-  "repair_track": "repair-pass-4",
-  "current_phase": 4,
-  "phase_status": "pass_4_code_complete_19_tests_passed; fresh_end_to_end_render_still_unverified_in_test_environment",
-  "last_completed_action": "Inspected user output 7491.mp4; added final duration/silence guard, semantic non-repeating headlines, text sanitization, corrected free-vs-number classification, and stronger scene-template intent rules.",
+  "repair_track": "repair-pass-5",
+  "current_phase": 5,
+  "phase_status": "pass_5_code_complete_25_tests_passed; full_end_to_end_render_still_unverified_in_test_environment",
+  "last_completed_action": "Audited user output 7584.mp4; fixed context-aware segmentation, Arabic clitic normalization, grounded contiguous titles, CTA isolation, optional guarded Gemini semantic planning, ASR key/model/dialect propagation, and safe headline wrapping.",
   "source_archive": "1 editing v3.zip",
   "baseline_file_count": 37,
   "baseline_sha256": {
@@ -55,89 +55,74 @@
   ],
   "new_files": [
     "REPAIR_LOG.md",
+    "REPAIR_PASS_5_REPORT.md",
     "REPAIR_STATE.json",
     "tests/test_repair_regressions.py"
   ],
   "deleted_files": [],
   "current_sha256_for_changed_files": {
-    "app.py": "e1be1a4ed3889edde0981a888902c7d10f2ce329a5ba4a47ee589d784bd95cad",
-    "v2_director.py": "6e6365096d3bb93b1b014b300ec2a5532f2ea3a8e2f5861d38d0af54b36f7bd4",
-    "v2_renderer.py": "2f3d6c887cf7cd427149560a8cec98be04389d0b80e09dd77d73ef3d19645f45",
-    "v2_run.py": "507e667ad57aa48ee471263456df718aeb16f3289e19697b0156c01d0a82517b",
+    "app.py": "3a71545d07cb38a92329810bbe9366cf74fb9f80e28579e67eebafa85fbaa79e",
+    "v2_director.py": "eb1d4c48c92bd4ee139c3a2da4982f29d3e6b0d80ed098ee0ace20c8040d6d79",
+    "v2_renderer.py": "46afd2da8b39678535baf23e42b102ebe74d6e892c467aff0e6476b174bc6b55",
+    "v2_run.py": "769752c7ba05410c2a0ffad55f5d052125d7181da4e0993f5d0f2d5724ccb288",
     "v2_transcribe.py": "a9e1d480aa0b7dd3fa74ecc547e2fbfd2b72b0c2a9c0eb6a8c8af7a3d3e5af75",
-    "REPAIR_LOG.md": "b7304594e0039510b0b0f58ed6c266cb53929952a4bd613d8d06542de5b0acba",
-    "tests/test_repair_regressions.py": "12fd088192caa61fbf73157cff15299154871cdffdab75bcf931192bc1c053bd",
-    "v2_validator.py": "609a155e443ea7e9d9b6f34f072e76910ac92c16fa77628cdbc344d20c9f2365",
-    "CHANGES.md": "53f8f6eeb951e592a9c368b97898e46facbb999f4df0d98351ebffadd7701cca"
+    "REPAIR_LOG.md": "2cd703ba39886ac914c9ddaad84233c242602a6714ed03283a100b7372c89682",
+    "tests/test_repair_regressions.py": "11a630ba0701b54784157175022ab48bf4bb6b20f58ecc6750dbb0ed3b2e988e",
+    "v2_validator.py": "cce6dcbe73a0da32e61bce481577754cf8b3d001287b64be66a46a81d5be5fc1",
+    "CHANGES.md": "a2d01c5c71c5f36a6ec9bb26f3314ae93100c526f39683274bb9b952140b6580",
+    "REPAIR_PASS_5_REPORT.md": "e8194e551ef38382ee392258843ffc54ef91cd48d53680bbd6448a10cc489c55"
   },
   "checks": {
     "python_compile": {
-      "passed": 26,
-      "total": 26,
+      "passed": 27,
+      "total": 27,
       "status": "PASS"
     },
     "regression_tests": {
-      "passed": 19,
-      "total": 19,
+      "passed": 25,
+      "total": 25,
       "status": "PASS"
     },
-    "synthetic_silence_removal": {
-      "input_duration_seconds": 4.0,
-      "output_duration_seconds": 2.41,
-      "status": "PASS"
+    "uploaded_video_7584_audio_audit": {
+      "duration_seconds": 31.767,
+      "silence_threshold_db": -38,
+      "min_silence_seconds": 0.8,
+      "detected_long_silence_intervals": 0,
+      "status": "PASS_FOR_LONG_SILENCE_CHECK",
+      "note": "Short sub-0.8s pauses may remain and can be natural; the main pass-5 focus was scene semantics and visual quality."
     },
-    "uploaded_video_silence_removal": {
-      "input_duration_seconds": 43.28,
-      "output_duration_seconds": 31.78,
-      "removed_seconds": 11.5,
-      "silence_over_0_5s_after_filter_at_minus38dB": 0,
-      "status": "PASS"
-    },
-    "semantic_svg_motion_test": {
+    "arabic_clitic_normalization": {
       "status": "PASS",
-      "note": "offline SVG resolved and rendered frame differs across animation timestamps"
+      "note": "Recognizes contracted forms such as للسوشيال and بالذكاء in scene classification."
+    },
+    "context_aware_scene_segmentation": {
+      "status": "PASS",
+      "note": "Scene segmentation uses pauses, ~3s duration, word-count cap, and separate CTA boundary."
+    },
+    "grounded_headlines": {
+      "status": "PASS",
+      "note": "Fallback headlines are contiguous phrases from speech; CTA and audio-edit headlines are tied to their semantic span."
+    },
+    "headline_layout_bounds": {
+      "status": "PASS",
+      "note": "Regression test verifies long Arabic headlines wrap and stay within the card width."
+    },
+    "gemini_semantic_director_guards": {
+      "status": "PASS",
+      "note": "Mocked response with invented CTA/title/visual is rejected; speech and timings stay immutable."
     },
     "full_video_render": {
       "status": "BLOCKED",
-      "reason": "faster_whisper missing in the test environment; a fresh end-to-end platform render was not run."
-    },
-    "live_web_vector_integration": {
-      "status": "NOT_RUN",
-      "note": "network fetching intentionally disabled by default; offline SVG cache/builtin path tested"
-    },
-    "semantic_grounding": {
-      "status": "PASS",
-      "tests": [
-        "non-CTA transcript does not create CTA",
-        "big_number template has no hardcoded zero-dinar claim",
-        "generic template confidence avoids unnecessary forced kinetic_hook"
-      ]
-    },
-    "uploaded_video_7491_audio_audit": {
-      "input_duration_seconds": 43.3,
-      "long_silences_seconds": [
-        6.182,
-        1.113,
-        1.785,
-        2.07,
-        1.143
-      ],
-      "guard_test_copy_duration_after_seconds": 31.8,
-      "long_silences_after_guard": 0,
-      "status": "PASS_ON_TEMPORARY_COPY; original uploaded file unchanged",
-      "note": "A copied test video was remuxed with the known-clean audio and capped to the cleaned timeline; this does not substitute for a new full platform render."
-    },
-    "semantic_scene_plan_sample": {
-      "status": "PASS",
-      "note": "The sample now generates time hook, self-contained platform icon, before/after silence-removal scene, and CTA; avoids generic repeated media headlines."
+      "reason": "faster_whisper is unavailable in the repair sandbox; a new full platform render must be run in deployment."
     }
   },
   "known_environment_note": "The Python test process emitted an unrelated spreadsheet runtime warmup warning from the environment; unittest returned 0 and all five tests passed.",
-  "next_phase": 5,
+  "next_phase": 6,
   "next_phase_tasks": [
-    "Deploy/use this exact pass-4 ZIP in the platform runtime and confirm the chosen style routes through the patched v2_run.py path.",
-    "Run a fresh end-to-end render with an available ASR engine.",
-    "Inspect the new output for silence intervals, duration, subtitle legibility, scene diversity, and speech-visual alignment.",
-    "Rerun all 19 regression tests before accepting further changes."
+    "Run a fresh end-to-end render from the actual platform using this exact pass-5 ZIP and available ASR provider.",
+    "Check scene_plan.json to confirm scenes are context-complete, CTA isolated, and labels copied from the spoken phrase.",
+    "Inspect the new contact sheet for title overflow, repeated compositions, irrelevant visuals, and visual timing.",
+    "Inspect final_audio_guard and use FFmpeg silence detection on the final output, not only the intermediate audio.",
+    "Re-run all 25 regression tests before accepting the next patch."
   ]
 }

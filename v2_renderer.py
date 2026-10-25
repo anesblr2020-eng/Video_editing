@@ -260,34 +260,60 @@ def render_scene_card_and_measure_dom(
     headlines_dom = []
 
     def add_centered_text(text: str, y_center: int, font_size: int, color_rgb: Tuple[int, int, int], is_headline: bool = True):
+        """Draw centered Arabic text with measured wrapping; never let long headlines overflow."""
         text = _safe_graphic_text(text)
         if not text:
             return
-        fnt = get_font(font_size, bold=True)
-        bbox = draw.textbbox((0, 0), text, font=fnt, direction="rtl")
-        tw = bbox[2] - bbox[0]
-        th = bbox[3] - bbox[1]
-        while tw > 880 and font_size > 72:
-            font_size -= 4
-            fnt = get_font(font_size, bold=True)
-            bbox = draw.textbbox((0, 0), text, font=fnt, direction="rtl")
-            tw = bbox[2] - bbox[0]
-            th = bbox[3] - bbox[1]
-        x = (cw - tw) // 2
-        y = y_center - th // 2
-        draw.text((x, y - bbox[1]), text, font=fnt, fill=(*color_rgb, 255), direction="rtl")
-        if is_headline:
-            headlines_dom.append({
-                "rect": {
-                    "left": 60 + x,
-                    "top": 280 + y,
-                    "right": 60 + x + tw,
-                    "bottom": 280 + y + th,
-                    "width": tw,
-                    "height": th,
-                },
-                "fontSize": font_size,
-            })
+        max_width = cw - 80
+        chosen_size = int(font_size)
+        lines = []
+        while chosen_size >= 48:
+            fnt = get_font(chosen_size, bold=True)
+            lines = []
+            current = []
+            for word in text.split():
+                candidate = " ".join(current + [word])
+                bb = draw.textbbox((0, 0), candidate, font=fnt, direction="rtl")
+                if current and (bb[2] - bb[0]) > max_width:
+                    lines.append(" ".join(current))
+                    current = [word]
+                else:
+                    current.append(word)
+            if current:
+                lines.append(" ".join(current))
+            widths = []
+            for line in lines:
+                bb = draw.textbbox((0, 0), line, font=fnt, direction="rtl")
+                widths.append(bb[2] - bb[0])
+            if len(lines) <= 2 and all(width <= max_width for width in widths):
+                break
+            chosen_size -= 4
+        chosen_size = max(48, chosen_size)
+        fnt = get_font(chosen_size, bold=True)
+        line_metrics = []
+        for line in lines[:2]:
+            bb = draw.textbbox((0, 0), line, font=fnt, direction="rtl")
+            line_metrics.append((line, bb, bb[2] - bb[0], bb[3] - bb[1]))
+        line_gap = max(4, int(chosen_size * 0.12))
+        total_h = sum(item[3] for item in line_metrics) + line_gap * max(0, len(line_metrics) - 1)
+        y_top = int(y_center - total_h / 2)
+        for line, bbox, tw, th in line_metrics:
+            x = (cw - tw) // 2
+            draw.text((x, y_top - bbox[1]), line, font=fnt, fill=(*color_rgb, 255), direction="rtl")
+            if is_headline:
+                headlines_dom.append({
+                    "text": line,
+                    "rect": {
+                        "left": 60 + x,
+                        "top": 280 + y_top,
+                        "right": 60 + x + tw,
+                        "bottom": 280 + y_top + th,
+                        "width": tw,
+                        "height": th,
+                    },
+                    "fontSize": chosen_size,
+                })
+            y_top += th + line_gap
 
     def draw_semantic_motion_asset(cx: int, cy: int, size: int) -> bool:
         """Draw a speech-matched SVG with progressive path reveal; return whether it rendered."""
@@ -359,6 +385,14 @@ def render_scene_card_and_measure_dom(
             add_centered_text(kw1, 755, 76, accent, is_headline=True)
 
     elif tpl == "before_after":
+        # Audio editing is a real transformation: show the named problem and the spoken action,
+        # rather than repeating the same title in both panels.
+        if sc.get("intent") == "audio_edit":
+            kw0 = "الصمت" if "الصمت" in str(sc.get("speech", "")) else (kw0 or "الصوت")
+            if "تنحي الصمت" in str(sc.get("speech", "")):
+                kw1 = "تنحي الصمت"
+            elif "قص الصمت" in str(sc.get("speech", "")):
+                kw1 = "قص الصمت"
         # بطاقة قبل (فيديو خام باهت)
         draw.rounded_rectangle([50, 125, cw - 50, 415], radius=34, fill=(45, 18, 30, 255), outline=(*danger, 255), width=5)
         add_centered_text("قبل", 195, 52, danger, is_headline=False)

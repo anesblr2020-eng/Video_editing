@@ -287,6 +287,11 @@ def run_v2_pipeline_programmatic(
     user_word_overrides: Optional[Dict[str, str]] = None,
     custom_scenes: Optional[list] = None,
     progress_callback: Optional[Callable[[float, str], None]] = None,
+    gemini_api_key: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+    openai_api_key: Optional[str] = None,
+    whisper_model: str = "base",
+    dialect_mode: str = "algerian_darija",
 ) -> Dict[str, Any]:
     """
     الدالة البرمجية الكاملة لتشغيل الجيل الثاني (v2) سواء من CLI أو من واجهة الموقع (app.py).
@@ -329,6 +334,11 @@ def run_v2_pipeline_programmatic(
         media_path=voice_for_pipeline,
         duration=duration,
         user_overrides=user_word_overrides,
+        whisper_model=whisper_model,
+        dialect_mode=dialect_mode,
+        groq_api_key=groq_api_key,
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key,
     )
     if not words:
         raise RuntimeError(
@@ -348,7 +358,9 @@ def run_v2_pipeline_programmatic(
         scenes = build_stage1_kinetic_only_plan(words, duration=duration)
         audit_log = ["Stage 1 mode: using single template 'kinetic_hook' across all scenes."]
     else:
-        plan_res = generate_scene_plan(words, duration=duration, storyboard_panels=panels)
+        plan_res = generate_scene_plan(
+            words, duration=duration, storyboard_panels=panels, gemini_api_key=gemini_api_key
+        )
         scenes = plan_res["scenes"]
         audit_log = plan_res["validator_audit_log"]
 

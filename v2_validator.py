@@ -103,9 +103,23 @@ def validate_scene_plan(scenes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, An
         # 4. تنظيف الكلمات المفتاحية من القائمة السوداء ومن تكرار الكابشن
         raw_keywords = [str(k).strip() for k in scene.get("keywords", []) if str(k).strip()]
         clean_keywords = []
+        speech_tokens = {
+            re.sub(r"[^\w\u0600-\u06FF]", "", t).strip().lower()
+            for t in speech.split()
+        }
+        speech_tokens.discard("")
         for kw in raw_keywords:
             if contains_blacklisted_text(kw):
                 audit_log.append(f"Scene #{idx+1}: Removed blacklisted keyword '{kw}'")
+                continue
+            # Reject titles that are unrelated to this scene's spoken clause.
+            kw_tokens = {
+                re.sub(r"[^\w\u0600-\u06FF]", "", t).strip().lower()
+                for t in kw.split()
+            }
+            kw_tokens.discard("")
+            if kw_tokens and not (kw_tokens & speech_tokens):
+                audit_log.append(f"Scene #{idx+1}: Removed ungrounded headline '{kw}'")
                 continue
             # منع وجود أرقام غير منطوقة داخل الكلمات المفتاحية
             kw_digits = re.findall(r"\d+%?", kw)
@@ -115,9 +129,17 @@ def validate_scene_plan(scenes: List[Dict[str, Any]]) -> Tuple[List[Dict[str, An
             clean_keywords.append(kw)
 
         if not clean_keywords:
-            # استخلاص كلمتين محوريتين من الكلام بدون نسخ الجملة كاملة
-            tokens = [t for t in speech.split() if len(t) > 2][:2]
-            clean_keywords = tokens if tokens else ["تركيز بصري"]
+            # Ground fallback labels in actual speech; never substitute generic marketing copy.
+            filler = {"السلام", "عليكم", "على", "بالي", "بلي", "راك", "ما", "في", "من", "مع", "باش", "لي", "لك", "هذا", "هاذ", "اللي", "كاين", "تاع", "عموما", "عمومًا", "يعني", "وش", "واش"}
+            tokens = [
+                t.strip("،,.;:!?؟") for t in speech.split()
+                if len(re.sub(r"[^\w\u0600-\u06FF]", "", t)) > 2
+                and re.sub(r"[^\w\u0600-\u06FF]", "", t).lower() not in filler
+            ][:3]
+            if not tokens:
+                tokens = speech.split()[:3]
+            clean_keywords = [" ".join(tokens)] if tokens else []
+            audit_log.append(f"Scene #{idx+1}: Rebuilt headline from spoken words because no grounded keyword remained.")
 
         # ضمان عدم تطابق الكلمات المفتاحية العلوية حرفياً مع جملة الكابشن الكاملة
         kw_joined = " ".join(clean_keywords)
