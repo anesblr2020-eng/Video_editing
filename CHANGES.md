@@ -26,3 +26,10 @@
 | **`sound_designer.py`** | مزامنة الصوت مع نقطة التحول داخل المشهد | إضافة مؤثرات صوتية تلقائية عند لحظة التحول الدلالي (`t_pivot`) داخل كل مشهد: نقرة ماوس (`1_click`) + انبثاق نابضي (`3_ui_style`) في مشاهد `prompt_to_result_sim`، وهواء انتقال (`6_whooch`) في مشاهد `camera_25d_pan_right` و `anchor_and_displace`. |
 | **`dynamic_edit.py`** | ترقية الدقة الافتراضية | رفع دقة العمل الافتراضية إلى `1080x1920` (`Full HD Vertical`) بدون خفضها إلى `540x960`. |
 | **`v2_renderer.py` & `v2_director.py` & `v2_run.py`** | توحيد كامل مع محرك الاستوديو | ربط `verify_and_render_with_chromium` في `v2_renderer.py` مباشرة بـ `render_single_scene_canvas` و `render_one_take_camera_handoff` في `motion_text.py`، بحيث تنتج جميع المسارات نفس الجودة الاحترافية دون أي تضارب. |
+
+## 2026-10-26 — Semantic visual planning + adaptive ETA (implementation pass)
+- Added `visual_scene_pipeline.py`: creates a per-video `visual_bible.json` and a separate semantic image prompt for every planned scene. The visual bible locks palette/art direction and continuity while allowing scene-by-scene semantic variation.
+- Integrated these artifacts into `v2_run.py` after scene planning and included their paths in the QA deliverables.
+- Added progress samples and an adaptive remaining-time estimate with a range to `PersistentBackgroundJobManager` in `app.py`. ETA is withheld until there are enough real progress/time samples; it is recalculated from recent progress throughput rather than assuming every stage is linear.
+- Validation: Python syntax compilation passed for `app.py`, `v2_run.py`, and `visual_scene_pipeline.py`; smoke test confirmed distinct prompts are produced for semantically different scenes.
+- Honest limitation: this pass prepares the per-scene image prompts but does not yet call an image-generation provider or composite generated images into the final renderer. The current renderer remains the existing vector/template renderer. Actual generated-image rendering requires the next integration step and a configured image API/provider.

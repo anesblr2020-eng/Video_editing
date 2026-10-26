@@ -90,6 +90,10 @@ class PersistentBackgroundJobManager:
             "error_message": None,
             "started_at": 0.0,
             "updated_at": 0.0,
+            "progress_samples": [],
+            "eta_seconds": None,
+            "eta_low_seconds": None,
+            "eta_high_seconds": None,
             "input_path": None,
             "output_path": None,
             "selected_style": None,
@@ -153,10 +157,32 @@ class PersistentBackgroundJobManager:
             )
 
     def update_progress(self, percent: float, text: str):
+        now = time.time()
         with self._lock:
-            self._state["progress"] = round(min(1.0, max(0.0, float(percent))), 3)
+            p = round(min(1.0, max(0.0, float(percent))), 3)
+            self._state["progress"] = p
             self._state["status_text"] = str(text)
-            self._state["updated_at"] = time.time()
+            self._state["updated_at"] = now
+            samples = self._state.setdefault("progress_samples", [])
+            if not samples or now - float(samples[-1].get("t", 0)) >= 2.0 or p >= 1.0:
+                samples.append({"t": now, "p": p})
+            # Keep recent samples to estimate current throughput, not a naive linear ETA from all stages.
+            samples[:] = samples[-24:]
+            elapsed = now - float(self._state.get("started_at") or now)
+            usable = [x for x in samples if now - float(x.get("t", now)) <= 180]
+            eta = None
+            if elapsed >= 12 and len(usable) >= 3:
+                first, last = usable[0], usable[-1]
+                dt = float(last["t"]) - float(first["t"])
+                dp = float(last["p"]) - float(first["p"])
+                if dt >= 8 and dp >= 0.015 and p < 0.995:
+                    rate = dp / dt
+                    raw_eta = (1.0 - p) / rate
+                    # Avoid wildly misleading estimates during stage transitions; cap to 8 hours.
+                    eta = int(max(1, min(8 * 3600, raw_eta)))
+            self._state["eta_seconds"] = eta
+            self._state["eta_low_seconds"] = int(max(1, eta * 0.75)) if eta else None
+            self._state["eta_high_seconds"] = int(min(8 * 3600, eta * 1.35 + 15)) if eta else None
             self._save_state_to_disk_unlocked()
 
     def clear_job(self) -> bool:
@@ -731,7 +757,21 @@ if job_manager.is_running():
         p_val = float(st_now.get("progress", 0.05))
         s_txt = st_now.get("status_text", "جاري المعالجة في الخلفية...")
         live_prog_bar.progress(min(1.0, max(0.0, p_val)))
-        live_status_txt.markdown(f"### ⏳ {s_txt}")
+        eta = st_now.get("eta_seconds")
+        if isinstance(eta, (int, float)) and eta > 0:
+            low = st_now.get("eta_low_seconds") or eta
+            high = st_now.get("eta_high_seconds") or eta
+            def _fmt_eta(sec):
+                sec = int(max(0, sec))
+                if sec >= 3600:
+                    return f"{sec // 3600} س {((sec % 3600) // 60)} د"
+                if sec >= 60:
+                    return f"{sec // 60} د {sec % 60} ث"
+                return f"{sec} ث"
+            eta_line = f"\n\n**⏱️ الوقت المتبقي المتوقع: {_fmt_eta(eta)} (نطاق تقريبي: {_fmt_eta(low)}–{_fmt_eta(high)})**"
+        else:
+            eta_line = "\n\n*⏱️ يجري قياس سرعة المعالجة؛ سيظهر تقدير الوقت بعد توفر عينات كافية.*"
+        live_status_txt.markdown(f"### ⏳ {s_txt}{eta_line}")
         time.sleep(1.0)
 
     final_st = job_manager.get_state()

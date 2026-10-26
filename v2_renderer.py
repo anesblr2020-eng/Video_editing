@@ -743,6 +743,9 @@ def verify_and_render_with_chromium(
     from smart_analyzer import decompose_scene_clauses_and_verb
 
     ref_family_cycle = ["honeyy_highkey_3d_ui", "divyansh_kinetic_contrast", "morningstar_editorial_25d"]
+    # حافظ على هوية بصرية واحدة داخل الفيديو؛ لا تبدّل عائلة المرجع آلياً في كل مشهد.
+    family_seed = sum(ord(ch) for ch in str(theme.get("name", theme_name if "theme_name" in locals() else "auto")))
+    video_family = ref_family_cycle[family_seed % len(ref_family_cycle)]
     v2_to_hero = {
         "kinetic_hook": "hero_smartphone_reels",
         "concept_icon": "hero_ai_neural_core",
@@ -757,9 +760,28 @@ def verify_and_render_with_chromium(
     }
     trans_cycle = ["whip_pan_blur_left", "circle_expand_wipe", "whip_pan_blur_up", "portal_zoom_morph"]
 
+    visual_query_to_hero = {
+        "hourglass_deadline": "hero_chrono_speedometer",
+        "clock_speedometer": "hero_chrono_speedometer",
+        "waveform_scissors": "hero_waveform_scissors",
+        "studio_microphone": "hero_sound_wave_mixer",
+        "instagram_decline": "hero_smartphone_reels",
+        "ai_neural_chip": "hero_ai_neural_core",
+        "viral_rocket_growth": "hero_viral_rocket_chart",
+        "camera_clapperboard": "hero_camera_production",
+        "lightbulb_solution": "hero_creative_palette_pen",
+        "shield_guarantee": "hero_problem_radar_fix",
+        "trophy_success": "hero_cta_magnet_finale",
+        "delivery_map_58": "hero_delivery_route",
+        "cta_arrow_down": "hero_cta_magnet_finale",
+        "immune_cell_shield": "hero_problem_radar_fix",
+        "passkey_lock_vault": "hero_problem_radar_fix",
+        "solar_grid_chart": "hero_viral_rocket_chart",
+        "compiler_syntax_tree": "hero_ai_neural_core",
+    }
     studio_scenes = []
     for s_i, sc_item in enumerate(scenes):
-        fam_key = ref_family_cycle[s_i % len(ref_family_cycle)]
+        fam_key = video_family
         fam_spec = PRO_STUDIO_STYLE_FAMILIES[fam_key]
         act_name = "hook_problem" if s_i == 0 else ("outro_finale" if s_i == len(scenes) - 1 else "body_steps")
         pal_use = dict(fam_spec["acts"].get(act_name, fam_spec["unified_palette"]))
@@ -768,7 +790,11 @@ def verify_and_render_with_chromium(
             "design_family": fam_key,
             "act_name": act_name,
             "step_number": s_i + 1,
-            "visual_archetype": v2_to_hero.get(sc_item.get("template", ""), "hero_ai_neural_core"),
+            "visual_archetype": visual_query_to_hero.get(
+                str(sc_item.get("visual_query", "")).strip(),
+                ("web_dynamic_scene" if str(sc_item.get("visual_query", "")).startswith("semantic_concept")
+                 else v2_to_hero.get(sc_item.get("template", ""), "web_dynamic_scene"))
+            ),
             "has_grid": False,
             "has_floating_diamonds": False,
             "has_giant_bg_numbers": (fam_key == "honeyy_highkey_3d_ui"),
@@ -834,6 +860,19 @@ def verify_and_render_with_chromium(
     ]
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
     bg_cache = {}
+    # Preload generated scene artwork once. The art is composited behind the motion-graphics
+    # layer with restrained opacity so captions remain readable while scene-specific imagery is visible.
+    from PIL import ImageEnhance
+    scene_art = {}
+    for _idx, _sc in enumerate(studio_scenes):
+        _ip = str(scenes[_idx].get("image_path") or "") if _idx < len(scenes) else ""
+        if _ip and os.path.isfile(_ip):
+            try:
+                _art = Image.open(_ip).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+                _art = ImageEnhance.Brightness(_art).enhance(0.58)
+                scene_art[_idx] = _art
+            except Exception:
+                pass
 
     for f_idx in range(total_frames):
         t = f_idx / float(fps)
@@ -900,6 +939,21 @@ def verify_and_render_with_chromium(
                 curr_meta=sc_st
             )
 
+        # Show the generated scene image as a full-frame semantic backdrop with gentle camera motion.
+        # Keep the existing designed foreground visible; never replace captions or motion graphics.
+        if active_idx in scene_art:
+            try:
+                art = scene_art[active_idx]
+                # Small Ken Burns drift/zoom per scene, deterministic and tied to scene progress.
+                zoom = 1.0 + 0.045 * sc_prog
+                aw, ah = int(1080 * zoom), int(1920 * zoom)
+                art_zoom = art.resize((aw, ah), Image.Resampling.BICUBIC)
+                left = max(0, (aw - 1080) // 2 + int(10 * math.sin(sc_prog * math.pi)))
+                top = max(0, (ah - 1920) // 2 + int(12 * math.cos(sc_prog * math.pi)))
+                art_zoom = art_zoom.crop((left, top, left + 1080, top + 1920))
+                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.70)
+            except Exception:
+                pass
         frame_rgb = np.ascontiguousarray(np.array(curr_img.convert("RGB"), dtype=np.uint8))
         proc.stdin.write(frame_rgb.tobytes())
 

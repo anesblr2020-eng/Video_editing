@@ -14,6 +14,27 @@ if BASE_DIR not in sys.path:
 
 
 class TestReferenceDirectingIntegration(unittest.TestCase):
+
+    def test_00_no_hardcoded_reference_script_fallback(self):
+        import inspect
+        import v2_director
+        src = inspect.getsource(v2_director.generate_scene_plan)
+        self.assertNotIn("is_reference_script", src)
+        self.assertIn("build_dynamic_scene_plan_for_any_words", src)
+        self.assertIn("if not words", src)
+
+    def test_00b_unknown_topic_does_not_default_to_clock(self):
+        from vector_lottie_engine import classify_scene_stage_architecture
+        result = classify_scene_stage_architecture("المجهر يقيس حركة الجزيئات داخل العينة", 0, 4)
+        self.assertEqual(result["stage_type"], "semantic_concept")
+        self.assertIn("المجهر", result["clause_a"] + result["clause_b"])
+
+    def test_00c_unknown_topic_does_not_get_hourglass_query(self):
+        from v2_director import _pick_unique_visual_query
+        q = _pick_unique_visual_query("المجهر يقيس حركة الجزيئات داخل العينة", [], 0)
+        self.assertTrue(q.startswith("semantic_concept"), q)
+        self.assertNotEqual(q, "hourglass_deadline")
+
     def test_01_no_v2_hijack_in_motion_text(self):
         with open(os.path.join(BASE_DIR, "motion_text.py"), "r", encoding="utf-8") as f:
             src = f.read()

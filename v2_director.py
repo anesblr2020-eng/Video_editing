@@ -132,35 +132,11 @@ def prepare_clean_storyboard_panels(storyboard_path: str, out_dir: str) -> List[
 
 
 def build_stage1_kinetic_only_plan(words: List[Dict[str, Any]], duration: float = 23.60) -> List[Dict[str, Any]]:
-    """
-    يبني خطة المرحلة 1: قالب واحد فقط (kinetic_hook) + كابشن متزامن على الصوت المرجعي.
-    """
-    chunks = [
-        (0.00, 3.05, "السلام عليكم، على بالي بلي راك تعاني من مشكل الوقت", ["تحدي صناع", "المحتوى"]),
-        (3.05, 6.75, "وما عندكش الوقت باش تمونطي لي فيديو وتطلعهم في السوشيال", ["ضيق الوقت", "وصعوبة المونتاج"]),
-        (6.75, 9.80, "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا عموماً يموتوا،", ["توقف نشر", "الحسابات"]),
-        (9.80, 13.65, "وأنت ما على بالكش بلي كاين منصة اسمها فيديو إيديتينغ", ["منصة فيديو", "إيديتينغ"]),
-        (13.65, 16.05, "تقدر تمونطي لك لي فيديو تاعك بالموشن جرافيك", ["مونتاج ذكي", "وتلقائي"]),
-        (16.05, 18.25, "وبالمونتاج العادي وتنقي الصوت", ["تنقية الصوت", "والمشاهد"]),
-        (18.25, 20.35, "وتنحي الصمت من الفيديو بشكل مجاني", ["حذف الصمت", "مجاناً"]),
-        (20.35, 22.10, "وبالذكاء الاصطناعي برك،", ["بقوة الذكاء", "الاصطناعي"]),
-        (22.10, min(duration, 23.60), "رابط التسجيل في أسفل الفيديو.", ["سجّل الآن", "من الرابط"]),
-    ]
-    scenes = []
-    for s, e, speech, kw in chunks:
-        if s >= duration:
-            break
-        scenes.append({
-            "start": round(s, 2),
-            "end": round(min(e, duration), 2),
-            "speech": speech,
-            "intent": "hook" if s == 0 else "solution",
-            "template": "kinetic_hook",
-            "keywords": kw,
-            "visual_query": "kinetic arabic typography",
-            "numbers": [],
-            "confidence": 0.95,
-        })
+    """خطة احتياطية مشتقة من كلام الملف الحالي، وليست نصاً أو Storyboard ثابتاً."""
+    if not words:
+        return []
+    scenes = build_dynamic_scene_plan_for_any_words(words, duration=duration)
+    # لا نفرض قالباً واحداً؛ نحافظ على التوجيه الدلالي الذي استُنتج من كل مقطع.
     return scenes
 
 
@@ -201,10 +177,12 @@ def _pick_unique_visual_query(speech_text: str, used_queries: List[str], idx: in
     for c in candidates:
         if c not in used_queries:
             return c
-    for fallback_q in DISTINCT_VISUAL_QUERIES:
-        if fallback_q not in used_queries:
-            return fallback_q
-    return DISTINCT_VISUAL_QUERIES[idx % len(DISTINCT_VISUAL_QUERIES)]
+    # لا تُسند أول أيقونة في القائمة (ساعة) إلى كل موضوع مجهول.
+    # عند غياب تطابق دلالي واضح، أعِد استعلاماً محايداً مشتقاً من كلمات المشهد.
+    content = [re.sub(r"[^\w\u0600-\u06FF]", "", x) for x in speech_text.split()]
+    content = [x for x in content if len(x) >= 3]
+    semantic_hint = " ".join(content[:5]) or f"scene_concept_{idx + 1}"
+    return f"semantic_concept {semantic_hint}"
 
 
 def build_semantic_representation_graph(
@@ -574,181 +552,17 @@ def generate_scene_plan(
     مع تضمين التمثيل الدلالي (semantic_graph)، والأفعال البصرية (verb_id)،
     وأنماط التكوين (layout_id)، والتحول الداخلي بين الحالات (sub_states).
     """
-    full_speech = " ".join(str(w.get("word", "")) for w in (words or []))
-    is_reference_script = (
-        ("مشكل الوقت" in full_speech and ("إيديتينغ" in full_speech or "ايديتينغ" in full_speech or "تمنطي" in full_speech or "تمونتي" in full_speech))
-        or not words
-    )
+    # لا تستخدم أي Storyboard تجريبي ثابت مهما كان النص؛ الخطة يجب أن تُبنى من تفريغ الملف الحالي فقط.
+    if not words:
+        raise ValueError(
+            "تعذر استخراج كلمات من الملف الصوتي/الفيديو. أوقفنا الرندر بدل عرض مشاهد افتراضية لا تخص الملف. "
+            "تحقق من الصوت أو أعد التفريغ ثم حاول مجدداً."
+        )
 
     sem_graph = build_semantic_representation_graph(words, duration=duration)
-
-    if is_reference_script:
-        raw_scenes = [
-            {
-                "start": 0.00,
-                "end": 2.00,
-                "pivot_time": 1.05,
-                "speech": "السلام عليكم، على بالي بلي راك تعاني",
-                "intent": "problem",
-                "template": "kinetic_hook",
-                "verb_id": "VERB_04_GEOMETRIC_CONTINUITY_MORPH",
-                "layout_id": "COMP_01_VERTICAL_ANCHOR_STACK",
-                "keywords": ["تعاني من", "أزمة الوقت؟"],
-                "visual_query": "urgent_hook_attention",
-                "numbers": [],
-                "confidence": 0.96,
-            },
-            {
-                "start": 2.00,
-                "end": 4.15,
-                "pivot_time": 3.05,
-                "speech": "من مشكل الوقت وما عندكش الوقت",
-                "intent": "problem",
-                "template": "concept_icon",
-                "verb_id": "VERB_01_ANCHOR_AND_EXPAND",
-                "layout_id": "COMP_04_DEPTH_OCCLUSION_COLLAGE",
-                "keywords": ["استنزاف الوقت", "اليومي"],
-                "visual_query": "hourglass_deadline",
-                "numbers": [],
-                "confidence": 0.94,
-            },
-            {
-                "start": 4.15,
-                "end": 6.75,
-                "pivot_time": 5.40,
-                "speech": "باش تمونطي لي فيديو وتطلعهم في السوشيال",
-                "intent": "comparison",
-                "template": "versus",
-                "verb_id": "VERB_03_DUAL_LAYER_COMPARISON_REVEAL",
-                "layout_id": "COMP_03_ASYMMETRIC_PAN_SPLIT",
-                "keywords": ["مونتاج يدوي مرهق", "نشر سريع ومستمر"],
-                "visual_query": "camera_clapperboard",
-                "numbers": [],
-                "confidence": 0.91,
-            },
-            {
-                "start": 6.75,
-                "end": 9.05,
-                "pivot_time": 7.90,
-                "speech": "ومخلي الحساب تاعك في إنستغرام والسوشيال ميديا",
-                "intent": "problem",
-                "template": "phone_reel_mockup",
-                "verb_id": "VERB_01_ANCHOR_AND_EXPAND",
-                "layout_id": "COMP_01_VERTICAL_ANCHOR_STACK",
-                "keywords": ["حساب إنستغرام", "متوقف"],
-                "visual_query": "instagram_decline",
-                "numbers": [],
-                "confidence": 0.93,
-            },
-            {
-                "start": 9.05,
-                "end": 11.25,
-                "pivot_time": 10.15,
-                "speech": "عموماً يموتوا، وأنت ما على بالكش",
-                "intent": "transition",
-                "template": "concept_icon",
-                "verb_id": "VERB_06_CONTRAST_DECELERATION_RESET",
-                "layout_id": "COMP_05_MINIMALIST_BREATHING_CANVAS",
-                "keywords": ["موت التفاعل", "دون أن تدري!"],
-                "visual_query": "unknown_transition",
-                "numbers": [],
-                "confidence": 0.62,  # أقل من 0.7 -> سيحولها المدقق الدلالي تلقائياً إلى kinetic_hook!
-            },
-            {
-                "start": 11.25,
-                "end": 13.65,
-                "pivot_time": 12.45,
-                "speech": "بلي كاين منصة اسمها فيديو إيديتينغ",
-                "intent": "solution",
-                "template": "fullscreen_image",
-                "verb_id": "VERB_05_VISUAL_PUN_JUXTAPOSITION",
-                "layout_id": "COMP_04_DEPTH_OCCLUSION_COLLAGE",
-                "keywords": ["منصة فيديو", "إيديتينغ الذكية"],
-                "visual_query": "clean composition, no text, no letters, no watermark",
-                "numbers": [],
-                "confidence": 0.95,
-            },
-            {
-                "start": 13.65,
-                "end": 16.05,
-                "pivot_time": 14.85,
-                "speech": "تقدر تمونطي لك لي فيديو تاعك بالموشن جرافيك",
-                "intent": "proof",
-                "template": "before_after",
-                "verb_id": "VERB_02_SIMULATE_PROCESS_TRANSFORM",
-                "layout_id": "COMP_02_THREE_TIER_SIMULATION_STAGE",
-                "keywords": ["فيديو خام عادي", "موشن جرافيك احترافي"],
-                "visual_query": "viral_rocket_growth",
-                "numbers": [],
-                "confidence": 0.92,
-            },
-            {
-                "start": 16.05,
-                "end": 18.25,
-                "pivot_time": 17.15,
-                "speech": "وبالمونتاج العادي وتنقي الصوت",
-                "intent": "step",
-                "template": "checklist",
-                "verb_id": "VERB_01_ANCHOR_AND_EXPAND",
-                "layout_id": "COMP_03_ASYMMETRIC_PAN_SPLIT",
-                "keywords": ["موشن جرافيك", "مونتاج تلقائي", "تنقية الصوت"],
-                "visual_query": "studio_microphone",
-                "numbers": [],
-                "confidence": 0.95,
-            },
-            {
-                "start": 18.25,
-                "end": 20.35,
-                "pivot_time": 19.30,
-                "speech": "وتنحي الصمت من الفيديو بشكل مجاني",
-                "intent": "number",
-                "template": "big_number",
-                "verb_id": "VERB_04_GEOMETRIC_CONTINUITY_MORPH",
-                "layout_id": "COMP_01_VERTICAL_ANCHOR_STACK",
-                "keywords": ["حذف الصمت", "مجاناً بالكامل"],
-                "visual_query": "waveform_scissors",
-                "numbers": ["0 DA"],
-                "confidence": 0.94,
-            },
-            {
-                "start": 20.35,
-                "end": 22.10,
-                "pivot_time": 21.20,
-                "speech": "وبالذكاء الاصطناعي برك،",
-                "intent": "step",
-                "template": "steps_flow",
-                "verb_id": "VERB_02_SIMULATE_PROCESS_TRANSFORM",
-                "layout_id": "COMP_02_THREE_TIER_SIMULATION_STAGE",
-                "keywords": ["ارفع الصوت", "يعالجه الذكاء", "جاهز للنشر"],
-                "visual_query": "ai_neural_chip",
-                "numbers": [],
-                "confidence": 0.91,
-            },
-            {
-                "start": 22.10,
-                "end": min(duration, 23.60),
-                "pivot_time": round(22.10 + (min(duration, 23.60) - 22.10) * 0.5, 2),
-                "speech": "رابط التسجيل في أسفل الفيديو.",
-                "intent": "cta",
-                "template": "cta_end",
-                "verb_id": "VERB_06_CONTRAST_DECELERATION_RESET",
-                "layout_id": "COMP_05_MINIMALIST_BREATHING_CANVAS",
-                "keywords": ["سجّل الآن", "الرابط في الأسفل"],
-                "visual_query": "cta_arrow_down",
-                "numbers": [],
-                "confidence": 0.98,
-            },
-        ]
-        for sc in raw_scenes:
-            sc["audio_sync_points"] = _build_audio_sync_points_for_scene(
-                float(sc["start"]),
-                float(sc["end"]),
-                float(sc["pivot_time"]),
-                sc["keywords"],
-                sc["verb_id"],
-            )
-    else:
-        raw_scenes = build_dynamic_scene_plan_for_any_words(words, duration=duration, storyboard_panels=storyboard_panels)
+    raw_scenes = build_dynamic_scene_plan_for_any_words(
+        words, duration=duration, storyboard_panels=storyboard_panels
+    )
 
     if storyboard_panels:
         for i, sc in enumerate(raw_scenes):

@@ -732,11 +732,20 @@ def build_distinct_contextual_sub_items(scene_text: str, stage_type: str, existi
             "ابدأ مونتاج فيديوهاتك مجاناً الآن",
             "ضاعف إنتاجيتك وانشر يومياً بسهولة",
         ]
-    return [
-        "أتمتة المونتاج والموشن جرافيك بالكامل",
-        "توفير 90% من وقت تحرير الفيديوهات",
-        "جودة استوديو احترافية ترفع التفاعل",
-    ]
+    # لا نخترع مزايا أو نسباً تسويقية لا يقولها النص. استخرج شذرات قصيرة من الجملة الحالية.
+    raw = str(scene_text or "").strip()
+    parts = [p.strip(" ،,؛;:.!?؟-–—") for p in __import__("re").split(r"[،,؛;:.!?؟]+|\s+(?:لكن|بل|ثم|و|ثمّ)\s+", raw) if p.strip(" ،,;:.!?؟-–—")]
+    if len(parts) >= 3:
+        return parts[:3]
+    tokens = [t.strip(" ،,؛;:.!?؟-–—") for t in raw.split() if t.strip(" ،,؛;:.!?؟-–—")]
+    if not tokens:
+        return ["الفكرة الرئيسية", "التفصيل المرتبط بها", "النتيجة المذكورة"]
+    # تقسيم الجملة إلى 2-3 شذرات من النص نفسه، دون إضافة ادعاءات أو أرقام.
+    n = len(tokens)
+    a = max(1, n // 3)
+    b = max(a + 1, (2 * n) // 3)
+    fragments = [" ".join(tokens[:a]), " ".join(tokens[a:b]), " ".join(tokens[b:])]
+    return [x for x in fragments if x] or [raw]
 
 
 def classify_scene_stage_architecture(scene_text: str, scene_index: int, total_scenes: int) -> Dict[str, Any]:
@@ -788,13 +797,22 @@ def classify_scene_stage_architecture(scene_text: str, scene_index: int, total_s
             "kpi_badge": "انخفاض الوصول -68%",
             "pivot_u": 0.46,
         }
+    # موضوع غير معروف: لا تفرض ساعة/مونتاج/ادعاء تسويقي. استخدم النص الحالي نفسه.
+    raw = str(t or "").strip()
+    tokens = [x.strip(" ،,؛;:.!?؟-–—") for x in raw.split() if x.strip(" ،,؛;:.!?؟-–—")]
+    if not tokens:
+        tokens = ["الفكرة الرئيسية"]
+    pivot = max(1, min(len(tokens) - 1, round(len(tokens) * 0.52))) if len(tokens) > 1 else 1
+    clause_a = " ".join(tokens[:pivot])
+    clause_b = " ".join(tokens[pivot:]) if len(tokens) > 1 else raw
+    focus = " ".join(tokens[:min(3, len(tokens))])
     return {
-        "stage_type": "chrono_time_drain",
-        "clause_a": "تعاني من مشكلة ضيق الوقت؟",
-        "clause_b": "لا وقت لمونتاج ونشر الفيديوهات",
-        "focus_sticker": "ضيق الوقت",
-        "kpi_badge": "ساعات ضائعة يومياً",
-        "pivot_u": 0.45,
+        "stage_type": "semantic_concept",
+        "clause_a": clause_a or raw,
+        "clause_b": clause_b or raw,
+        "focus_sticker": focus or "الفكرة الرئيسية",
+        "kpi_badge": "",
+        "pivot_u": 0.48,
     }
 
 

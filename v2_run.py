@@ -24,6 +24,8 @@ from v2_exporter import generate_contact_sheet_05s, export_social_package
 from v2_qa_run_checks import evaluate_all_checks
 from v2_qa_visual_critic import run_visual_critic
 from v2_qa_self_improve import test_all_10_templates_across_3_texts, run_self_improvement_loop
+from visual_scene_pipeline import write_visual_plan
+from scene_image_generator import generate_scene_images
 
 
 def _probe_audio_duration(audio_path: str, fallback: float = 23.60) -> float:
@@ -200,6 +202,11 @@ def run_v2_pipeline_programmatic(
         duration=duration,
         user_overrides=user_word_overrides,
     )
+    if not words:
+        raise ValueError(
+            "لم نستخرج كلمات موثوقة من الملف الحالي؛ أُوقف الإنتاج بدلاً من استعمال مشاهد افتراضية ثابتة. "
+            "تحقق من مسار الصوت/الفيديو، لغة التفريغ، أو أعد المحاولة بمزوّد تفريغ آخر."
+        )
 
     panels = []
     if storyboard_path and os.path.exists(storyboard_path):
@@ -216,6 +223,24 @@ def run_v2_pipeline_programmatic(
         plan_res = generate_scene_plan(words, duration=duration, storyboard_panels=panels)
         scenes = plan_res["scenes"]
         audit_log = plan_res["validator_audit_log"]
+
+    # Create a consistent visual bible plus a distinct semantic image prompt for every scene.
+    # This is an explicit artifact stage; prompts are not mislabeled as generated images.
+    visual_plan_paths = write_visual_plan(out_dir, theme_name, theme, scenes)
+    # Generate a separate original image for each semantic scene when a Gemini API key is available.
+    # If unavailable, keep the normal pipeline operational and report the reason explicitly.
+    _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد (يتطلب GEMINI_API_KEY)...")
+    image_generation_report = generate_scene_images(out_dir, visual_plan_paths["scene_image_prompts"])
+    try:
+        with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _f:
+            _img_payload = json.load(_f)
+        _by_index = {int(x.get("scene_index", i+1)): x for i, x in enumerate(_img_payload.get("scenes", []))}
+        for _i, _scene in enumerate(scenes, start=1):
+            _record = _by_index.get(_i, {})
+            if _record.get("image_path") and os.path.exists(_record["image_path"]):
+                _scene["image_path"] = _record["image_path"]
+    except Exception as _img_load_error:
+        image_generation_report["scene_path_load_error"] = str(_img_load_error)[:250]
 
     scene_plan_path = os.path.join(out_dir, "scene_plan.json")
     with open(scene_plan_path, "w", encoding="utf-8") as f:
@@ -313,6 +338,7 @@ def run_v2_pipeline_programmatic(
         "dom_verification": dom_report,
         "audio_engineering": audio_report,
         "render_metrics": render_report,
+        "image_generation": image_generation_report,
         "low_confidence_words": low_conf_alerts,
         "deliverables": {
             "final_video": output_mp4_path,
@@ -320,6 +346,9 @@ def run_v2_pipeline_programmatic(
             "thumbnail": export_pkg["thumbnail_path"],
             "post_copy": export_pkg["post_copy_path"],
             "scene_plan": scene_plan_path,
+            "visual_bible": visual_plan_paths["visual_bible"],
+            "scene_image_prompts": visual_plan_paths["scene_image_prompts"],
+            "image_generation_report": os.path.join(out_dir, "image_generation_report.json"),
         },
         "self_improvement_experiments": experiments_log,
     }
