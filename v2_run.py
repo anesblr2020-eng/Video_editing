@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-v2_run.py — نقطة التشغيل الموحدة للجيل الثالث (v3) من نظام الموشن جرافيك للسوشيال ميديا
+v2_run.py — نقطة التشغيل الموحدة للإصدار الخامس (v5) من نظام الموشن جرافيك وتوليد صور المشاهد بالذكاء الاصطناعي
 (تعمل من سطر الأوامر CLI ومن داخل واجهة Streamlit التفاعلية app.py بدون أي مجلدات فرعية وبدون cv2).
 """
 import os
@@ -243,26 +243,28 @@ def run_v2_pipeline_programmatic(
     visual_plan_paths = write_visual_plan(out_dir, theme_name, theme, scenes)
     # Generate a separate original image for each semantic scene when a Gemini API key is available.
     # If unavailable, keep the normal pipeline operational and report the reason explicitly.
-    _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد (يتطلب GEMINI_API_KEY)...")
-    image_generation_report = generate_scene_images(out_dir, visual_plan_paths["scene_image_prompts"])
-    # Strict v3 behavior: never pretend that prompts are images and never silently fall back
-    # to the legacy icon/template renderer when the AI-image provider failed.
-    if (int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0) or int(image_generation_report.get("failed", 0)) > 0:
+    _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد عبر Nano Banana 2.1 / Gemini (v5)...")
+    image_generation_report = generate_scene_images(
+        out_dir=out_dir,
+        prompts_path=visual_plan_paths["scene_image_prompts"],
+        progress=lambda r, m: _prog(0.29 + 0.09 * float(r), m),
+    )
+    # سلوك v5 الصارم: لا ندّعي أبداً أن الأوصاف النصية هي صور مولدة، ولا نستبدل الصور الفاشلة بأشكال هندسية وهمية!
+    if int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0:
         report_path = os.path.join(out_dir, "image_generation_report.json")
         details = image_generation_report.get("reason") or "لم يُنشئ مزود الصور أي صورة"
+        guide_txt = ""
         try:
             with open(report_path, encoding="utf-8") as _rf:
                 _report = json.load(_rf)
-            with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _pf:
-                _pp = json.load(_pf)
-            _errs = [str(x.get("error", "")) for x in _pp.get("scenes", []) if x.get("error")]
-            if _errs:
-                details += " | " + " ; ".join(_errs[:3])
+            guide = _report.get("troubleshooting_guide") or {}
+            if guide.get("why_ai_studio_differs_from_api"):
+                guide_txt = f" | التشخيص التقني: {guide['why_ai_studio_differs_from_api']}"
         except Exception:
             pass
         raise RuntimeError(
-            "فشل توليد صورة واحدة أو أكثر بالذكاء الاصطناعي في وضع v4؛ أوقفت الإخراج عمداً حتى لا أرجع إلى الأشكال القديمة. "
-            f"التفاصيل: {details}. راجع image_generation_report.json و scene_image_prompts.json في مجلد المخرجات."
+            "تعذر توليد صور المشاهد بالذكاء الاصطناعي في وضع v5 (تم إيقاف الرندر عمداً لمنع استبدال المشاهد بأشكال هندسية أو أيقونات وهمية). "
+            f"التفاصيل: {details}{guide_txt}. راجع image_generation_report.json و scene_image_prompts.json."
         )
     try:
         with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _f:
@@ -272,6 +274,8 @@ def run_v2_pipeline_programmatic(
             _record = _by_index.get(_i, {})
             if _record.get("image_path") and os.path.exists(_record["image_path"]):
                 _scene["image_path"] = _record["image_path"]
+                _scene["image_generation_status"] = _record.get("generation_status", "generated")
+                _scene["image_model_used"] = _record.get("model_used")
     except Exception as _img_load_error:
         image_generation_report["scene_path_load_error"] = str(_img_load_error)[:250]
 

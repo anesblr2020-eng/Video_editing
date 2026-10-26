@@ -33,3 +33,17 @@
 - Added progress samples and an adaptive remaining-time estimate with a range to `PersistentBackgroundJobManager` in `app.py`. ETA is withheld until there are enough real progress/time samples; it is recalculated from recent progress throughput rather than assuming every stage is linear.
 - Validation: Python syntax compilation passed for `app.py`, `v2_run.py`, and `visual_scene_pipeline.py`; smoke test confirmed distinct prompts are produced for semantically different scenes.
 - Honest limitation: this pass prepares the per-scene image prompts but does not yet call an image-generation provider or composite generated images into the final renderer. The current renderer remains the existing vector/template renderer. Actual generated-image rendering requires the next integration step and a configured image API/provider.
+
+
+---
+
+## 3. تحديث الإصدار الخامس (`v5`) — دمج Nano Banana 2.1 عبر Interactions API ومعالجة HTTP 429
+1. **`requirements.txt`**: إضافة اعتمادية `google-genai>=1.0.0`.
+2. **`scene_image_generator.py`**:
+   - دمج `models/gemini-nano-banana-2.1` عبر `client.interactions.create` (`Interactions API`) مع تمرير وصف المشهد السردي الحقيقي وإعدادات `image_config: {"image_size": "1K"}` و`response_modalities=["image", "text"]`.
+   - منع إرسال طلبات `Nano Banana 2.1` إلى نقطة نهاية `generateContent`، مع الإبقاء على مسار `generateContent` للنماذج البديلة (`gemini-2.5-flash-image` و`gemini-2.0-flash-preview-image-generation`).
+   - التحقق الصارم من أن البيانات المستخرجة تمثل صورة قابلة للفتح (`PIL.Image.verify`) ورفض الاستجابات النصية فقط (`text_only_response_no_image`).
+   - تصنيف أخطاء `HTTP 429` (`classify_provider_error`) للتمييز بين نفاد الحصة (`quota_exhausted_or_billing_tier` / `limit: 0`)، وحدود معدل الطلبات، ومشاكل الفوترة/الصلاحيات، وعزل النماذج المستنفدة فوراً لعدم تكرار الطلبات بلا فائدة.
+   - الاحتفاظ بالصور الصحيحة المولدة سابقاً وإعادة استخدامها من الكاش دون إعادة توليدها.
+3. **`visual_scene_pipeline.py`**: بناء توجيهات بصرية سردية ملموسة لكل مشهد (`_derive_narrative_visual_brief`) ومنع الأيقونات العامة أو الأشكال الهندسية الوهمية.
+4. **`app.py` و `v2_run.py`**: ترقية الواجهة ومسار التشغيل إلى الإصدار **`v5`** مع قراءة `GEMINI_API_KEY` و`GEMINI_IMAGE_MODEL` و`GEMINI_IMAGE_SIZE` و`GOOGLE_CLOUD_PROJECT` من متغيرات البيئة أو `Streamlit Secrets` وعرض تقرير `image_generation_report.json` في الواجهة.

@@ -170,5 +170,147 @@ class TestReferenceDirectingIntegration(unittest.TestCase):
             self.assertNotIn(first_w, FORBIDDEN_SCENE_START_WORDS, f"Forbidden start word '{first_w}' in scene: {sc['text']}")
 
 
+
+    def test_07_v5_interactions_api_routing_and_image_extraction(self):
+        import io
+        import json
+        import base64
+        import tempfile
+        from PIL import Image
+        import scene_image_generator as sig
+        from visual_scene_pipeline import write_visual_plan
+
+        # إنشاء صورة اختبار حقيقية 512x512 وتحويلها إلى بايتات PNG
+        im = Image.new("RGB", (512, 768), (24, 140, 190))
+        buf = io.BytesIO()
+        im.save(buf, format="PNG")
+        valid_png_bytes = buf.getvalue()
+        valid_b64 = base64.b64encode(valid_png_bytes).decode("ascii")
+
+        # 1. التحقق من أن Nano Banana 2.1 يصنف كنموذج Interactions API ويُمنع إرساله إلى generateContent
+        self.assertTrue(sig.is_interactions_api_model("models/gemini-nano-banana-2.1"))
+        self.assertFalse(sig.is_interactions_api_model("gemini-2.5-flash-image"))
+        with self.assertRaises(ValueError):
+            sig.invoke_generate_content_image_api(
+                prompt="test",
+                api_key="dummy_key",
+                model_name="models/gemini-nano-banana-2.1"
+            )
+
+        # 2. محاكاة كائن SDK مع client.interactions.create والتحقق من استدعائه بالمعاملات المطلوبة
+        calls_recorded = []
+
+        class DummyInteractions:
+            def create(self, **kwargs):
+                calls_recorded.append(kwargs)
+                return {
+                    "outputs": [
+                        {
+                            "type": "image",
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": valid_b64,
+                            }
+                        }
+                    ]
+                }
+
+        class DummyClient:
+            def __init__(self):
+                self.interactions = DummyInteractions()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenes = [
+                {"start": 0.0, "end": 3.0, "speech": "شخص ينتظر وصول طلب التوصيل أمام منزله", "keywords": ["انتظار طلب", "توصيل"], "intent": "hook"},
+                {"start": 3.0, "end": 6.0, "speech": "منصة ذكية تختصر ساعات المونتاج", "keywords": ["منصة مونتاج", "ذكاء اصطناعي"], "intent": "solution"},
+            ]
+            paths = write_visual_plan(tmpdir, "obsidian_gold", {"colors": {"primary": "#10B981"}}, scenes)
+            rep1 = sig.generate_scene_images(
+                out_dir=tmpdir,
+                prompts_path=paths["scene_image_prompts"],
+                api_key="test_key_do_not_persist",
+                sdk_client=DummyClient(),
+            )
+            self.assertEqual(rep1["generated"], 2)
+            self.assertEqual(rep1["cached"], 0)
+            self.assertEqual(rep1["failed"], 0)
+            self.assertEqual(len(calls_recorded), 2)
+            self.assertEqual(calls_recorded[0]["model"], "models/gemini-nano-banana-2.1")
+            self.assertEqual(calls_recorded[0]["generation_config"], {"image_config": {"image_size": "1K"}})
+            self.assertEqual(calls_recorded[0]["response_modalities"], ["image", "text"])
+            self.assertIn("ينتظر", calls_recorded[0]["input"])
+
+            # 3. اختبار الكاش: إعادة التشغيل على نفس المجلد يجب أن تسترجع الصورتين من الكاش (0 طلبات جديدة)
+            calls_recorded.clear()
+            rep2 = sig.generate_scene_images(
+                out_dir=tmpdir,
+                prompts_path=paths["scene_image_prompts"],
+                api_key="test_key_do_not_persist",
+                sdk_client=DummyClient(),
+            )
+            self.assertEqual(rep2["generated"], 0)
+            self.assertEqual(rep2["cached"], 2)
+            self.assertEqual(rep2["failed"], 0)
+            self.assertEqual(len(calls_recorded), 0, "Cached images must not trigger redundant API requests!")
+
+    def test_08_text_only_response_and_429_handling_never_fakes_success(self):
+        import json
+        import tempfile
+        import scene_image_generator as sig
+        from visual_scene_pipeline import write_visual_plan
+
+        # 1. استجابة نصية فقط بدون صورة يجب أن تفشل ولا تسجل كصورة ناجحة
+        img_b, txt_s, note = sig.extract_image_bytes_from_response({
+            "candidates": [{"content": {"parts": [{"text": "I cannot generate an image right now."}]}}]
+        })
+        self.assertIsNone(img_b)
+        self.assertIn("text_only_response_no_image", note)
+
+        # 2. اختبار تصنيف خطأ 429 ومنع استهلاك محاولات متكررة لنفس النموذج المستنفد عبر المشاهد
+        attempt_log = []
+
+        class QuotaExhaustedInteractions:
+            def create(self, **kwargs):
+                attempt_log.append(("interactions", kwargs["model"]))
+                raise RuntimeError("HTTP 429 RESOURCE_EXHAUSTED: Quota exceeded for quota metric 'GenerateRequests' and limit: 0 for project gen-lang-client-0998760040")
+
+        class QuotaExhaustedClient:
+            def __init__(self):
+                self.interactions = QuotaExhaustedInteractions()
+
+        class QuotaExhaustedSession:
+            def post(self, url, **kwargs):
+                attempt_log.append(("rest", url))
+                class FakeResp:
+                    status_code = 429
+                    text = '{"error": {"code": 429, "message": "Quota exceeded for quota metric and limit: 0", "status": "RESOURCE_EXHAUSTED"}}'
+                return FakeResp()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            scenes = [
+                {"start": 0.0, "end": 3.0, "speech": "المشهد الأول للاختبار", "keywords": ["اختبار 1"], "intent": "hook"},
+                {"start": 3.0, "end": 6.0, "speech": "المشهد الثاني للاختبار", "keywords": ["اختبار 2"], "intent": "body"},
+                {"start": 6.0, "end": 9.0, "speech": "المشهد الثالث للاختبار", "keywords": ["اختبار 3"], "intent": "outro"},
+            ]
+            paths = write_visual_plan(tmpdir, "obsidian_gold", {"colors": {"primary": "#10B981"}}, scenes)
+            rep = sig.generate_scene_images(
+                out_dir=tmpdir,
+                prompts_path=paths["scene_image_prompts"],
+                api_key="test_key_429",
+                sdk_client=QuotaExhaustedClient(),
+                session=QuotaExhaustedSession(),
+            )
+            self.assertEqual(rep["generated"], 0)
+            self.assertEqual(rep["cached"], 0)
+            self.assertEqual(rep["failed"], 3)
+            # كل نموذج في السلسلة يجب أن يُجرَّب مرة واحدة فقط في المشهد الأول ثم يُعزل في المشهدين الثاني والثالث!
+            self.assertEqual(len(attempt_log), len(rep["model_chain"]), "Exhausted 429 models must not be retried on subsequent scenes!")
+            with open(paths["scene_image_prompts"], "r", encoding="utf-8") as pf:
+                saved_prompts = json.load(pf)
+            for sc_item in saved_prompts["scenes"]:
+                self.assertIsNone(sc_item["image_path"])
+                self.assertEqual(sc_item["generation_status"], "failed")
+
+
 if __name__ == "__main__":
     unittest.main()

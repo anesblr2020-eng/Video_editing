@@ -1,9 +1,12 @@
 # ==============================================================================
-# AI Video Automation & Motion Graphics System (Cloud + Local Hybrid)
+# AI Video Automation & Motion Graphics System v5 (Cloud + Local Hybrid)
 # ==============================================================================
 
 # Web User Interface (v1.39+ supports native st.audio_input microphone recording)
 streamlit>=1.39.0
+
+# Google GenAI SDK (Interactions API for Nano Banana 2.1 + Gemini Image Generation)
+google-genai>=1.0.0
 
 # Video & Audio Processing Engines
 moviepy>=1.0.3,<2.0.0
@@ -25,6 +28,3 @@ python-bidi>=0.4.2
 requests>=2.31.0
 numpy>=1.24.3,<2.0.0
 tqdm>=4.66.0
-
-# Google GenAI SDK: Interactions API used by Nano Banana 2.1
-google-genai>=1.0.0

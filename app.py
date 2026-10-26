@@ -388,7 +388,7 @@ st.markdown("""
 
 st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي — v5</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">v5 • Nano Banana 2.1 عبر Interactions API مع بدائل generateContent • اختيار نماذج الصور بالتدرج • انتقال تلقائي عند الحصة/العطل • تحريك كاميرا • قص الصمت • لا رجوع صامت إلى قوالب الأشكال</div>',
+    '<div class="sub-title">v5 • توليد صور مشاهد سردية عبر Nano Banana 2.1 (Interactions API) • كاش ذكي • تشخيص دقيق لأخطاء 429 • بدون صور وهمية</div>',
     unsafe_allow_html=True
 )
 st.markdown(
@@ -474,7 +474,21 @@ with st.sidebar:
         st.caption("النظام يجلب مشاهد B-Roll مجانية بدون أي مفتاح! ويمكنك اختيارياً إضافة مفتاح Pexels أو Groq:")
         pexels_api_key = st.text_input("Pexels API Key (اختياري - لملايين الفيديوهات المجانية):", type="password", value=os.environ.get("PEXELS_API_KEY", ""))
         groq_api_key = st.text_input("Groq API Key (اختياري):", type="password", value=os.environ.get("GROQ_API_KEY", ""))
-        gemini_api_key = st.text_input("Gemini API Key (اختياري):", type="password", value=os.environ.get("GEMINI_API_KEY", ""))
+        gemini_api_key = st.text_input("Gemini API Key (مطلوب لتوليد صور المشاهد GEMINI_API_KEY):", type="password", value="")
+        gemini_image_model_input = st.text_input(
+            "نموذج توليد الصور الأساسي (GEMINI_IMAGE_MODEL):",
+            value=os.environ.get("GEMINI_IMAGE_MODEL", "models/gemini-nano-banana-2.1"),
+            help="يستخدم Interactions API تلقائياً مع models/gemini-nano-banana-2.1 وينتقل عند الحاجة للنماذج البديلة عبر generateContent."
+        )
+        gemini_image_size_input = st.selectbox(
+            "حجم الصورة المولدة (GEMINI_IMAGE_SIZE):",
+            options=["1K", "2K", "512"],
+            index=0
+        )
+        if gemini_image_model_input.strip():
+            os.environ["GEMINI_IMAGE_MODEL"] = gemini_image_model_input.strip()
+        if gemini_image_size_input.strip():
+            os.environ["GEMINI_IMAGE_SIZE"] = gemini_image_size_input.strip()
         openai_api_key = st.text_input("OpenAI API Key (اختياري):", type="password", value=os.environ.get("OPENAI_API_KEY", ""))
 
     ai_status = detect_best_ai_provider(
@@ -601,6 +615,14 @@ def run_selected_pipeline(
                 resolved_gemini_key = ""
         if resolved_gemini_key:
             os.environ["GEMINI_API_KEY"] = resolved_gemini_key
+        for _sec_k in ("GEMINI_IMAGE_MODEL", "GEMINI_IMAGE_SIZE", "GEMINI_FALLBACK_IMAGE_MODELS", "GOOGLE_CLOUD_PROJECT"):
+            if not os.environ.get(_sec_k):
+                try:
+                    _sv = str(st.secrets.get(_sec_k, "")).strip()
+                    if _sv:
+                        os.environ[_sec_k] = _sv
+                except Exception:
+                    pass
         from v2_run import run_v2_pipeline_programmatic
         result = run_v2_pipeline_programmatic(
             input_path=input_path,
@@ -1534,6 +1556,14 @@ if result_path and os.path.exists(result_path):
                     qm1.metric("درجة النظام القديم", f"{v2_rep.get('score_before_legacy', 44.2)} / 100")
                     qm2.metric("درجة الجيل الثاني (v2)", f"{v2_rep.get('score_after_v2', 99.1)} / 100", "+54.9")
                     qm3.metric("تقييم الناقد البصري", f"{v2_rep.get('visual_critic_after', {}).get('average_ten', 9.37)} / 10")
+                    img_rep = v2_rep.get("image_generation") or {}
+                    if img_rep:
+                        st.markdown("###### 🖼️ تقرير توليد صور المشاهد (Nano Banana 2.1 & Cache):")
+                        im1, im2, im3, im4 = st.columns(4)
+                        im1.metric("النموذج الأساسي", str(img_rep.get("primary_model", "models/gemini-nano-banana-2.1")).split("/")[-1])
+                        im2.metric("صور مولدة جديدة", int(img_rep.get("generated", 0)))
+                        im3.metric("صور مسترجعة من الكاش", int(img_rep.get("cached", 0)))
+                        im4.metric("مشاهد فاشلة", int(img_rep.get("failed", 0)))
                 except Exception:
                     pass
 
