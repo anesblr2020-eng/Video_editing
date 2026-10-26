@@ -1226,7 +1226,14 @@ def _default_evolution_memory() -> Dict[str, Any]:
     }
 
 
+_EVOLUTION_MEMORY_RAM_CACHE: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+
+
 def load_evolution_memory(memory_path: str = EVOLUTION_MEMORY_PATH) -> Dict[str, Any]:
+    now = time.time()
+    cached = _EVOLUTION_MEMORY_RAM_CACHE.get(memory_path)
+    if cached is not None and (now - cached[0]) < 1.5:
+        return dict(cached[1])
     if os.path.exists(memory_path):
         try:
             with open(memory_path, "r", encoding="utf-8") as f:
@@ -1234,14 +1241,18 @@ def load_evolution_memory(memory_path: str = EVOLUTION_MEMORY_PATH) -> Dict[str,
             if isinstance(data, dict):
                 base = _default_evolution_memory()
                 base.update(data)
+                _EVOLUTION_MEMORY_RAM_CACHE[memory_path] = (now, dict(base))
                 return base
         except Exception as e:
             logger.debug(f"Could not read evolution_memory.json: {e}")
-    return _default_evolution_memory()
+    default_mem = _default_evolution_memory()
+    _EVOLUTION_MEMORY_RAM_CACHE[memory_path] = (now, dict(default_mem))
+    return default_mem
 
 
 def save_evolution_memory(memory: Dict[str, Any], memory_path: str = EVOLUTION_MEMORY_PATH) -> None:
     try:
+        _EVOLUTION_MEMORY_RAM_CACHE[memory_path] = (time.time(), dict(memory))
         os.makedirs(os.path.dirname(os.path.abspath(memory_path)), exist_ok=True)
         tmp_path = memory_path + ".tmp"
         with open(tmp_path, "w", encoding="utf-8") as f:
@@ -2326,8 +2337,14 @@ STORYBOARD_STATE_PATH = os.path.join(_CURRENT_DIR, "outputs", "active_storyboard
 STORYBOARD_PANELS_DIR = os.path.join(_CURRENT_DIR, "outputs", "storyboard_panels")
 
 
+_STORYBOARD_STATE_RAM_CACHE: Dict[str, Any] = {"ts": 0.0, "val": None}
+
+
 def get_active_storyboard_state() -> Dict[str, Any]:
     """يرجع حالة الستوري بورد المرفوع حالياً وقائمة المشاهد/اللوحات المستخرجة منه."""
+    now = time.time()
+    if _STORYBOARD_STATE_RAM_CACHE["val"] is not None and (now - float(_STORYBOARD_STATE_RAM_CACHE["ts"])) < 1.5:
+        return dict(_STORYBOARD_STATE_RAM_CACHE["val"])
     if os.path.exists(STORYBOARD_STATE_PATH):
         try:
             with open(STORYBOARD_STATE_PATH, "r", encoding="utf-8") as f:
@@ -2336,14 +2353,21 @@ def get_active_storyboard_state() -> Dict[str, Any]:
                 valid_panels = [p for p in data["panels"] if os.path.exists(str(p.get("panel_path", "")))]
                 if valid_panels:
                     data["panels"] = valid_panels
+                    _STORYBOARD_STATE_RAM_CACHE["ts"] = now
+                    _STORYBOARD_STATE_RAM_CACHE["val"] = dict(data)
                     return data
         except Exception:
             pass
-    return {"enabled": False, "panels": [], "grid_shape": [0, 0], "source_image": ""}
+    empty_st = {"enabled": False, "panels": [], "grid_shape": [0, 0], "source_image": ""}
+    _STORYBOARD_STATE_RAM_CACHE["ts"] = now
+    _STORYBOARD_STATE_RAM_CACHE["val"] = dict(empty_st)
+    return empty_st
 
 
 def clear_active_storyboard_state() -> None:
     """إلغاء تفعيل وضع الستوري بورد والعودة للتوليد الديناميكي المتنوع."""
+    _STORYBOARD_STATE_RAM_CACHE["ts"] = 0.0
+    _STORYBOARD_STATE_RAM_CACHE["val"] = None
     try:
         if os.path.exists(STORYBOARD_STATE_PATH):
             with open(STORYBOARD_STATE_PATH, "w", encoding="utf-8") as f:

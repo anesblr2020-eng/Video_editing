@@ -343,6 +343,7 @@ def apply_fast_directional_motion_blur(
     max_kernel_size: int = 13,
     velocity_scale: float = 0.035
 ) -> Union[Image.Image, np.ndarray]:
+    from PIL import ImageChops
     vx, vy = float(velocity_xy[0]), float(velocity_xy[1])
     speed = math.hypot(vx, vy)
     blur_px = int(round(min(float(max_kernel_size), speed * velocity_scale)))
@@ -350,37 +351,18 @@ def apply_fast_directional_motion_blur(
         return image_or_array
 
     is_pil = isinstance(image_or_array, Image.Image)
-    pil_mode = image_or_array.mode if is_pil else "RGBA"
-    arr = np.asarray(image_or_array)
-    if arr.ndim < 2 or min(arr.shape[0], arr.shape[1]) < 8:
+    pil_im = image_or_array if is_pil else Image.fromarray(image_or_array)
+    if min(pil_im.width, pil_im.height) < 8:
         return image_or_array
 
-    num_samples = min(7, max(3, (blur_px // 2) + 2))
     dx_total = (vx / max(1e-5, speed)) * blur_px
     dy_total = (vy / max(1e-5, speed)) * blur_px
+    sx = int(round(0.38 * dx_total))
+    sy = int(round(0.38 * dy_total))
+    if sx == 0 and sy == 0:
+        return image_or_array
 
-    acc = np.zeros_like(arr, dtype=np.float32)
-    weights_sum = 0.0
-
-    for si in range(num_samples):
-        u = (si / float(num_samples - 1)) - 0.5
-        sx = int(round(u * dx_total))
-        sy = int(round(u * dy_total))
-        w_factor = 1.0 - 0.35 * abs(u)
-
-        shifted = np.roll(arr, shift=(sy, sx), axis=(0, 1))
-        if sy > 0:
-            shifted[:sy, :] = arr[:1, :]
-        elif sy < 0:
-            shifted[sy:, :] = arr[-1:, :]
-        if sx > 0:
-            shifted[:, :sx] = shifted[:, sx:sx + 1]
-        elif sx < 0:
-            shifted[:, sx:] = shifted[:, sx - 1:sx]
-
-        acc += shifted.astype(np.float32) * w_factor
-        weights_sum += w_factor
-
-    out_arr = np.clip(acc / max(1e-5, weights_sum), 0, 255).astype(np.uint8)
-    del acc
-    return Image.fromarray(out_arr, mode=pil_mode) if is_pil else out_arr
+    s1 = ImageChops.offset(pil_im, sx, sy)
+    s2 = ImageChops.offset(pil_im, -sx, -sy)
+    blended = Image.blend(pil_im, Image.blend(s1, s2, 0.5), 0.45)
+    return blended if is_pil else np.asarray(blended, dtype=np.uint8)

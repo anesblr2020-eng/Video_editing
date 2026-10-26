@@ -366,11 +366,25 @@ def measure_arabic_text(
         return max(20, len(str(text)) * 18), 36
 
 
+_RESOLVED_ARABIC_FONT_PATH_CACHE: Dict[bool, Optional[str]] = {}
+
+
 def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont:
     global _FONT_DOWNLOAD_ATTEMPTED
     cache_key = (int(font_size), bool(bold))
     if cache_key in _FONT_OBJECT_CACHE:
         return _FONT_OBJECT_CACHE[cache_key]
+
+    b_flag = bool(bold)
+    if b_flag in _RESOLVED_ARABIC_FONT_PATH_CACHE:
+        cached_path = _RESOLVED_ARABIC_FONT_PATH_CACHE[b_flag]
+        if cached_path:
+            try:
+                f_obj = ImageFont.truetype(cached_path, int(font_size))
+                _FONT_OBJECT_CACHE[cache_key] = f_obj
+                return f_obj
+            except Exception:
+                pass
 
     fonts_dir = os.path.join(_CURRENT_DIR, "assets", "fonts")
     os.makedirs(fonts_dir, exist_ok=True)
@@ -378,19 +392,21 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
 
     if not os.path.exists(cairo_bold_path) and not _FONT_DOWNLOAD_ATTEMPTED:
         _FONT_DOWNLOAD_ATTEMPTED = True
-        font_urls = [
-            "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf",
-            "https://github.com/google/fonts/raw/main/ofl/tajawal/Tajawal-Bold.ttf"
-        ]
-        for url in font_urls:
-            try:
-                resp = requests.get(url, timeout=4)
-                if resp.status_code == 200 and len(resp.content) > 20000:
-                    with open(cairo_bold_path, "wb") as f:
-                        f.write(resp.content)
-                    break
-            except Exception:
-                continue
+        # إذا كان خط NotoSansArabic مثبتاً على النظام (Linux/Streamlit Cloud) نستخدمه فوراً دون تأخير الشبكة
+        if not os.path.exists("/usr/share/fonts/truetype/noto/NotoSansArabic-Bold.ttf"):
+            font_urls = [
+                "https://github.com/google/fonts/raw/main/ofl/cairo/static/Cairo-Bold.ttf",
+                "https://github.com/google/fonts/raw/main/ofl/tajawal/Tajawal-Bold.ttf"
+            ]
+            for url in font_urls:
+                try:
+                    resp = requests.get(url, timeout=2.5)
+                    if resp.status_code == 200 and len(resp.content) > 20000:
+                        with open(cairo_bold_path, "wb") as f:
+                            f.write(resp.content)
+                        break
+                except Exception:
+                    continue
 
     candidate_fonts = [
         cairo_bold_path,
@@ -408,11 +424,13 @@ def get_arabic_font(font_size: int, bold: bool = True) -> ImageFont.FreeTypeFont
         if path and os.path.exists(path):
             try:
                 f_obj = ImageFont.truetype(path, int(font_size))
+                _RESOLVED_ARABIC_FONT_PATH_CACHE[b_flag] = path
                 _FONT_OBJECT_CACHE[cache_key] = f_obj
                 return f_obj
             except Exception:
                 continue
 
+    _RESOLVED_ARABIC_FONT_PATH_CACHE[b_flag] = None
     f_def = ImageFont.load_default()
     _FONT_OBJECT_CACHE[cache_key] = f_def
     return f_def

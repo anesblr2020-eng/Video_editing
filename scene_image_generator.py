@@ -29,8 +29,11 @@ import hashlib
 from io import BytesIO
 from typing import Dict, Any, List, Optional, Tuple, Callable
 
+import logging
 import requests
 from PIL import Image
+
+logger = logging.getLogger(__name__)
 
 try:
     from google import genai as google_genai_sdk
@@ -473,7 +476,13 @@ def invoke_nano_banana_interactions_api(
     client = sdk_client
     if client is None and _HAS_GOOGLE_GENAI_SDK and google_genai_sdk is not None:
         try:
-            client = google_genai_sdk.Client(api_key=api_key)
+            try:
+                client = google_genai_sdk.Client(
+                    api_key=api_key,
+                    http_options={"timeout": 35000},
+                )
+            except Exception:
+                client = google_genai_sdk.Client(api_key=api_key)
         except Exception as init_err:
             meta["sdk_init_note"] = str(init_err)[:200]
             client = None
@@ -516,7 +525,7 @@ def invoke_nano_banana_interactions_api(
         INTERACTIONS_REST_URL,
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json=payload,
-        timeout=(15, 120),
+        timeout=(10, 35),
     )
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code} (Interactions API - {norm_model}): {resp.text[:450]}")
@@ -585,7 +594,7 @@ def invoke_generate_content_image_api(
         url,
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json=body,
-        timeout=(15, 120),
+        timeout=(10, 35),
     )
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code} (generateContent - {clean_model}): {resp.text[:450]}")
@@ -779,7 +788,13 @@ def generate_scene_images(
     active_sdk_client = sdk_client
     if active_sdk_client is None and _HAS_GOOGLE_GENAI_SDK and google_genai_sdk is not None:
         try:
-            active_sdk_client = google_genai_sdk.Client(api_key=resolved_key)
+            try:
+                active_sdk_client = google_genai_sdk.Client(
+                    api_key=resolved_key,
+                    http_options={"timeout": 35000},
+                )
+            except Exception:
+                active_sdk_client = google_genai_sdk.Client(api_key=resolved_key)
         except Exception:
             active_sdk_client = None
 
@@ -826,6 +841,7 @@ def generate_scene_images(
 
             use_interactions = is_interactions_api_model(model_name)
             surface_label = "interactions_api" if use_interactions else "generateContent"
+            logger.info(f"[v5 ImageGen] المشهد #{scene_idx}: محاولة النموذج {model_name} عبر {surface_label}...")
 
             try:
                 if use_interactions:
@@ -872,6 +888,7 @@ def generate_scene_images(
 
             except Exception as exc:
                 err_info = classify_provider_error(exc)
+                logger.warning(f"[v5 ImageGen] فشل النموذج {model_name} للمشهد #{scene_idx} ({err_info['category']}): {err_info['original_error'][:220]}")
                 err_entry = {
                     "model": model_name,
                     "api_surface": surface_label,

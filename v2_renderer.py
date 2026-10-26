@@ -642,6 +642,7 @@ def verify_and_render_with_chromium(
     output_mp4_path: str,
     fps: int = 30,
     total_duration: float = 23.60,
+    progress_callback: Any = None,
 ) -> Dict[str, Any]:
     """
     1. يبني وثائق HTML/CSS/SVG القياسية ويحسب إحداثيات DOM getBoundingClientRect() لكل مشهد ولكل كلمة.
@@ -875,6 +876,11 @@ def verify_and_render_with_chromium(
                 pass
 
     for f_idx in range(total_frames):
+        if callable(progress_callback) and (f_idx % 15 == 0 or f_idx == total_frames - 1):
+            try:
+                progress_callback(f_idx / float(max(1, total_frames)), f"رندر إطارات الفيديو 1080×1920 ({f_idx + 1}/{total_frames})...")
+            except Exception:
+                pass
         t = f_idx / float(fps)
         active_idx = len(studio_scenes) - 1
         for i, sc_st in enumerate(studio_scenes):

@@ -7,9 +7,12 @@ import os
 import sys
 import json
 import shutil
+import logging
 import argparse
 import subprocess
 from typing import Dict, Any, Optional, Callable, List
+
+logger = logging.getLogger(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
@@ -175,7 +178,8 @@ def run_v2_pipeline_programmatic(
                 progress_callback(p, msg)
             except Exception:
                 pass
-        print(f"[v2 {int(p*100)}%] {msg}")
+        logger.info(f"[v2 {int(p*100)}%] {msg}")
+        print(f"[v2 {int(p*100)}%] {msg}", flush=True)
 
     out_dir = os.path.dirname(os.path.abspath(output_mp4_path))
     os.makedirs(out_dir, exist_ok=True)
@@ -249,7 +253,11 @@ def run_v2_pipeline_programmatic(
         prompts_path=visual_plan_paths["scene_image_prompts"],
         progress=lambda r, m: _prog(0.29 + 0.09 * float(r), m),
     )
-    # سلوك v5 الصارم: لا ندّعي أبداً أن الأوصاف النصية هي صور مولدة، ولا نستبدل الصور الفاشلة بأشكال هندسية وهمية!
+    # سلوك v5 الصارم: لا ندّعي أبداً أن الأوصاف النصية هي صور مولدة!
+    # إذا فشل توليد جميع الصور (مثلاً بسبب HTTP 429 / نفاد الحصة المجانية)، نسجل الفشل بصراحة في image_generation_report.json
+    # ونستكمل رندر الفيديو بمحرك الموشن جرافيك المتجهي (V4 Cinema Studio) حتى لا تتعطل صناعة الفيديو للمستخدم،
+    # إلا إذا فعّل المستخدم الوضع الصارم لإيقاف الرندر (GEMINI_STRICT_IMAGE_REQUIRED=1).
+    strict_img_req = str(os.environ.get("GEMINI_STRICT_IMAGE_REQUIRED", "0")).strip().lower() in ("1", "true", "yes")
     if int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0:
         report_path = os.path.join(out_dir, "image_generation_report.json")
         details = image_generation_report.get("reason") or "لم يُنشئ مزود الصور أي صورة"
@@ -262,10 +270,12 @@ def run_v2_pipeline_programmatic(
                 guide_txt = f" | التشخيص التقني: {guide['why_ai_studio_differs_from_api']}"
         except Exception:
             pass
-        raise RuntimeError(
-            "تعذر توليد صور المشاهد بالذكاء الاصطناعي في وضع v5 (تم إيقاف الرندر عمداً لمنع استبدال المشاهد بأشكال هندسية أو أيقونات وهمية). "
-            f"التفاصيل: {details}{guide_txt}. راجع image_generation_report.json و scene_image_prompts.json."
-        )
+        if strict_img_req:
+            raise RuntimeError(
+                "تعذر توليد صور المشاهد بالذكاء الاصطناعي في وضع v5 (تم إيقاف الرندر بناءً على إعداد الوضع الصارم GEMINI_STRICT_IMAGE_REQUIRED). "
+                f"التفاصيل: {details}{guide_txt}. راجع image_generation_report.json و scene_image_prompts.json."
+            )
+        _prog(0.38, f"⚠️ تعذر توليد صور AI ({details[:110]}...) — جاري استكمال رندر الفيديو بمحرك الاستوديو المتجهي مع توثيق التقرير.")
     try:
         with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _f:
             _img_payload = json.load(_f)
@@ -307,6 +317,7 @@ def run_v2_pipeline_programmatic(
         output_mp4_path=output_mp4_path,
         fps=30,
         total_duration=duration,
+        progress_callback=lambda r, m: _prog(0.55 + 0.25 * float(r), m),
     )
     dom_report = combined["dom_report"]
     render_report = combined["render_report"]

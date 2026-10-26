@@ -438,6 +438,12 @@ if bg_state.get("status") == "completed":
             st.session_state["restored_input_path"] = bg_state["input_path"]
         if bg_state.get("media_analysis"):
             st.session_state["restored_media_analysis"] = bg_state["media_analysis"]
+elif bg_state.get("status") == "failed" and not job_manager.is_running():
+    err_msg_saved = bg_state.get("error_message") or bg_state.get("status_text") or "حدث خطأ غير متوقع أثناء المعالجة."
+    st.error(f"❌ **توقفت المهمة السابقة بسبب خطأ:**\n\n{err_msg_saved}")
+    if st.button("🔄 مسح رسالة الخطأ وإعادة المحاولة", key="btn_clear_failed_bg_job"):
+        job_manager.clear_job()
+        st.rerun()
 
 
 # ==============================================================================
@@ -1564,6 +1570,14 @@ if result_path and os.path.exists(result_path):
                         im2.metric("صور مولدة جديدة", int(img_rep.get("generated", 0)))
                         im3.metric("صور مسترجعة من الكاش", int(img_rep.get("cached", 0)))
                         im4.metric("مشاهد فاشلة", int(img_rep.get("failed", 0)))
+                        if int(img_rep.get("failed", 0)) > 0 and img_rep.get("reason"):
+                            st.warning(f"⚠️ **تشخيص مزود صور Gemini:** {img_rep.get('reason')}")
+                            t_guide = img_rep.get("troubleshooting_guide") or {}
+                            if t_guide.get("why_ai_studio_differs_from_api"):
+                                with st.expander("🔍 لماذا نجح التوليد في Google AI Studio وظهرت رسالة 429 في الـ API؟ (خطوات الحل)", expanded=False):
+                                    st.info(t_guide["why_ai_studio_differs_from_api"])
+                                    for st_line in t_guide.get("steps_to_verify", []):
+                                        st.markdown(f"- {st_line}")
                 except Exception:
                     pass
 

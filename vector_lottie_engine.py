@@ -460,6 +460,9 @@ def render_floating_particles_layer(
     return canvas_rgba
 
 
+_RADIAL_GLOW_SPRITE_CACHE: Dict[Tuple[Any, ...], Image.Image] = {}
+
+
 def render_radial_ambient_glow(
     canvas_rgba: Image.Image,
     center_xy: Tuple[int, int],
@@ -467,7 +470,7 @@ def render_radial_ambient_glow(
     color_rgb: Tuple[int, int, int],
     intensity: float = 0.28
 ) -> Image.Image:
-    """إضاءة محيطية متدرجة (`Radial Glow`) خلف البطاقات أو الأيقونات."""
+    """إضاءة محيطية متدرجة (`Radial Glow`) خلف البطاقات أو الأيقونات (مع كاش ذكي لتسريع الرندرة)."""
     if radius <= 8 or intensity <= 0.01:
         return canvas_rgba
     w, h = canvas_rgba.size
@@ -478,17 +481,25 @@ def render_radial_ambient_glow(
     if gw < 8 or gh < 8:
         return canvas_rgba
 
-    yy, xx = np.ogrid[y1:y2, x1:x2]
-    dist_sq = ((xx - cx) / float(radius)) ** 2 + ((yy - cy) / float(radius)) ** 2
-    alpha_map = (np.exp(-dist_sq * 2.8) * (255.0 * min(0.85, float(intensity)))).astype(np.uint8)
+    rel_cx, rel_cy = cx - x1, cy - y1
+    g_key = (gw, gh, rel_cx, rel_cy, int(radius), tuple(color_rgb[:3]), round(float(intensity), 2))
+    glow_img = _RADIAL_GLOW_SPRITE_CACHE.get(g_key)
+    if glow_img is None:
+        if len(_RADIAL_GLOW_SPRITE_CACHE) > 64:
+            _RADIAL_GLOW_SPRITE_CACHE.clear()
+        yy, xx = np.ogrid[0:gh, 0:gw]
+        dist_sq = ((xx - rel_cx) / float(radius)) ** 2 + ((yy - rel_cy) / float(radius)) ** 2
+        alpha_map = (np.exp(-dist_sq * 2.8) * (255.0 * min(0.85, float(intensity)))).astype(np.uint8)
 
-    patch = np.zeros((gh, gw, 4), dtype=np.uint8)
-    patch[:, :, 0] = color_rgb[0]
-    patch[:, :, 1] = color_rgb[1]
-    patch[:, :, 2] = color_rgb[2]
-    patch[:, :, 3] = alpha_map
+        patch = np.zeros((gh, gw, 4), dtype=np.uint8)
+        patch[:, :, 0] = color_rgb[0]
+        patch[:, :, 1] = color_rgb[1]
+        patch[:, :, 2] = color_rgb[2]
+        patch[:, :, 3] = alpha_map
 
-    glow_img = Image.fromarray(patch, mode="RGBA")
+        glow_img = Image.fromarray(patch, mode="RGBA")
+        _RADIAL_GLOW_SPRITE_CACHE[g_key] = glow_img
+
     canvas_rgba.alpha_composite(glow_img, (x1, y1))
     return canvas_rgba
 

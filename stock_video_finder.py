@@ -30,12 +30,9 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFilter
 
-try:
-    import cv2
-    _HAS_CV2 = True
-except Exception:
-    cv2 = None
-    _HAS_CV2 = False
+# تعطيل استيراد cv2 تماماً والاعتماد على PIL + NumPy السريع لمنع تعليق fork/subprocess في الحاويات السحابية
+cv2 = None
+_HAS_CV2 = False
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
