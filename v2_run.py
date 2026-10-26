@@ -247,7 +247,7 @@ def run_v2_pipeline_programmatic(
     image_generation_report = generate_scene_images(out_dir, visual_plan_paths["scene_image_prompts"])
     # Strict v3 behavior: never pretend that prompts are images and never silently fall back
     # to the legacy icon/template renderer when the AI-image provider failed.
-    if int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0:
+    if (int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0) or int(image_generation_report.get("failed", 0)) > 0:
         report_path = os.path.join(out_dir, "image_generation_report.json")
         details = image_generation_report.get("reason") or "لم يُنشئ مزود الصور أي صورة"
         try:
@@ -261,7 +261,7 @@ def run_v2_pipeline_programmatic(
         except Exception:
             pass
         raise RuntimeError(
-            "فشل توليد الصور بالذكاء الاصطناعي في وضع v3؛ أوقفت الإخراج عمداً حتى لا أرجع إلى الأشكال القديمة. "
+            "فشل توليد صورة واحدة أو أكثر بالذكاء الاصطناعي في وضع v4؛ أوقفت الإخراج عمداً حتى لا أرجع إلى الأشكال القديمة. "
             f"التفاصيل: {details}. راجع image_generation_report.json و scene_image_prompts.json في مجلد المخرجات."
         )
     try:
