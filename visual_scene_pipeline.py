@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-visual_scene_pipeline.py — التخطيط البصري الدلالي وبناء وصف مشاهد سردي غني لتوليد الصور (الإصدار v5)
+visual_scene_pipeline.py — التخطيط البصري الدلالي وبناء وصف مشاهد سردي غني لتوليد الصور (الإصدار v6)
 ====================================================================================================
 ينشئ هوية بصرية موحدة للفيديو (Visual Bible) ويحوّل كل مشهد منطوق إلى وصف مشهد بصري سردي عالي التحديد
 (Narrative Scene Image Prompt) مرتبط بمعنى كلام المتحدث الفعلي (المكان، الشخصيات، الفعل، الإضاءة، التكوين)،
@@ -17,55 +17,23 @@ def _clean(text: Any, limit: int = 700) -> str:
 
 
 def _derive_narrative_visual_brief(speech: str, keywords: List[str], visual_query: str, intent: str) -> str:
-    """
-    يحول نص الجملة المنطوقة والكلمات المفتاحية إلى توجيه مشهدي سردي ملموس (Concrete Narrative Visual Brief)
-    يصف شخصيات/عناصر حقيقية في بيئة واقعية تعبر عن المعنى بدلاً من الأيقونات المجردة.
-    """
-    s_low = speech.lower()
-    kw_str = "، ".join(_clean(k, 60) for k in (keywords or []) if _clean(k, 60))
-
-    if any(k in s_low for k in ["ينتظر", "تنتظر", "انتظار", "طلب", "طلبيات", "توصيل", "وصل", "شحن"]):
-        scene_desc = (
-            "مشهد سردي واضح لشخص في بيئة حقيقية ينتظر وصول طلب أو طرد بتركيز وترقب، "
-            "مع تفاصيل المكان المحيط وإضاءة سينمائية طبيعية تعكس حالة الانتظار والحدث الفعلي"
-        )
-    elif any(k in s_low for k in ["وقت", "الوقت", "تعاني", "مشكل", "ساعات", "ضغط", "متأخر"]):
-        scene_desc = (
-            "مشهد سردي لصانع محتوى أو محترف يجلس أمام مكتب عمل مزدحم في المساء، يظهر عليه ضغط الوقت وكثرة المهام، "
-            "مع إضاءة درامية دافئة وباردة متباينة تبرز التحدي الواقعي"
-        )
-    elif any(k in s_low for k in ["انستغرام", "إنستغرام", "سوشيال", "يموت", "حساب", "تفاعل", "مشاهدات"]):
-        scene_desc = (
-            "مشهد سردي في استوديو حديث يظهر فيه صانع محتوى ينظر إلى شاشة هاتفه التي تعرض ركود الحساب وانخفاض التفاعل، "
-            "مع عمق ميدان سينمائي يعكس فتور النشاط الرقمي"
-        )
-    elif any(k in s_low for k in ["منصة", "ايديتينغ", "إيديتينغ", "تمونتي", "تمونطي", "يمونتي", "مونتاج", "موشن"]):
-        scene_desc = (
-            "مشهد سردي داخل مساحة عمل إبداعية حديثة حيث يتم تحرير الفيديو بسلاسة فائقة عبر نظام ذكي، "
-            "مع إضاءة استوديو احترافية وتفاصيل بيئة مونتاج حقيقية متكاملة"
-        )
-    elif any(k in s_low for k in ["صمت", "تنحي", "ينحي", "تنقي", "صوت", "مايك"]):
-        scene_desc = (
-            "مشهد سردي داخل استوديو تسجيل صوتي احترافي مع ميكروفون استوديو واضح وعزل صوتي متقن، "
-            "يعبر عن نقاء الصوت وإزالة فترات التوقف بسلاسة"
-        )
-    elif any(k in s_low for k in ["ذكاء", "اصطناعي", "الاصطناعي", "مجاني", "ai", "بالاي"]):
-        scene_desc = (
-            "مشهد سردي مستقبلي أنيق يجمع بين الإبداع البشري والتقنية الذكية في بيئة استوديو مضيئة، "
-            "يعبر عن الأتمتة الكاملة والنتيجة الاحترافية الميسّرة"
-        )
-    elif any(k in s_low for k in ["رابط", "التسجيل", "أسفل", "اسفل", "ابدأ", "اشترك"]):
-        scene_desc = (
-            "مشهد سردي ختامي ملهم لصانع محتوى واثق ينجز عمله بنجاح ويشارك محتواه الجاهز للجمهور، "
-            "بإضاءة مشرقة تدعو المشاهد للبدء الفوري"
-        )
-    else:
-        scene_desc = (
-            f"مشهد بصري سردي متكامل يجسد المعنى الفعلي للجملة المنطوقة: ({speech}) "
-            f"عبر عناصر واقعية وبيئة واضحة وموضوع رئيسي ملموس ({kw_str or visual_query or intent})"
-        )
-
-    return scene_desc
+    """Build a literal, speech-first visual direction; avoid keyword-triggered unrelated stock scenes."""
+    speech = _clean(speech, 500)
+    keywords_clean = [_clean(k, 50) for k in (keywords or []) if _clean(k, 50)]
+    query = _clean(visual_query, 180)
+    # The spoken sentence remains the primary source of truth. Only add a grounded visual
+    # interpretation when the scene metadata supplies one; do not invent a random person/setting.
+    parts = [f"المشهد يجب أن يصوّر المعنى المحدد لهذه الجملة: «{speech}»."] if speech else []
+    if query:
+        parts.append(f"العنصر البصري المقترح المرتبط مباشرة بالجملة: {query}.")
+    if keywords_clean:
+        parts.append("تفاصيل داعمة من الكلمات الفعلية فقط: " + "، ".join(keywords_clean[:5]) + ".")
+    parts.append(
+        "حوّل الفكرة إلى موقف بصري واحد واضح: موضوع رئيسي محدد، فعل قابل للمشاهدة، ومكان مناسب للسياق. "
+        "إذا كانت الجملة مجردة، استخدم استعارة بصرية مرتبطة بها مباشرة، لا شخصية أو رمزًا عشوائيًا. "
+        "لا تضف فتاة أو شخصًا أو عنصرًا خياليًا ما لم يطلبه المعنى صراحة."
+    )
+    return " ".join(parts)
 
 
 def build_visual_bible(theme_name: str, theme: Dict[str, Any], scenes: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -74,7 +42,7 @@ def build_visual_bible(theme_name: str, theme: Dict[str, Any], scenes: List[Dict
     if not isinstance(palette, dict):
         palette = {"theme_description": str(palette)}
     visual_bible = {
-        "version": "v5",
+        "version": "v6",
         "theme_name": theme_name,
         "format": "vertical 9:16 cinematic editorial illustration & realistic studio art, high visual clarity",
         "palette": palette,
@@ -110,14 +78,16 @@ def build_scene_image_prompts(scenes: List[Dict[str, Any]], bible: Dict[str, Any
             intent=intent,
         )
 
-        # وصف المشهد الحقيقي الموجه لـ Nano Banana 2.1 وواجهات توليد الصور
+        # Compact speech-first prompt: preserve the actual event and avoid generic/irrelevant imagery.
         prompt = (
-            f"أنشئ صورة مشهد عمودية (9:16) عالية الجودة تعبر بدقة عن هذا المعنى السردي المنطوق: \"{speech}\".\n"
-            f"التوجيه البصري السردي للمشهد: {narrative_brief}.\n"
-            f"العناصر الدلالية المرتبطة: {semantic or speech}. الدور السردي: {intent}.\n"
-            f"الأسلوب الفني الموحد: {bible.get('format')}. تناسق الألوان: {palette_text}.\n"
-            "شروط صارمة: يجب أن تُظهر الصورة مشهداً بصرياً سردياً متكاملاً (بيئة واضحة، عنصر أو شخصية رئيسية، فعل واضح، وإضاءة سينمائية) "
-            "مرتبطاً بمعنى الجملة، ويُمنع منعاً باتاً رسم أيقونات عامة معزولة أو دوائر أو مربعات هندسية مجردة أو كتابة أي نصوص أو حروف أو شعارات داخل الصورة."
+            f"Vertical 9:16 cinematic scene. Illustrate this spoken meaning literally and accurately: «{speech}». "
+            f"Visual direction: {narrative_brief} "
+            f"Relevant terms: {semantic or speech}. Intent: {intent}. "
+            "Create one coherent, concrete scene with a clear subject, visible action, and contextually correct environment. "
+            "No unrelated people, no random fantasy silhouettes, no generic icons, no abstract geometric filler, "
+            "no collages, no text, no lettering, no logos, no watermark. "
+            "Keep a consistent cinematic editorial style, natural materials, clear composition, readable subject, "
+            "controlled depth of field, and enough visual variety from other scenes."
         )
         prompts.append({
             "scene_index": i + 1,
@@ -171,5 +141,5 @@ def write_visual_plan(out_dir: str, theme_name: str, theme: Dict[str, Any], scen
     with open(bible_path, "w", encoding="utf-8") as f:
         json.dump(bible, f, ensure_ascii=False, indent=2)
     with open(prompts_path, "w", encoding="utf-8") as f:
-        json.dump({"version": "v5", "scene_count": len(prompts), "scenes": prompts}, f, ensure_ascii=False, indent=2)
+        json.dump({"version": "v6", "scene_count": len(prompts), "scenes": prompts}, f, ensure_ascii=False, indent=2)
     return {"visual_bible": bible_path, "scene_image_prompts": prompts_path}

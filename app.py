@@ -337,7 +337,7 @@ def cleanup_temp_directory(temp_path: str = TEMP_DIR):
 
 
 st.set_page_config(
-    page_title="استوديو المونتاج والموشن جرافيك الذكي v5 (يعمل في الخلفية)",
+    page_title="استوديو المونتاج والموشن جرافيك الذكي v6 (يعمل في الخلفية)",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -386,9 +386,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي — v5</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي — v6</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">v5 • توليد صور مشاهد سردية عبر Nano Banana 2.1 (Interactions API) • كاش ذكي • تشخيص دقيق لأخطاء 429 • بدون صور وهمية</div>',
+    '<div class="sub-title">v6 • أوصاف مشهدية مرتبطة بالكلام • صور حقيقية لكل مشهد أو إيقاف واضح • منع القوالب البديلة الصامتة</div>',
     unsafe_allow_html=True
 )
 st.markdown(

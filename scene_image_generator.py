@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-scene_image_generator.py — محرك توليد صور المشاهد السردية بالذكاء الاصطناعي (الإصدار v5)
+scene_image_generator.py — محرك توليد صور المشاهد السردية بالذكاء الاصطناعي (الإصدار v6)
 =========================================================================================
-الميزات الهندسية في الإصدار v5:
+الميزات الهندسية في الإصدار v6:
 1. دمج `models/gemini-nano-banana-2.1` عبر `google.genai` (`client.interactions.create`) مع تمرير
    وصف المشهد الحقيقي الناتج من نظام تحليل الصوت/الفيديو، وإعدادات `image_config: {"image_size": "1K"}`
    و`response_modalities=["image", "text"]`.
@@ -652,7 +652,7 @@ def invoke_free_cloud_image_fallback(
                 logger.debug(f"HF fallback notice ({hfm}): {hf_e}")
 
     # 2. المحاولة المجانية بدون مفتاح نهائياً عبر Pollinations Flux (9:16 Portrait)
-    clean_p = " ".join(prompt.split())[:420]
+    clean_p = " ".join(prompt.split())[:1800]  # Preserve scene-specific meaning; avoid truncating after generic boilerplate.
     encoded_p = urllib.parse.quote(clean_p)
     for model_slug in ("flux", "turbo"):
         pol_url = (
@@ -662,7 +662,7 @@ def invoke_free_cloud_image_fallback(
         try:
             r_pol = sess.get(
                 pol_url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; StudioV5/1.0)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; StudioV6/1.0)"},
                 timeout=(8, 28),
             )
             if r_pol.status_code == 200 and r_pol.content and len(r_pol.content) > 2048:

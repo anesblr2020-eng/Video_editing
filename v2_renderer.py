@@ -862,7 +862,7 @@ def verify_and_render_with_chromium(
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
     bg_cache = {}
     # Preload generated scene artwork once. The art is composited behind the motion-graphics
-    # layer with restrained opacity so captions remain readable while scene-specific imagery is visible.
+    # layer with a stronger image-first balance; only a restrained graphics layer remains over the semantic artwork.
     from PIL import ImageEnhance
     scene_art = {}
     for _idx, _sc in enumerate(studio_scenes):
@@ -957,7 +957,7 @@ def verify_and_render_with_chromium(
                 left = max(0, (aw - 1080) // 2 + int(10 * math.sin(sc_prog * math.pi)))
                 top = max(0, (ah - 1920) // 2 + int(12 * math.cos(sc_prog * math.pi)))
                 art_zoom = art_zoom.crop((left, top, left + 1080, top + 1920))
-                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.32)
+                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.18)
             except Exception:
                 pass
         frame_rgb = np.ascontiguousarray(np.array(curr_img.convert("RGB"), dtype=np.uint8))

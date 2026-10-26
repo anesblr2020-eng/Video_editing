@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-v2_run.py — نقطة التشغيل الموحدة للإصدار الخامس (v5) من نظام الموشن جرافيك وتوليد صور المشاهد بالذكاء الاصطناعي
+v2_run.py — نقطة التشغيل الموحدة للإصدار الخامس (v6) من نظام الموشن جرافيك وتوليد صور المشاهد بالذكاء الاصطناعي
 (تعمل من سطر الأوامر CLI ومن داخل واجهة Streamlit التفاعلية app.py بدون أي مجلدات فرعية وبدون cv2).
 """
 import os
@@ -247,7 +247,7 @@ def run_v2_pipeline_programmatic(
     visual_plan_paths = write_visual_plan(out_dir, theme_name, theme, scenes)
     # Generate a separate original image for each semantic scene when a Gemini API key is available.
     # If unavailable, keep the normal pipeline operational and report the reason explicitly.
-    _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد عبر Nano Banana 2.1 / Gemini (v5)...")
+    _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد عبر Nano Banana 2.1 / Gemini (v6)...")
     image_generation_report = generate_scene_images(
         out_dir=out_dir,
         prompts_path=visual_plan_paths["scene_image_prompts"],
@@ -257,7 +257,7 @@ def run_v2_pipeline_programmatic(
     # إذا فشل توليد جميع الصور (مثلاً بسبب HTTP 429 / نفاد الحصة المجانية)، نسجل الفشل بصراحة في image_generation_report.json
     # ونستكمل رندر الفيديو بمحرك الموشن جرافيك المتجهي (V4 Cinema Studio) حتى لا تتعطل صناعة الفيديو للمستخدم،
     # إلا إذا فعّل المستخدم الوضع الصارم لإيقاف الرندر (GEMINI_STRICT_IMAGE_REQUIRED=1).
-    strict_img_req = str(os.environ.get("GEMINI_STRICT_IMAGE_REQUIRED", "0")).strip().lower() in ("1", "true", "yes")
+    strict_img_req = str(os.environ.get("GEMINI_STRICT_IMAGE_REQUIRED", "1")).strip().lower() in ("1", "true", "yes")
     if int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0:
         report_path = os.path.join(out_dir, "image_generation_report.json")
         details = image_generation_report.get("reason") or "لم يُنشئ مزود الصور أي صورة"
@@ -288,6 +288,22 @@ def run_v2_pipeline_programmatic(
                 _scene["image_model_used"] = _record.get("model_used")
     except Exception as _img_load_error:
         image_generation_report["scene_path_load_error"] = str(_img_load_error)[:250]
+
+    # v6 default: every scene must have a real, existing generated image. Never silently
+    # produce a template-only video when image generation failed for some scenes.
+    strict_all_scenes = str(os.environ.get("GEMINI_STRICT_IMAGE_REQUIRED", "1")).strip().lower() not in ("0", "false", "no")
+    if strict_all_scenes:
+        missing_images = [
+            int(i + 1) for i, sc in enumerate(scenes)
+            if not sc.get("image_path") or not os.path.isfile(str(sc.get("image_path")))
+        ]
+        if missing_images:
+            report_path = os.path.join(out_dir, "image_generation_report.json")
+            raise RuntimeError(
+                "تم إيقاف الرندر في v6 لأن بعض المشاهد لا تملك صورًا مولدة صالحة؛ "
+                f"المشاهد الناقصة: {missing_images[:30]}. لن يتم استبدالها بقوالب أو أشكال. "
+                f"راجع التقرير: {report_path}. إذا أردت السماح بالرندر القديم مؤقتًا، اضبط GEMINI_STRICT_IMAGE_REQUIRED=0."
+            )
 
     scene_plan_path = os.path.join(out_dir, "scene_plan.json")
     with open(scene_plan_path, "w", encoding="utf-8") as f:
