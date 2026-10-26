@@ -537,7 +537,7 @@ with st.sidebar:
 # 3. دالة تشغيل المسارات الموحدة
 # ==============================================================================
 STYLE_OPTIONS = [
-    "✨ النمط التلقائي الذكي - يدمج كل الأدوار ومشاهد B-Roll (Smart Director All-in-One)",
+    "🧠 مخرج المشاهد بالذكاء الاصطناعي - صور دلالية مولدة + تحريك كاميرا (AI Scene Director)",
     "🛍️ نمط إعلانات المنتجات والتجارة الإلكترونية (E-Commerce & Product Ads)",
     "🎨 دمج الموشن جرافيك ومشاهد B-Roll بالفيديو الأصلي (Motion Graphics & B-Roll Overlay)",
     "🚀 موشن جرافيك احترافي متكامل (12 نمط رسومات وأنيميشن مستمر 30fps • هوية موحدة لكل فيديو)",
@@ -590,25 +590,27 @@ def run_selected_pipeline(
     force_free_ram()
 
     if style_name == STYLE_OPTIONS[0]:
-        from dynamic_edit import apply_smart_director_all_in_one
-        res = _safe_call(
-            apply_smart_director_all_in_one,
+        # Route the default AI-director option through the v2 semantic-image pipeline.
+        # Streamlit Secrets are not automatically exported as environment variables, so bridge
+        # the configured secret to the image generator without writing it to disk or logs.
+        resolved_gemini_key = (gemini_key or os.environ.get("GEMINI_API_KEY", "")).strip()
+        if not resolved_gemini_key:
+            try:
+                resolved_gemini_key = str(st.secrets.get("GEMINI_API_KEY", "")).strip()
+            except Exception:
+                resolved_gemini_key = ""
+        if resolved_gemini_key:
+            os.environ["GEMINI_API_KEY"] = resolved_gemini_key
+        from v2_run import run_v2_pipeline_programmatic
+        result = run_v2_pipeline_programmatic(
             input_path=input_path,
-            output_path=output_path,
-            media_analysis=media_analysis,
-            whisper_model=eff_whisper_model,
-            ollama_model=ollama_model,
-            dialect_mode=dialect,
-            pexels_api_key=pexels_key,
-            groq_api_key=groq_key,
-            gemini_api_key=gemini_key,
-            openai_api_key=openai_key,
+            output_mp4_path=output_path,
+            theme_name="auto",
+            custom_scenes=custom_planned_scenes,
             progress_callback=progress_cb,
-            caption_mode=caption_mode,
-            custom_planned_scenes=custom_planned_scenes,
-            custom_sfx_cues=custom_sfx_cues
         )
-        return _unwrap_path(res)
+        final_path = result.get("deliverables", {}).get("final_video") if isinstance(result, dict) else None
+        return final_path if final_path and os.path.exists(final_path) else output_path
 
     elif style_name == STYLE_OPTIONS[1]:
         from dynamic_edit import apply_product_ad_mode
@@ -897,9 +899,10 @@ with col2:
 
     if selected_style == STYLE_OPTIONS[0]:
         st.info(
-            "🧠 **النمط التلقائي الشامل (Smart Director All-in-One):**\n"
-            "- يحافظ على الفيديو الأصلي بملء الشاشة 100% ويحذف الجمل أو الكلمات المعادة بالخطأ.\n"
-            "- يضبط نسبة الصمت بين **3% إلى 4%** ويدمج بطاقات الموشن العائمة ومشاهد B-Roll."
+            "🧠 **مخرج المشاهد بالذكاء الاصطناعي:**\n"
+            "- يحلل الكلام ويخطط عددًا مرنًا من المشاهد الدلالية.\n"
+            "- يحاول توليد صورة أصلية لكل مشهد عبر Gemini، ثم يضيف حركة كاميرا وانتقالات ويحافظ على هوية بصرية موحدة.\n"
+            "- إذا لم يتوفر مفتاح API أو فشل التوليد، راجع تقرير image_generation_report.json؛ لن تُعدّ الأوصاف النصية صورًا مولدة."
         )
     elif selected_style == STYLE_OPTIONS[1]:
         st.info("🛍️ **إعلانات المنتجات والتجارة الإلكترونية:** خطاف Hook 0-3s، إبراز المشكلة، ميزات المنتج، شارات الثقة (58 ولاية / دفع عند الاستلام)، ولافتة الشراء CTA.")

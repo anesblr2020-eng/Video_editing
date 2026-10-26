@@ -951,7 +951,7 @@ def verify_and_render_with_chromium(
                 left = max(0, (aw - 1080) // 2 + int(10 * math.sin(sc_prog * math.pi)))
                 top = max(0, (ah - 1920) // 2 + int(12 * math.cos(sc_prog * math.pi)))
                 art_zoom = art_zoom.crop((left, top, left + 1080, top + 1920))
-                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.70)
+                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.32)
             except Exception:
                 pass
         frame_rgb = np.ascontiguousarray(np.array(curr_img.convert("RGB"), dtype=np.uint8))
