@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Optional per-scene image generation via Gemini image-capable generateContent API.
-Images are cached per prompt hash. Missing keys/network/provider errors fail soft and leave the
-existing renderer usable; prompts are never marked as generated unless a valid image is saved.
+"""Per-scene image generation: Gemini Interactions API (Nano Banana) plus REST fallback.
+Successful images are cached; failures are reported explicitly and never silently replaced
+with unrelated geometric placeholders. Provider quota is account/project-side and cannot be
+fixed by retrying the same exhausted quota.
 """
 import os, json, base64, hashlib, time
 from typing import Dict, Any, List
@@ -13,6 +14,7 @@ from io import BytesIO
 # The first usable model is preferred; quota/rate-limit/provider failures trigger fallback.
 # Unknown/unavailable model IDs are skipped automatically and recorded in the report.
 DEFAULT_MODELS = [
+    "models/gemini-nano-banana-2.1",
     "gemini-3-pro-image-preview",
     "gemini-3.1-flash-image-preview",
     "gemini-2.5-flash-image",
@@ -28,6 +30,57 @@ def _configured_models():
     return list(dict.fromkeys(models)) or DEFAULT_MODELS[:]
 
 API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
+
+def _find_image_bytes(obj):
+    """Recursively extract base64 image payloads from SDK interaction objects/dicts."""
+    if hasattr(obj, 'model_dump'):
+        try: obj = obj.model_dump()
+        except Exception: pass
+    elif hasattr(obj, 'to_dict'):
+        try: obj = obj.to_dict()
+        except Exception: pass
+    if isinstance(obj, dict):
+        mime = str(obj.get('mime_type') or obj.get('mimeType') or obj.get('content_type') or '')
+        for key in ('data', 'bytes', 'image_bytes'):
+            value = obj.get(key)
+            if isinstance(value, str) and value and ('image' in mime.lower() or key == 'data'):
+                try:
+                    decoded = base64.b64decode(value, validate=False)
+                    if decoded.startswith(b'\x89PNG') or decoded.startswith(b'\xff\xd8\xff') or decoded.startswith(b'RIFF'):
+                        return decoded
+                except Exception: pass
+            elif isinstance(value, (bytes, bytearray)) and bytes(value)[:4] in (b'\x89PNG', b'\xff\xd8\xff', b'RIFF'):
+                return bytes(value)
+        for value in obj.values():
+            found = _find_image_bytes(value)
+            if found: return found
+    elif isinstance(obj, (list, tuple)):
+        for value in obj:
+            found = _find_image_bytes(value)
+            if found: return found
+    else:
+        # SDK response objects may expose image bytes as attributes.
+        for attr in ('steps', 'outputs', 'content', 'parts', 'result', 'response'):
+            try: value = getattr(obj, attr)
+            except Exception: continue
+            found = _find_image_bytes(value)
+            if found: return found
+    return None
+
+def _generate_interaction_image(api_key: str, prompt: str):
+    """Use the Google GenAI SDK Interactions API for Nano Banana 2.1."""
+    from google import genai
+    client = genai.Client(api_key=api_key)
+    interaction = client.interactions.create(
+        model=os.environ.get('GEMINI_INTERACTIONS_IMAGE_MODEL', 'models/gemini-nano-banana-2.1'),
+        input=prompt,
+        generation_config={'image_config': {'image_size': os.environ.get('GEMINI_IMAGE_SIZE', '1K')}},
+        response_modalities=['image', 'text'],
+    )
+    image_data = _find_image_bytes(interaction)
+    if not image_data:
+        raise ValueError('Interactions API returned a response, but no extractable image bytes were found. Check SDK response schema/model access.')
+    return image_data
 
 def _safe_image(data: bytes, path: str) -> bool:
     try:
@@ -92,9 +145,20 @@ def generate_scene_images(out_dir: str, prompts_path: str, api_key: str = '', pr
                 report['model_usage'][model] = report['model_usage'].get(model, 0) + 1
                 selected_model = model
                 break
-            url = API_BASE.format(model=model)
-            body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']}}
             try:
+                # Nano Banana 2.1 in the supplied example uses the SDK Interactions API,
+                # not the generateContent REST endpoint. Route it accordingly.
+                if 'nano-banana-2.1' in model.lower():
+                    candidate_bytes = _generate_interaction_image(api_key, prompt)
+                    if not _safe_image(candidate_bytes, path):
+                        raise ValueError('Interactions API returned invalid or too-small image data')
+                    image_bytes = candidate_bytes; selected_model = model
+                    scene['image_path'] = path; scene['generation_status'] = 'generated'; scene['model_used'] = model
+                    report['generated'] += 1
+                    report['model_usage'][model] = report['model_usage'].get(model, 0) + 1
+                    break
+                url = API_BASE.format(model=model)
+                body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']}}
                 r = session.post(url, headers={'x-goog-api-key': api_key}, json=body, timeout=(20, 180))
                 if r.status_code >= 400:
                     err = f'HTTP {r.status_code}: {r.text[:500]}'
