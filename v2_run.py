@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-v2_run.py — نقطة التشغيل الموحدة للجيل الثاني (v2) من نظام الموشن جرافيك للسوشيال ميديا
+v2_run.py — نقطة التشغيل الموحدة للجيل الثالث (v3) من نظام الموشن جرافيك للسوشيال ميديا
 (تعمل من سطر الأوامر CLI ومن داخل واجهة Streamlit التفاعلية app.py بدون أي مجلدات فرعية وبدون cv2).
 """
 import os
@@ -196,9 +196,23 @@ def run_v2_pipeline_programmatic(
             check=False,
         )
 
+    # v3: trim long leading/inter-word/trailing silence from the extracted voice and
+    # use the same trimmed waveform for transcription AND final mastering to avoid drift.
+    trimmed_wav = os.path.join(out_dir, "trimmed_voice_v3.wav")
+    source_audio = raw_wav if os.path.exists(raw_wav) else input_path
+    trim_cmd = [
+        "ffmpeg", "-y", "-v", "error", "-i", source_audio,
+        "-af", "silenceremove=start_periods=1:start_duration=0.18:start_threshold=-42dB:stop_periods=-1:stop_duration=0.28:stop_threshold=-42dB:stop_silence=0.10",
+        "-ac", "1", "-ar", "44100", trimmed_wav
+    ]
+    trim_result = subprocess.run(trim_cmd, capture_output=True, text=True, timeout=180)
+    if trim_result.returncode == 0 and os.path.exists(trimmed_wav) and os.path.getsize(trimmed_wav) > 4096:
+        raw_wav = trimmed_wav
+    else:
+        _prog(0.12, "تحذير v3: تعذر قص الصمت آلياً؛ سيتم استخدام الصوت المستخرج كما هو")
     duration = _probe_audio_duration(raw_wav if os.path.exists(raw_wav) else input_path, fallback=23.60)
     words, low_conf_alerts = transcribe_any_audio_or_video(
-        media_path=input_path or raw_wav,
+        media_path=raw_wav if os.path.exists(raw_wav) else (input_path or raw_wav),
         duration=duration,
         user_overrides=user_word_overrides,
     )
@@ -231,6 +245,25 @@ def run_v2_pipeline_programmatic(
     # If unavailable, keep the normal pipeline operational and report the reason explicitly.
     _prog(0.29, "إنشاء صور دلالية أصلية للمشاهد (يتطلب GEMINI_API_KEY)...")
     image_generation_report = generate_scene_images(out_dir, visual_plan_paths["scene_image_prompts"])
+    # Strict v3 behavior: never pretend that prompts are images and never silently fall back
+    # to the legacy icon/template renderer when the AI-image provider failed.
+    if int(image_generation_report.get("generated", 0)) + int(image_generation_report.get("cached", 0)) == 0:
+        report_path = os.path.join(out_dir, "image_generation_report.json")
+        details = image_generation_report.get("reason") or "لم يُنشئ مزود الصور أي صورة"
+        try:
+            with open(report_path, encoding="utf-8") as _rf:
+                _report = json.load(_rf)
+            with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _pf:
+                _pp = json.load(_pf)
+            _errs = [str(x.get("error", "")) for x in _pp.get("scenes", []) if x.get("error")]
+            if _errs:
+                details += " | " + " ; ".join(_errs[:3])
+        except Exception:
+            pass
+        raise RuntimeError(
+            "فشل توليد الصور بالذكاء الاصطناعي في وضع v3؛ أوقفت الإخراج عمداً حتى لا أرجع إلى الأشكال القديمة. "
+            f"التفاصيل: {details}. راجع image_generation_report.json و scene_image_prompts.json في مجلد المخرجات."
+        )
     try:
         with open(visual_plan_paths["scene_image_prompts"], encoding="utf-8") as _f:
             _img_payload = json.load(_f)

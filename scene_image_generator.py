@@ -47,10 +47,10 @@ def generate_scene_images(out_dir: str, prompts_path: str, api_key: str = '', pr
         path = os.path.join(image_dir, f'scene_{int(scene.get("scene_index", i+1)):03d}_{digest}.jpg')
         if os.path.exists(path) and os.path.getsize(path) > 10000:
             scene['image_path'] = path; scene['generation_status'] = 'cached'; report['cached'] += 1; continue
-        url = API_BASE.format(model=MODEL) + '?key=' + api_key
+        url = API_BASE.format(model=MODEL)
         body = {'contents': [{'parts': [{'text': prompt}]}], 'generationConfig': {'responseModalities': ['TEXT', 'IMAGE']}}
         try:
-            r = session.post(url, json=body, timeout=(20, 180))
+            r = session.post(url, headers={'x-goog-api-key': api_key}, json=body, timeout=(20, 180))
             if r.status_code >= 400: raise RuntimeError(f'HTTP {r.status_code}: {r.text[:300]}')
             result = r.json(); image_bytes = None
             for cand in result.get('candidates', []):
@@ -69,6 +69,7 @@ def generate_scene_images(out_dir: str, prompts_path: str, api_key: str = '', pr
         # Persist incremental state so interruption does not lose completed images.
         with open(prompts_path, 'w', encoding='utf-8') as f: json.dump(payload, f, ensure_ascii=False, indent=2)
     report['image_dir'] = image_dir
+    report['errors'] = [str(x.get('error'))[:350] for x in scenes if x.get('generation_status') == 'failed' and x.get('error')]
     report['reason'] = None if report['generated'] or report['cached'] else 'no images generated; inspect per-scene errors in scene_image_prompts.json'
     with open(os.path.join(out_dir, 'image_generation_report.json'), 'w', encoding='utf-8') as f: json.dump(report, f, ensure_ascii=False, indent=2)
     return report

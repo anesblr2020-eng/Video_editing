@@ -337,7 +337,7 @@ def cleanup_temp_directory(temp_path: str = TEMP_DIR):
 
 
 st.set_page_config(
-    page_title="استوديو المونتاج والموشن جرافيك الذكي (يعمل في الخلفية)",
+    page_title="استوديو المونتاج والموشن جرافيك الذكي v3 (يعمل في الخلفية)",
     page_icon="🎬",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -386,9 +386,9 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي — v3</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">ستايل موحد لكل فيديو • 12 نمطاً من الرسومات والأنيميشن المستمر (30fps) • ضبط الصمت الطبيعي (3%-4%) وحذف الجمل المعادة بالخطأ</div>',
+    '<div class="sub-title">v3 • توليد صور دلالية فعلياً أو إيقاف واضح عند الفشل • تحريك كاميرا • قص الصمت • لا رجوع صامت إلى قوالب الأشكال</div>',
     unsafe_allow_html=True
 )
 st.markdown(
