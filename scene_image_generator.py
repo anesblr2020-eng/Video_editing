@@ -88,9 +88,14 @@ def resolve_image_generation_config(api_key: str = "") -> Dict[str, Any]:
         if m and m not in model_chain:
             model_chain.append(m)
 
+    hf_token = (_get_secret_or_env("HF_TOKEN", "") or _get_secret_or_env("HUGGINGFACE_API_KEY", "")).strip()
+    enable_free_fallback = _get_secret_or_env("ENABLE_FREE_IMAGE_FALLBACK", "1").strip().lower() not in ("0", "false", "no")
+
     max_attempts_per_model = max(1, min(2, int(_get_secret_or_env("GEMINI_MAX_ATTEMPTS_PER_MODEL", "1") or "1")))
     return {
         "api_key": resolved_key,
+        "hf_token": hf_token,
+        "enable_free_fallback": enable_free_fallback,
         "primary_model": primary_model,
         "fallback_models": [m for m in model_chain if m != primary_model],
         "model_chain": model_chain,
@@ -460,9 +465,9 @@ def invoke_nano_banana_interactions_api(
 ) -> Tuple[Optional[bytes], Dict[str, Any]]:
     """
     ينفذ طلب توليد الصورة لنموذج `models/gemini-nano-banana-2.1` عبر `Interactions API` حصرياً:
-    1. يستخدم `client.interactions.create(...)` من مكتبة `google-genai` (كما في المواصفات المطلوبة).
-    2. إذا كانت نسخة `google-genai` المثبتة على البيئة لا تضم كائن `client.interactions` أو لم تكن مثبتة،
-       يرسل الطلب إلى نقطة نهاية `Interactions REST API` (`/v1beta/interactions`) ولا يرسله أبداً إلى `generateContent`!
+    1. إذا تم تمرير `sdk_client` صريح (أو فُعّل `GEMINI_USE_SDK_TRANSPORT=1`)، يستخدم `client.interactions.create(...)`.
+    2. في التشغيل السحابي المباشر، يستخدم نقطة نهاية `Interactions REST API` (`/v1beta/interactions`) مباشرة عبر `requests`
+       لتجنب حلقة `tenacity` الداخلية في `google-genai` التي تعلّق التنفيذ لعدة دقائق عند حدوث `HTTP 429`!
     """
     norm_model = normalize_model_identifier(model_name, for_interactions=True)
     meta = {
@@ -472,43 +477,39 @@ def invoke_nano_banana_interactions_api(
         "sdk_available": _HAS_GOOGLE_GENAI_SDK,
     }
 
-    # المسار الأول: عبر مكتبة google-genai الرسمية (client.interactions.create)
-    client = sdk_client
-    if client is None and _HAS_GOOGLE_GENAI_SDK and google_genai_sdk is not None:
-        try:
+    use_sdk = sdk_client is not None or str(os.environ.get("GEMINI_USE_SDK_TRANSPORT", "0")).strip() in ("1", "true")
+    if use_sdk:
+        client = sdk_client
+        if client is None and _HAS_GOOGLE_GENAI_SDK and google_genai_sdk is not None:
             try:
-                client = google_genai_sdk.Client(
-                    api_key=api_key,
-                    http_options={"timeout": 35000},
-                )
+                client = google_genai_sdk.Client(api_key=api_key, http_options={"timeout": 25000})
             except Exception:
-                client = google_genai_sdk.Client(api_key=api_key)
-        except Exception as init_err:
-            meta["sdk_init_note"] = str(init_err)[:200]
-            client = None
+                try:
+                    client = google_genai_sdk.Client(api_key=api_key)
+                except Exception:
+                    client = None
 
-    if client is not None and hasattr(client, "interactions") and hasattr(client.interactions, "create"):
-        meta["transport"] = "google_genai_sdk_interactions"
-        interaction = client.interactions.create(
-            model=norm_model,
-            input=prompt,
-            generation_config={
-                "image_config": {
-                    "image_size": image_size
-                }
-            },
-            response_modalities=["image", "text"],
-        )
-        img_bytes, txt_only, note = extract_image_bytes_from_response(interaction)
-        meta["extraction_note"] = note
-        if txt_only:
-            meta["text_response"] = txt_only
-        if not img_bytes:
-            raise RuntimeError(f"Interactions SDK returned no valid image ({note})")
-        return img_bytes, meta
+        if client is not None and hasattr(client, "interactions") and hasattr(client.interactions, "create"):
+            meta["transport"] = "google_genai_sdk_interactions"
+            interaction = client.interactions.create(
+                model=norm_model,
+                input=prompt,
+                generation_config={
+                    "image_config": {
+                        "image_size": image_size
+                    }
+                },
+                response_modalities=["image", "text"],
+            )
+            img_bytes, txt_only, note = extract_image_bytes_from_response(interaction)
+            meta["extraction_note"] = note
+            if txt_only:
+                meta["text_response"] = txt_only
+            if not img_bytes:
+                raise RuntimeError(f"Interactions SDK returned no valid image ({note})")
+            return img_bytes, meta
 
-    # المسار الثاني (احتياطي متوافق مع Interactions API فقط وليس generateContent!):
-    # إذا لم تتوفر `client.interactions` في إصدار SDK المحلي، نستخدم نقطة نهاية Interactions REST مباشرة
+    # المسار المباشر المضمون ضد التعليق (Zero-Retry Hang): Interactions REST API (/v1beta/interactions)
     meta["transport"] = "interactions_rest_v1beta"
     sess = session or requests.Session()
     payload = {
@@ -525,7 +526,7 @@ def invoke_nano_banana_interactions_api(
         INTERACTIONS_REST_URL,
         headers={"x-goog-api-key": api_key, "Content-Type": "application/json"},
         json=payload,
-        timeout=(10, 35),
+        timeout=(8, 25),
     )
     if resp.status_code >= 400:
         raise RuntimeError(f"HTTP {resp.status_code} (Interactions API - {norm_model}): {resp.text[:450]}")
@@ -607,6 +608,73 @@ def invoke_generate_content_image_api(
     if not img_bytes:
         raise RuntimeError(f"generateContent returned no valid image ({note})")
     return img_bytes, meta
+
+
+
+
+def invoke_free_cloud_image_fallback(
+    prompt: str,
+    scene_idx: int = 1,
+    hf_token: str = "",
+    session: Optional[requests.Session] = None,
+) -> Tuple[Optional[bytes], Dict[str, Any]]:
+    """
+    مزود مجاني 100% بدون بطاقة بنكية وبدون حساب فوترة Google Cloud (لمستخدمي الجزائر والمناطق غير المدعومة في Free Tier):
+    1. إذا وُفر `HF_TOKEN` مجاني من Hugging Face، يستخدم `FLUX.1-schnell` عبر Hugging Face Inference API.
+    2. يعمل تلقائياً بدون أي مفتاح عبر محرك `Pollinations Flux` السحابي (`image.pollinations.ai`) بتوليد صورة عمودية 9:16 (768x1344) حقيقية لكل مشهد!
+    """
+    import urllib.parse
+    sess = session or requests.Session()
+    seed = int(hashlib.md5(f"{scene_idx}_{prompt}".encode("utf-8")).hexdigest()[:8], 16) % 999999
+
+    # 1. المحاولة عبر Hugging Face Free Inference API (إن وضع المستخدم HF_TOKEN مجاني)
+    if hf_token:
+        hf_models = [
+            "black-forest-labs/FLUX.1-schnell",
+            "stabilityai/stable-diffusion-xl-base-1.0",
+        ]
+        for hfm in hf_models:
+            try:
+                hf_url = f"https://router.huggingface.co/hf-inference/models/{hfm}"
+                r_hf = sess.post(
+                    hf_url,
+                    headers={"Authorization": f"Bearer {hf_token}", "Accept": "image/jpeg"},
+                    json={"inputs": prompt},
+                    timeout=(8, 28),
+                )
+                if r_hf.status_code == 200 and r_hf.content and len(r_hf.content) > 2048:
+                    return r_hf.content, {
+                        "model": f"hf/{hfm}",
+                        "api_surface": "huggingface_free_inference",
+                        "image_size": "768x1344",
+                    }
+            except Exception as hf_e:
+                logger.debug(f"HF fallback notice ({hfm}): {hf_e}")
+
+    # 2. المحاولة المجانية بدون مفتاح نهائياً عبر Pollinations Flux (9:16 Portrait)
+    clean_p = " ".join(prompt.split())[:420]
+    encoded_p = urllib.parse.quote(clean_p)
+    for model_slug in ("flux", "turbo"):
+        pol_url = (
+            f"https://image.pollinations.ai/prompt/{encoded_p}"
+            f"?width=768&height=1344&seed={seed}&model={model_slug}&nologo=true"
+        )
+        try:
+            r_pol = sess.get(
+                pol_url,
+                headers={"User-Agent": "Mozilla/5.0 (compatible; StudioV5/1.0)"},
+                timeout=(8, 28),
+            )
+            if r_pol.status_code == 200 and r_pol.content and len(r_pol.content) > 2048:
+                return r_pol.content, {
+                    "model": f"pollinations/{model_slug}-free",
+                    "api_surface": "pollinations_free_api",
+                    "image_size": "768x1344",
+                }
+        except Exception as pol_e:
+            logger.debug(f"Pollinations fallback notice ({model_slug}): {pol_e}")
+
+    raise RuntimeError("تعذر جلب الصورة من المزودات المجانية البديلة (Pollinations / HuggingFace)")
 
 
 # ==============================================================================
@@ -761,7 +829,15 @@ def generate_scene_images(
             json.dump(report, rf, ensure_ascii=False, indent=2)
         return report
 
-    if not resolved_key:
+    hf_token = cfg.get("hf_token", "")
+    # لا نسمح بالمزود المجاني بدون مفتاح إلا في التشغيل السحابي الحقيقي (عندما لا يكون في وضع اختبار معزول بـ session/sdk_client وهمي)
+    allow_free_fallback = bool(
+        cfg.get("enable_free_fallback", True)
+        and sdk_client is None
+        and session is None
+    )
+
+    if not resolved_key and not allow_free_fallback:
         for i in uncached_indices:
             sc = scenes[i]
             sc["image_path"] = None
@@ -785,18 +861,8 @@ def generate_scene_images(
 
     # تهيئة جلسة HTTP وعميل google.genai مرة واحدة
     http_session = session or requests.Session()
+    # لا نمرر عميل google-genai التلقائي إلا إذا طُلب صراحة لتفادي تعليق tenacity الداخلي عند أخطاء 429
     active_sdk_client = sdk_client
-    if active_sdk_client is None and _HAS_GOOGLE_GENAI_SDK and google_genai_sdk is not None:
-        try:
-            try:
-                active_sdk_client = google_genai_sdk.Client(
-                    api_key=resolved_key,
-                    http_options={"timeout": 35000},
-                )
-            except Exception:
-                active_sdk_client = google_genai_sdk.Client(api_key=resolved_key)
-        except Exception:
-            active_sdk_client = None
 
     # قائمة النماذج التي ثبت نفاد حصتها أو عدم صلاحيتها في هذه الجلسة لمنع تكرار استدعائها في المشاهد التالية!
     exhausted_or_blocked_models: Dict[str, Dict[str, Any]] = {}
@@ -827,7 +893,7 @@ def generate_scene_images(
         scene_succeeded = False
         scene_attempt_errors: List[Dict[str, Any]] = []
 
-        for model_name in model_chain:
+        for model_name in (model_chain if resolved_key else []):
             if model_name in exhausted_or_blocked_models:
                 # لا نعيد ضرب نموذج ثبت أن حصته مستنفدة (429) أو غير مدعوم في المشهد السابق!
                 prev_err_info = exhausted_or_blocked_models[model_name]
@@ -924,7 +990,46 @@ def generate_scene_images(
                     global_auth_abort = err_info
                     break
 
+        if not scene_succeeded and allow_free_fallback:
+            try:
+                logger.info(f"[v5 ImageGen] المشهد #{scene_idx}: الانتقال التلقائي إلى مولد الصور السحابي المجاني (Flux Free — بدون بطاقة بنكية)...")
+                free_bytes, free_meta = invoke_free_cloud_image_fallback(
+                    prompt=prompt,
+                    scene_idx=scene_idx,
+                    hf_token=hf_token,
+                    session=http_session,
+                )
+                ok_free, save_note_free = validate_and_save_scene_image(free_bytes, target_path)
+                if ok_free:
+                    used_free_model = free_meta.get("model", "pollinations/flux-free")
+                    used_free_surface = free_meta.get("api_surface", "pollinations_free_api")
+                    scene["image_path"] = target_path
+                    scene["generation_status"] = "generated"
+                    scene["model_used"] = used_free_model
+                    scene["api_surface"] = used_free_surface
+                    scene["error"] = None
+                    scene["error_category"] = None
+                    report["generated"] += 1
+                    report["models_succeeded"][used_free_model] = report["models_succeeded"].get(used_free_model, 0) + 1
+                    report["scene_results"].append({
+                        "scene_index": scene_idx,
+                        "status": "generated",
+                        "model_used": used_free_model,
+                        "api_surface": used_free_surface,
+                        "image_path": target_path,
+                    })
+                    scene_succeeded = True
+                    logger.info(f"[v5 ImageGen] ✅ نجح توليد صورة المشهد #{scene_idx} مجاناً عبر {used_free_model}!")
+            except Exception as free_exc:
+                logger.warning(f"[v5 ImageGen] ملاحظة في المزود المجاني للمشهد #{scene_idx}: {free_exc}")
+
         if not scene_succeeded:
+            if not resolved_key:
+                scene_attempt_errors.append({
+                    "model": "gemini_api",
+                    "category": "missing_api_key",
+                    "error": "GEMINI_API_KEY not configured",
+                })
             scene["image_path"] = None
             scene["generation_status"] = "failed"
             scene["model_used"] = None
