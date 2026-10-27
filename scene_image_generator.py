@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-scene_image_generator.py — محرك توليد صور المشاهد السردية بالذكاء الاصطناعي (الإصدار v6)
+scene_image_generator.py — محرك توليد صور المشاهد السردية بالذكاء الاصطناعي (الإصدار v8)
 =========================================================================================
-الميزات الهندسية في الإصدار v6:
+الميزات الهندسية في الإصدار v8:
 1. دمج `models/gemini-nano-banana-2.1` عبر `google.genai` (`client.interactions.create`) مع تمرير
    وصف المشهد الحقيقي الناتج من نظام تحليل الصوت/الفيديو، وإعدادات `image_config: {"image_size": "1K"}`
    و`response_modalities=["image", "text"]`.
@@ -619,9 +619,9 @@ def invoke_free_cloud_image_fallback(
     session: Optional[requests.Session] = None,
 ) -> Tuple[Optional[bytes], Dict[str, Any]]:
     """
-    مزود مجاني 100% بدون بطاقة بنكية وبدون حساب فوترة Google Cloud (لمستخدمي الجزائر والمناطق غير المدعومة في Free Tier):
-    1. إذا وُفر `HF_TOKEN` مجاني من Hugging Face، يستخدم `FLUX.1-schnell` عبر Hugging Face Inference API.
-    2. يعمل تلقائياً بدون أي مفتاح عبر محرك `Pollinations Flux` السحابي (`image.pollinations.ai`) بتوليد صورة عمودية 9:16 (768x1344) حقيقية لكل مشهد!
+    يحاول استخدام مزود خارجي بديل لتوليد صورة مشهد.
+    قد تتوفر حصص مجانية لبعض المزودين، لكن الإتاحة والحدود والسياسات تتغير؛ لا نضمن المجانية أو التوفر.
+    إذا فشلت المحاولات، يرفع الدالة استثناءً ليُسجل في تقرير المشهد بدلاً من إخفاء الخطأ.
     """
     import urllib.parse
     sess = session or requests.Session()
@@ -652,7 +652,7 @@ def invoke_free_cloud_image_fallback(
                 logger.debug(f"HF fallback notice ({hfm}): {hf_e}")
 
     # 2. المحاولة المجانية بدون مفتاح نهائياً عبر Pollinations Flux (9:16 Portrait)
-    clean_p = " ".join(prompt.split())[:1800]  # Preserve scene-specific meaning; avoid truncating after generic boilerplate.
+    clean_p = " ".join(prompt.split())[:420]
     encoded_p = urllib.parse.quote(clean_p)
     for model_slug in ("flux", "turbo"):
         pol_url = (
@@ -662,7 +662,7 @@ def invoke_free_cloud_image_fallback(
         try:
             r_pol = sess.get(
                 pol_url,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; StudioV6/1.0)"},
+                headers={"User-Agent": "Mozilla/5.0 (compatible; StudioV5/1.0)"},
                 timeout=(8, 28),
             )
             if r_pol.status_code == 200 and r_pol.content and len(r_pol.content) > 2048:
@@ -719,7 +719,7 @@ def generate_scene_images(
     project_id = cfg["cloud_project_id"]
 
     report: Dict[str, Any] = {
-        "version": "v5",
+        "version": "v8",
         "enabled": bool(resolved_key),
         "project_id": project_id,
         "primary_model": cfg["primary_model"],
@@ -907,7 +907,7 @@ def generate_scene_images(
 
             use_interactions = is_interactions_api_model(model_name)
             surface_label = "interactions_api" if use_interactions else "generateContent"
-            logger.info(f"[v5 ImageGen] المشهد #{scene_idx}: محاولة النموذج {model_name} عبر {surface_label}...")
+            logger.info(f"[v8 ImageGen] المشهد #{scene_idx}: محاولة النموذج {model_name} عبر {surface_label}...")
 
             try:
                 if use_interactions:
@@ -954,7 +954,7 @@ def generate_scene_images(
 
             except Exception as exc:
                 err_info = classify_provider_error(exc)
-                logger.warning(f"[v5 ImageGen] فشل النموذج {model_name} للمشهد #{scene_idx} ({err_info['category']}): {err_info['original_error'][:220]}")
+                logger.warning(f"[v8 ImageGen] فشل النموذج {model_name} للمشهد #{scene_idx} ({err_info['category']}): {err_info['original_error'][:220]}")
                 err_entry = {
                     "model": model_name,
                     "api_surface": surface_label,
@@ -992,7 +992,7 @@ def generate_scene_images(
 
         if not scene_succeeded and allow_free_fallback:
             try:
-                logger.info(f"[v5 ImageGen] المشهد #{scene_idx}: الانتقال التلقائي إلى مولد الصور السحابي المجاني (Flux Free — بدون بطاقة بنكية)...")
+                logger.info(f"[v8 ImageGen] المشهد #{scene_idx}: تجربة مزود صورة بديل؛ التوفر والحصة غير مضمونين...")
                 free_bytes, free_meta = invoke_free_cloud_image_fallback(
                     prompt=prompt,
                     scene_idx=scene_idx,
@@ -1019,9 +1019,19 @@ def generate_scene_images(
                         "image_path": target_path,
                     })
                     scene_succeeded = True
-                    logger.info(f"[v5 ImageGen] ✅ نجح توليد صورة المشهد #{scene_idx} مجاناً عبر {used_free_model}!")
+                    logger.info(f"[v8 ImageGen] نجح مزود الصور البديل للمشهد #{scene_idx} عبر {used_free_model}.")
             except Exception as free_exc:
-                logger.warning(f"[v5 ImageGen] ملاحظة في المزود المجاني للمشهد #{scene_idx}: {free_exc}")
+                free_error = str(free_exc)[:350]
+                logger.warning(f"[v8 ImageGen] فشل مزود الصور البديل للمشهد #{scene_idx}: {free_error}")
+                scene_attempt_errors.append({
+                    "model": "free_cloud_fallback",
+                    "api_surface": "external_fallback",
+                    "category": "fallback_provider_unavailable",
+                    "error": free_error,
+                })
+                report["errors"].append(
+                    f"scene {scene_idx}: external image fallback failed: {free_error}"
+                )
 
         if not scene_succeeded:
             if not resolved_key:
@@ -1054,7 +1064,7 @@ def generate_scene_images(
 
         if callable(progress):
             try:
-                progress((pos + 1) / float(max(1, len(uncached_indices))), f"إنشاء صور المشاهد (v5): {pos + 1}/{len(uncached_indices)}")
+                progress((pos + 1) / float(max(1, len(uncached_indices))), f"إنشاء صور المشاهد (v8): {pos + 1}/{len(uncached_indices)}")
             except Exception:
                 pass
 

@@ -171,7 +171,7 @@ class TestReferenceDirectingIntegration(unittest.TestCase):
 
 
 
-    def test_07_v5_interactions_api_routing_and_image_extraction(self):
+    def test_07_v8_interactions_api_routing_and_image_extraction(self):
         import io
         import json
         import base64
@@ -310,6 +310,26 @@ class TestReferenceDirectingIntegration(unittest.TestCase):
             for sc_item in saved_prompts["scenes"]:
                 self.assertIsNone(sc_item["image_path"])
                 self.assertEqual(sc_item["generation_status"], "failed")
+
+
+    def test_09_semantic_fallback_builds_distinct_full_scene_art(self):
+        from semantic_scene_art import build_semantic_scene_art
+        from PIL import ImageChops
+
+        creator = build_semantic_scene_art(
+            {"speech": "صانع محتوى يحرر فيديو على الحاسوب داخل مساحة عمل", "concept_title": "المونتاج"},
+            width=270, height=480,
+        )
+        delivery = build_semantic_scene_art(
+            {"speech": "الزبون ينتظر وصول الطرد من المتجر", "concept_title": "التوصيل"},
+            width=270, height=480,
+        )
+        self.assertEqual(creator.size, (270, 480))
+        self.assertEqual(delivery.size, (270, 480))
+        self.assertGreater(len(creator.getcolors(270 * 480) or []), 20)
+        diff = ImageChops.difference(creator, delivery)
+        self.assertIsNotNone(diff.getbbox(), "Different scene semantics must not produce identical fallback art")
+
 
 
 if __name__ == "__main__":

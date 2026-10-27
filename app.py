@@ -1,14 +1,8 @@
 """
-app.py - الواجهة التفاعلية لنظام أتمتة المونتاج، استنساخ الفيديوهات المرجعية (الأشكال والرسومات والأنيميشن)، والستايل الموحد لكل فيديو
-========================================================================================================================================
-التحديثات الجوهرية:
-1. زر واحد ذكي تحت الفيديو المرجعي (`🎯 نسخ الفيديو المرجعي وتطبيق نفس الأشكال والرسومات والأنيميشن والتحريك`):
-   - ينسخ الألوان، الخلفية، هندسة الأشكال، الرسومات والأنفوجرافيك، وفيزياء الأنيميشن والتحريك ويطبقها بما يناسب الفيديو أو التعليق الصوتي للمستخدم.
-2. نظام الهوية الموحدة لكل فيديو (`One Cohesive Studio Style Per Video`):
-   - عند اختيار الوضع العشوائي/التلقائي، يختار النظام ستايلاً واحداً متكاملاً وموحداً لكامل الفيديو (بدون خلط خلفيات متضاربة داخل الفيديو الواحد)،
-     أو يتيح للمستخدم اختيار الستايل بنفسه، مع تنويع الرسومات والـ Animations (12 نمطاً تفاعلياً) في كل مشهد حسب معنى الكلام.
-3. ضبط نسبة الصمت الطبيعية بين `3%` إلى `4%` (`3.5%`) + كاشف ومزيل أخطاء التعليق الصوتي (حذف الجمل أو الكلمات المعادة مرتين تلقائياً).
-4. محرك العمل المستمر في الخلفية وحفظ الجلسة التلقائي (`PersistentBackgroundJobManager`) مع معمارية `Zero-OOM`.
+app.py — واجهة استوديو الإبداع المرئي v8
+=======================================
+واجهة عربية لإنتاج فيديوهات موشن غرافيك من الصوت أو الفيديو، مع إعدادات إخراج ومحرر ما بعد الإنتاج.
+تعتمد المعالجة على خط تشغيل منفصل، ولا تفترض أن كل وصف مشهد قد تحول إلى صورة مولدة أو أن المهمة تستمر بعد إعادة تشغيل الخادم.
 """
 
 import sys
@@ -35,7 +29,7 @@ _st_cfg = os.path.join(_CURRENT_DIR, ".streamlit", "config.toml")
 if not os.path.exists(_st_cfg):
     try:
         with open(_st_cfg, "w", encoding="utf-8") as _cf:
-            _cf.write("[server]\nmaxUploadSize = 200\nmaxMessageSize = 200\n[theme]\nbase = \"dark\"\n")
+            _cf.write("[server]\nmaxUploadSize = 200\nmaxMessageSize = 200\n[theme]\nbase = \"light\"\nprimaryColor = \"#4263eb\"\nbackgroundColor = \"#f5f7fb\"\nsecondaryBackgroundColor = \"#ffffff\"\ntextColor = \"#172033\"\n")
     except Exception:
         pass
 
@@ -47,7 +41,6 @@ if not hasattr(PIL.Image, "ANTIALIAS"):
     PIL.Image.ANTIALIAS = getattr(PIL.Image, "LANCZOS", getattr(getattr(PIL.Image, "Resampling", None), "LANCZOS", 1))
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -337,85 +330,47 @@ def cleanup_temp_directory(temp_path: str = TEMP_DIR):
 
 
 st.set_page_config(
-    page_title="استوديو المونتاج والموشن جرافيك الذكي v6 (يعمل في الخلفية)",
+    page_title="استوديو الإبداع المرئي | v8",
     page_icon="🎬",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
 st.markdown("""
 <style>
-    .main-title {
-        font-size: 2.2rem;
-        font-weight: 800;
-        text-align: center;
-        background: linear-gradient(90deg, #1BAECA, #38BDF8, #FBBF24);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        margin-bottom: 0.2rem;
-    }
-    .sub-title {
-        font-size: 1.05rem;
-        text-align: center;
-        color: #94A3B8;
-        margin-bottom: 1.4rem;
-    }
-    .bg-shield-banner {
-        background: linear-gradient(90deg, rgba(16, 185, 129, 0.16), rgba(27, 174, 202, 0.16));
-        border: 1px solid rgba(27, 174, 202, 0.45);
-        border-radius: 12px;
-        padding: 12px 18px;
-        text-align: center;
-        color: #E2E8F0;
-        margin-bottom: 1.2rem;
-        font-size: 0.98rem;
-    }
-    .stButton>button {
-        width: 100%;
-        border-radius: 10px;
-        height: 3.3rem;
-        font-size: 1.12rem;
-        font-weight: bold;
-        background: linear-gradient(90deg, #0284C7, #2563EB);
-        color: white;
-        border: none;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #0369A1, #1D4ED8);
-    }
+:root { --studio-bg:#f5f7fb; --studio-card:#fff; --studio-ink:#172033; --studio-muted:#657188; --studio-line:#e4e9f2; --studio-accent:#4263eb; }
+html, body, [class*="css"] { font-family:"Noto Sans Arabic","Noto Sans",sans-serif; }
+.stApp { background:var(--studio-bg); color:var(--studio-ink); }
+[data-testid="stHeader"] { background:rgba(245,247,251,.94); }
+.block-container { max-width:1240px; padding-top:1.35rem; padding-bottom:3rem; }
+.main-title { font-size:clamp(1.55rem,3vw,2.15rem); font-weight:800; text-align:center; color:var(--studio-ink); margin:.2rem 0 .35rem; letter-spacing:-.035em; }
+.sub-title { font-size:.98rem; text-align:center; color:var(--studio-muted); margin:0 auto 1.25rem; max-width:780px; line-height:1.85; }
+.bg-shield-banner { background:#eef3ff; border:1px solid #d9e2ff; border-radius:14px; padding:12px 16px; color:#33436c; margin-bottom:1.2rem; font-size:.92rem; line-height:1.8; }
+div[data-testid="stVerticalBlockBorderWrapper"] { border-color:var(--studio-line); border-radius:16px; }
+div[data-testid="stTabs"] button { border-radius:10px 10px 0 0; font-weight:600; }
+.stButton>button, .stDownloadButton>button { width:100%; border-radius:11px; min-height:2.8rem; font-weight:700; border:1px solid #dce3f0; transition:.15s ease; }
+.stButton>button[kind="primary"] { background:var(--studio-accent); color:white; border-color:var(--studio-accent); }
+.stButton>button:hover, .stDownloadButton>button:hover { border-color:#9aadef; color:#253b87; }
+div[data-testid="stFileUploader"] { background:white; border:1px dashed #cbd5e1; border-radius:14px; padding:.6rem; }
+div[data-testid="stMetric"] { background:white; border:1px solid var(--studio-line); padding:12px 14px; border-radius:12px; }
+div[data-testid="stAlert"] { border-radius:12px; }
+section[data-testid="stSidebar"] { background:#fff; border-right:1px solid var(--studio-line); }
+section[data-testid="stSidebar"] h2, section[data-testid="stSidebar"] h3 { color:var(--studio-ink); }
+[data-testid="stCaptionContainer"] { color:var(--studio-muted); }
+hr { border-color:var(--studio-line); }
+@media(max-width:720px) { .block-container { padding-left:.85rem; padding-right:.85rem; } .bg-shield-banner { font-size:.85rem; } }
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">🎬 استوديو المونتاج الذكي والموشن جرافيك التوليدي — v6</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">استوديو الإبداع المرئي <span style="color:#4263eb">v8</span></div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title">v6 • أوصاف مشهدية مرتبطة بالكلام • صور حقيقية لكل مشهد أو إيقاف واضح • منع القوالب البديلة الصامتة</div>',
+    '<div class="sub-title">حوّل الصوت أو الفيديو إلى مشاهد بصرية مترابطة، مع موشن غرافيك وانتقالات وتصدير نهائي. نفضّل التكوينات الإبداعية ونستخدم التوليد الخارجي عند الحاجة فقط.</div>',
     unsafe_allow_html=True
 )
 st.markdown(
-    '<div class="bg-shield-banner">🛡️ <b>ميزة العمل المستمر في الخلفية مفعّلة:</b> بعد الضغط على زر البدء، يستمر السيرفر في رندرة الفيديو حتى لو خرجت من متصفح <b>Google Chrome</b> أو انقطع الإنترنت، وعند عودتك ستجد الفيديو جاهزاً أمامك تلقائياً!</div>',
+    '<div class="bg-shield-banner">ℹ️ <b>حالة المعالجة:</b> قد تستمر المهمة أثناء اتصالك بالتطبيق، لكن استمرارها بعد إغلاق المتصفح يعتمد على استقرار الخادم والتخزين المتاح؛ لا يمكن ضمانه بعد إعادة تشغيل الخادم. تُحفظ تقارير المعالجة لتسهيل التشخيص.</div>',
     unsafe_allow_html=True
 )
-
-components.html(
-    """
-    <script>
-    (async function() {
-        try {
-            if ('wakeLock' in navigator) {
-                await navigator.wakeLock.request('screen');
-                document.addEventListener('visibilitychange', async () => {
-                    if (document.visibilityState === 'visible') {
-                        try { await navigator.wakeLock.request('screen'); } catch(e) {}
-                    }
-                });
-            }
-        } catch (err) {}
-    })();
-    </script>
-    """,
-    height=0
-)
-
 
 # ==============================================================================
 # 1. استرجاع الحالة التلقائي عند العودة للمتصفح (Auto-Resume from Background Job)
@@ -450,7 +405,7 @@ elif bg_state.get("status") == "failed" and not job_manager.is_running():
 # 2. الشريط الجانبي
 # ==============================================================================
 with st.sidebar:
-    st.header("⚙️ الإعدادات الذكية والاتصال")
+    st.header("الإعدادات")
 
     auto_optimize = st.toggle(
         "🤖 ضبط الصمت الطبيعي (3% - 4%) وحذف الإعادات الخاطئة تلقائياً (موصى به)",
@@ -460,7 +415,7 @@ with st.sidebar:
     enable_broll_toggle = st.toggle(
         "🎥 استيراد مشاهد B-Roll حقيقية (بدون حقوق ملكية)",
         value=True,
-        help="يجلب تلقائياً 3 إلى 4 مشاهد فيديو واقعية ومفتوحة الترخيص من الإنترنت لدعم الأفكار التي لا تناسبها الرسوم فقط."
+        help="يحاول البحث عن لقطات مساندة من مزودات خارجية عند توفرها؛ قد تختلف النتائج والتراخيص والتوفر بحسب المزود والاتصال."
     )
 
     st.subheader("🇩🇿 إعدادات اللغة واللهجة")
@@ -477,14 +432,14 @@ with st.sidebar:
     st.markdown("---")
     st.subheader("🌐 محرك الذكاء الاصطناعي ومكتبات B-Roll")
     with st.expander("🔑 مفاتيح سحابية اختيارية (لأقصى سرعة وجودة)", expanded=False):
-        st.caption("النظام يجلب مشاهد B-Roll مجانية بدون أي مفتاح! ويمكنك اختيارياً إضافة مفتاح Pexels أو Groq:")
-        pexels_api_key = st.text_input("Pexels API Key (اختياري - لملايين الفيديوهات المجانية):", type="password", value=os.environ.get("PEXELS_API_KEY", ""))
+        st.caption("يحاول النظام جلب لقطات مساندة من مزودات خارجية؛ التوفر والحدود والتراخيص تختلف. المفاتيح اختيارية وقد تحسن الوصول لبعض المزودات:")
+        pexels_api_key = st.text_input("Pexels API Key (اختياري):", type="password", value=os.environ.get("PEXELS_API_KEY", ""))
         groq_api_key = st.text_input("Groq API Key (اختياري):", type="password", value=os.environ.get("GROQ_API_KEY", ""))
-        gemini_api_key = st.text_input("Gemini API Key (مطلوب لتوليد صور المشاهد GEMINI_API_KEY):", type="password", value="")
+        gemini_api_key = st.text_input("Gemini API Key (اختياري للمزود الأساسي؛ قد تعمل بدائل محدودة عند غيابه):", type="password", value="")
         gemini_image_model_input = st.text_input(
             "نموذج توليد الصور الأساسي (GEMINI_IMAGE_MODEL):",
             value=os.environ.get("GEMINI_IMAGE_MODEL", "models/gemini-nano-banana-2.1"),
-            help="يستخدم Interactions API تلقائياً مع models/gemini-nano-banana-2.1 وينتقل عند الحاجة للنماذج البديلة عبر generateContent."
+            help="يستخدم Interactions API مع نموذج Nano Banana عند اختياره، ثم يجرب النماذج البديلة المهيأة. نجاح الطلب يعتمد على صلاحية المفتاح والحصة وتوفر النموذج."
         )
         gemini_image_size_input = st.selectbox(
             "حجم الصورة المولدة (GEMINI_IMAGE_SIZE):",
@@ -820,7 +775,7 @@ if job_manager.is_running():
 col1, col2 = st.columns([1.05, 1.05], gap="large")
 
 with col1:
-    st.subheader("1. رفع الفيديو أو الملف الصوتي / تسجيل مباشر")
+    st.subheader("1. أضف ملفك")
 
     tab_upload, tab_record = st.tabs([
         "📁 رفع فيديو أو صوت (بجميع الصيغ - يدعم 55MB+)",
@@ -914,7 +869,7 @@ with col1:
                 st.markdown(f"- {reason}")
 
 with col2:
-    st.subheader("2. اختيار نمط الإخراج والمونتاج")
+    st.subheader("2. اختر طريقة الإخراج")
 
     selected_style = st.selectbox(
         "اختر أسلوب المونتاج المطلوب:",
@@ -952,7 +907,7 @@ with col2:
     # القسم 3: اختيار ستايل موحد للفيديو أو استنساخ فيديو مرجعي بزر واحد فقط
     # ==========================================================================
     st.markdown("---")
-    st.subheader("🎯 3. ستايل الفيديو الموحد أو استنساخ فيديو مرجعي")
+    st.subheader("3. الهوية البصرية (اختياري)")
     with st.container():
         from style_evolution_brain import (
             extract_reference_video_dna,
@@ -1507,7 +1462,7 @@ if result_path and os.path.exists(result_path):
     st.markdown("---")
     hdr_col1, hdr_col2 = st.columns([3.2, 1.0])
     with hdr_col1:
-        st.success("🎉 **الفيديو الجاهز للعرض والتحميل (محفوظ تلقائياً في الخلفية):**")
+        st.success("🎉 **الفيديو جاهز للمعاينة والتنزيل:**")
     with hdr_col2:
         if st.button("🗑️ بدء مشروع جديد / مسح المحفوظ"):
             job_manager.clear_job()
@@ -1537,7 +1492,7 @@ if result_path and os.path.exists(result_path):
             )
 
     with res_col2:
-        st.markdown("### 🎛️ استوديو التعديل الحي للمشاهد والرسومات والساوند ديزاين والكابشن (بدون كتابة كود!)")
+        st.markdown("### تعديلات ما بعد الإنتاج")
         st.caption("عدّل رسمة أي مشهد، أو عنوانه، أو مؤثراته الصوتية (Pop-In / Click / Whoosh) مباشرة من المنصة بنقرة زر.")
 
         current_words = st.session_state.get("caption_words", [])
@@ -1559,14 +1514,18 @@ if result_path and os.path.exists(result_path):
                     with open(v2_qa_path, "r", encoding="utf-8") as qf:
                         v2_rep = json.load(qf)
                     qm1, qm2, qm3 = st.columns(3)
-                    qm1.metric("درجة النظام القديم", f"{v2_rep.get('score_before_legacy', 44.2)} / 100")
-                    qm2.metric("درجة الجيل الثاني (v2)", f"{v2_rep.get('score_after_v2', 99.1)} / 100", "+54.9")
-                    qm3.metric("تقييم الناقد البصري", f"{v2_rep.get('visual_critic_after', {}).get('average_ten', 9.37)} / 10")
+                    _before_score = v2_rep.get("score_before_legacy")
+                    _after_score = v2_rep.get("score_after_v2")
+                    _critic_payload = v2_rep.get("visual_critic_after") or {}
+                    _critic_score = _critic_payload.get("average_ten") if isinstance(_critic_payload, dict) else None
+                    qm1.metric("درجة النظام القديم", f"{_before_score} / 100" if _before_score is not None else "غير متاح")
+                    qm2.metric("درجة الجيل الثاني (v2)", f"{_after_score} / 100" if _after_score is not None else "غير متاح")
+                    qm3.metric("تقييم الناقد البصري", f"{_critic_score} / 10" if _critic_score is not None else "غير متاح")
                     img_rep = v2_rep.get("image_generation") or {}
                     if img_rep:
-                        st.markdown("###### 🖼️ تقرير توليد صور المشاهد (Nano Banana 2.1 & Cache):")
+                        st.markdown("###### 🖼️ تقرير صور المشاهد والكاش ومزود التوليد:")
                         im1, im2, im3, im4 = st.columns(4)
-                        im1.metric("النموذج الأساسي", str(img_rep.get("primary_model", "models/gemini-nano-banana-2.1")).split("/")[-1])
+                        im1.metric("النموذج الأساسي", str(img_rep.get("primary_model") or "غير محدد").split("/")[-1])
                         im2.metric("صور مولدة جديدة", int(img_rep.get("generated", 0)))
                         im3.metric("صور مسترجعة من الكاش", int(img_rep.get("cached", 0)))
                         im4.metric("مشاهد فاشلة", int(img_rep.get("failed", 0)))

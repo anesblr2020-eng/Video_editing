@@ -634,6 +634,71 @@ def _transform_stage_crop_numpy_pil(
     return canvas
 
 
+def _compose_semantic_fallback_frame(
+    art: Image.Image,
+    scene_meta: Dict[str, Any],
+    active_word: str,
+    scene_progress: float,
+    scene_index: int,
+) -> Image.Image:
+    """Compose a clean editorial motion frame over a contextual local illustration.
+
+    Unlike the generic vector-card renderer, this fallback keeps the illustrated environment
+    full-frame and adds only typography/progress cues, avoiding stacks of unrelated geometric cards.
+    """
+    from motion_text import get_arabic_font, draw_arabic_text
+
+    w, h = 1080, 1920
+    progress = max(0.0, min(1.0, float(scene_progress)))
+    zoom = 1.0 + 0.035 * progress
+    zw, zh = int(w * zoom), int(h * zoom)
+    enlarged = art.resize((zw, zh), Image.Resampling.BICUBIC)
+    left = max(0, (zw - w) // 2 + int(10 * math.sin(progress * math.pi)))
+    top = max(0, (zh - h) // 2 + int(12 * math.cos(progress * math.pi)))
+    frame = enlarged.crop((left, top, left + w, top + h)).convert("RGBA")
+
+    # Top and bottom readability gradients; keep the illustration visible between them.
+    shade = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sd = ImageDraw.Draw(shade, "RGBA")
+    for y in range(0, 590, 5):
+        alpha = int(150 * (1.0 - y / 590.0))
+        sd.rectangle((0, y, w, y + 5), fill=(15, 24, 42, alpha))
+    for y in range(1390, h, 5):
+        alpha = int(165 * ((y - 1390) / max(1, h - 1390)))
+        sd.rectangle((0, y, w, y + 5), fill=(15, 24, 42, alpha))
+    frame = Image.alpha_composite(frame, shade)
+    d = ImageDraw.Draw(frame, "RGBA")
+
+    title = str(scene_meta.get("concept_title") or scene_meta.get("clause_a") or scene_meta.get("text") or "").strip()
+    subtitle = str(scene_meta.get("clause_b") or scene_meta.get("visual_subject") or "").strip()
+    # Keep the headline short; scene planning has already chosen the semantic anchor.
+    title = title[:58]
+    subtitle = subtitle[:72]
+
+    # Thin editorial progress line and unobtrusive scene marker.
+    d.rounded_rectangle((72, 112, 1008, 120), radius=4, fill=(255, 255, 255, 90))
+    d.rounded_rectangle((72, 112, 72 + int(936 * progress), 120), radius=4, fill=(255, 255, 255, 235))
+    d.rounded_rectangle((72, 150, 280, 205), radius=24, fill=(18, 29, 49, 165), outline=(255, 255, 255, 90), width=2)
+    draw_arabic_text(d, (176, 178), f"مشهد {scene_index + 1:02d}", get_arabic_font(26, True), fill=(255,255,255,245))
+
+    title_font = get_arabic_font(72 if len(title) < 24 else 58, True)
+    # Center title in a clear upper region; the dark gradient supplies contrast without a card.
+    draw_arabic_text(d, (540, 365), title, title_font, fill=(255,255,255,255), stroke_width=2, stroke_fill=(15,24,42,100))
+    if subtitle and subtitle != title:
+        sub_font = get_arabic_font(40 if len(subtitle) < 34 else 32, False)
+        draw_arabic_text(d, (540, 465), subtitle, sub_font, fill=(242,247,255,245), stroke_width=1, stroke_fill=(15,24,42,110))
+
+    # Active spoken word, shown as one editorial caption rather than several cards.
+    word = str(active_word or "").strip()
+    if word:
+        pill_w = min(820, max(280, 110 + len(word) * 34))
+        x0 = (w - pill_w) // 2
+        y0, y1 = 1620, 1745
+        d.rounded_rectangle((x0, y0, x0 + pill_w, y1), radius=38, fill=(13, 23, 41, 205), outline=(255,255,255,175), width=3)
+        draw_arabic_text(d, (w // 2, (y0 + y1) // 2), word, get_arabic_font(52 if len(word) < 13 else 42, True), fill=(255,255,255,255))
+    return frame.convert("RGB")
+
+
 def verify_and_render_with_chromium(
     scenes: List[Dict[str, Any]],
     words: List[Dict[str, Any]],
@@ -862,18 +927,35 @@ def verify_and_render_with_chromium(
     proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE)
     bg_cache = {}
     # Preload generated scene artwork once. The art is composited behind the motion-graphics
-    # layer with a stronger image-first balance; only a restrained graphics layer remains over the semantic artwork.
+    # layer with restrained opacity so captions remain readable while scene-specific imagery is visible.
     from PIL import ImageEnhance
+    from semantic_scene_art import build_semantic_scene_art
     scene_art = {}
+    scene_art_source = {}
     for _idx, _sc in enumerate(studio_scenes):
-        _ip = str(scenes[_idx].get("image_path") or "") if _idx < len(scenes) else ""
+        _raw_scene = scenes[_idx] if _idx < len(scenes) and isinstance(scenes[_idx], dict) else {}
+        _ip = str(_raw_scene.get("image_path") or _sc.get("image_path") or "")
         if _ip and os.path.isfile(_ip):
             try:
-                _art = Image.open(_ip).convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
-                _art = ImageEnhance.Brightness(_art).enhance(0.58)
+                with Image.open(_ip) as _opened:
+                    _art = _opened.convert("RGB").resize((1080, 1920), Image.Resampling.LANCZOS)
+                _art = ImageEnhance.Brightness(_art).enhance(0.70)
                 scene_art[_idx] = _art
+                scene_art_source[_idx] = "generated_or_cached_image"
+                continue
             except Exception:
+                # Invalid image paths are not treated as generated-image success.
                 pass
+        # No valid generated image: build a complete contextual editorial environment locally.
+        # This is an explicit programmatic illustration fallback, not a fake AI image.
+        _fallback_meta = dict(_raw_scene)
+        _fallback_meta.update({k: v for k, v in _sc.items() if v not in (None, "", [], {})})
+        try:
+            scene_art[_idx] = build_semantic_scene_art(_fallback_meta, width=1080, height=1920)
+            scene_art_source[_idx] = "programmatic_semantic_scene_fallback"
+        except Exception as _fallback_art_error:
+            # Keep the renderer operational but expose this degradation in the report.
+            scene_art_source[_idx] = "vector_only_fallback_failed"
 
     for f_idx in range(total_frames):
         if callable(progress_callback) and (f_idx % 15 == 0 or f_idx == total_frames - 1):
@@ -917,6 +999,10 @@ def verify_and_render_with_chromium(
             height=1920,
             bg_cache=bg_cache
         )
+        if scene_art_source.get(active_idx) == "programmatic_semantic_scene_fallback":
+            curr_img = _compose_semantic_fallback_frame(
+                scene_art[active_idx], sc_st, act_w, sc_prog, active_idx
+            )
 
         time_into = t - sc_st["start"]
         handoff_dur = float(sc_st.get("handoff_duration_sec", 0.32))
@@ -936,6 +1022,10 @@ def verify_and_render_with_chromium(
                 height=1920,
                 bg_cache=bg_cache
             )
+            if scene_art_source.get(active_idx - 1) == "programmatic_semantic_scene_fallback":
+                prev_img = _compose_semantic_fallback_frame(
+                    scene_art[active_idx - 1], prev_sc, "", 1.0, active_idx - 1
+                )
             curr_img = render_one_take_camera_handoff(
                 prev_img=prev_img,
                 curr_img=curr_img,
@@ -947,7 +1037,7 @@ def verify_and_render_with_chromium(
 
         # Show the generated scene image as a full-frame semantic backdrop with gentle camera motion.
         # Keep the existing designed foreground visible; never replace captions or motion graphics.
-        if active_idx in scene_art:
+        if active_idx in scene_art and scene_art_source.get(active_idx) == "generated_or_cached_image":
             try:
                 art = scene_art[active_idx]
                 # Small Ken Burns drift/zoom per scene, deterministic and tied to scene progress.
@@ -957,7 +1047,10 @@ def verify_and_render_with_chromium(
                 left = max(0, (aw - 1080) // 2 + int(10 * math.sin(sc_prog * math.pi)))
                 top = max(0, (ah - 1920) // 2 + int(12 * math.cos(sc_prog * math.pi)))
                 art_zoom = art_zoom.crop((left, top, left + 1080, top + 1920))
-                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), 0.18)
+                # Generated artwork remains the dominant scene plate; a local semantic illustration
+                # is blended more evenly so the kinetic typography stays legible over the environment.
+                _blend_alpha = 0.32 if scene_art_source.get(active_idx) == "generated_or_cached_image" else 0.48
+                curr_img = Image.blend(art_zoom.convert("RGBA"), curr_img.convert("RGBA"), _blend_alpha)
             except Exception:
                 pass
         frame_rgb = np.ascontiguousarray(np.array(curr_img.convert("RGB"), dtype=np.uint8))
@@ -975,5 +1068,8 @@ def verify_and_render_with_chromium(
             "fps": fps,
             "resolution": "1080x1920",
             "render_seconds": elapsed,
+            "semantic_scene_fallback_count": sum(1 for _src in scene_art_source.values() if _src == "programmatic_semantic_scene_fallback"),
+            "generated_or_cached_scene_image_count": sum(1 for _src in scene_art_source.values() if _src == "generated_or_cached_image"),
+            "scene_art_sources": {str(k + 1): v for k, v in scene_art_source.items()},
         },
     }
